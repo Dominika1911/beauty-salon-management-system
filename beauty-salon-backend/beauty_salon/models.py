@@ -20,9 +20,10 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.contrib.postgres.fields import DateTimeRangeField
 from django.contrib.postgres.constraints import ExclusionConstraint
-from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from psycopg2.extras import DateTimeTZRange
 
 
 # ============================================================================
@@ -168,24 +169,57 @@ class Usluga(UUIDTimestampedModel):
         verbose_name_plural = _('usługi')
         ordering = ['kategoria', 'nazwa']
         indexes = [
-            models.Index(fields=['kategoria', 'publikowana']),
-            models.Index(fields=['liczba_rezerwacji']),  # For TOP services report
+            models.Index(fields=['kategoria', 'nazwa']),
+            models.Index(fields=['publikowana']),
+            models.Index(fields=['promocja']),
+            models.Index(fields=['liczba_rezerwacji']),  # dla raportu TOP usług
         ]
-
-    def __str__(self):
-        return self.nazwa
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kategoria', 'nazwa'],
+                name='uniq_usluga_kategoria_nazwa',
+            ),
+        ]
 
 
 # ============================================================================
 # EMPLOYEES (Pracownik - PDF requirement)
 # ============================================================================
 
+
+emp_validator = RegexValidator(r'^EMP-\d{4}$', 'Format numeru: EMP-0001')
+
+from django.core.validators import RegexValidator  # jeśli jeszcze nie masz tego importu na górze pliku
+
+emp_validator = RegexValidator(r"^EMP-\d{4}$", "Format numeru: EMP-0001")
+
+def generate_employee_number() -> str:
+    """
+    Generuje kolejny numer pracownika: EMP-0001, EMP-0002, ...
+    """
+    prefix = "EMP-"
+    last = (
+        Pracownik.objects  # odwołanie do klasy jest OK – funkcja wykona się dopiero przy zapisie obiektu
+        .filter(nr__startswith=prefix)
+        .order_by("-nr")
+        .values_list("nr", flat=True)
+        .first()
+    )
+    if last and last.startswith(prefix):
+        try:
+            n = int(last.split("-")[1])
+        except Exception:
+            n = 0
+    else:
+        n = 0
+    return f"{prefix}{n+1:04d}"
+
 class Pracownik(UUIDTimestampedModel):
     """
     Employee entity from PDF metody_klasy.pdf.
     Extended for thesis: performance metrics, availability tracking.
     """
-    nr = models.CharField(_('numer pracownika'), max_length=20, unique=True, db_index=True)
+    nr = models.CharField(_('numer pracownika'), max_length=20, unique=True, db_index=True, default=generate_employee_number, validators=[emp_validator])
     imie = models.CharField(_('imię'), max_length=100)
     nazwisko = models.CharField(_('nazwisko'), max_length=100)
 
@@ -296,6 +330,11 @@ class Grafik(UUIDTimestampedModel):
 # CLIENTS (Klient - PDF requirement)
 # ============================================================================
 
+
+class ActiveClientsManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
 class Klient(UUIDTimestampedModel):
     """
     Client entity from PDF metody_klasy.pdf.
@@ -343,6 +382,10 @@ class Klient(UUIDTimestampedModel):
 
     # Internal notes
     notatki_wewnetrzne = models.TextField(_('notatki wewnętrzne'), blank=True)
+
+
+    objects = models.Manager()
+    active = ActiveClientsManager()
 
     class Meta:
         db_table = 'klienci'
@@ -424,7 +467,7 @@ class Wizyta(UUIDTimestampedModel):
     termin_koniec = models.DateTimeField(_('termin koniec'))
 
     # PostgreSQL range field for overlap detection
-    timespan = DateTimeRangeField(_('zakres czasu'), db_index=True)
+    timespan = DateTimeRangeField(_('zakres czasu'))
 
     # Thesis additions: tracking and notes
     kanal_rezerwacji = models.CharField(
@@ -469,6 +512,7 @@ class Wizyta(UUIDTimestampedModel):
             models.Index(fields=['kanal_rezerwacji']),
         ]
         constraints = [
+            models.CheckConstraint(check=models.Q(termin_koniec__gt=models.F('termin_start')), name='wizyty_end_after_start'),
             # Prevent overlapping reservations (PDF requirement)
             ExclusionConstraint(
                 name='no_employee_overlap',
@@ -487,7 +531,6 @@ class Wizyta(UUIDTimestampedModel):
 
     def save(self, *args, **kwargs):
         """Sync timespan range field with start/end datetimes."""
-        from django.contrib.postgres.fields import DateTimeTZRange
         self.timespan = DateTimeTZRange(
             self.termin_start,
             self.termin_koniec,
