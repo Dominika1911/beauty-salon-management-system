@@ -1,0 +1,70 @@
+# --- Python / Django ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.log
+*.sqlite3
+
+# Virtualenv (gdziekolwiek)
+.venv/
+venv/
+*/.venv/
+*/venv/
+
+# Pliki środowiskowe (zostawiamy tylko *.example)
+.env
+*.env
+*.env.*
+*.local
+*secret*
+!*.env.example
+!*.env.local.example
+
+# Backend runtime (Django)
+beauty-salon-backend/media/
+beauty-salon-backend/staticfiles/
+
+# --- Node / Vite / React ---
+node_modules/
+*/node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+# logi npm/yarn/pnpm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Testy / cache / coverage ---
+.pytest_cache/
+.mypy_cache/
+.cache/
+.coverage
+coverage/
+htmlcov/
+
+# --- Database (Docker) ---
+database/.env
+!database/.env.example
+database/pgdata/
+database/data/
+database/postgres-data/
+
+# Frontend env (lokalne)
+beauty-salon-frontend/.env
+beauty-salon-frontend/.env.local
+!beauty-salon-frontend/.env.local.example
