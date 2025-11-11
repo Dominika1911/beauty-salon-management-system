@@ -1,14 +1,20 @@
+# beauty-salon-backend/beauty_salon/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+# Definicja katalogu bazowego (BASE_DIR)
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")  # czyta .env obok manage.py
+
+# Ładowanie zmiennych z pliku .env.
+# Wczyta plik .env znajdujący się w folderze beauty-salon-backend
+load_dotenv(BASE_DIR / ".env") 
 
 # --- Podstawy ---
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-dont-use-in-prod")
 DEBUG = os.getenv("DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+# Dodano "backend" dla ruchu wewnątrz Dockera
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "backend"] 
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
@@ -25,18 +31,21 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    # Pakiety firm trzecich
     "rest_framework",
     "corsheaders",
 
-    "beauty_salon.apps.BeautySalonConfig",
+    # Twoja aplikacja
+    "beauty_salon.apps.BeautySalonConfig", 
 ]
 
-AUTH_USER_MODEL = "beauty_salon.User"
+# Używamy własnego modelu użytkownika (upewnij się, że masz zdefiniowany ten model)
+AUTH_USER_MODEL = "beauty_salon.User" 
 
-# --- Middleware (CORS wysoko) ---
+# --- Middleware ---
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
+    "corsheaders.middleware.CorsMiddleware", # Zawsze wysoko
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -45,7 +54,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "config.urls"
+ROOT_URLCONF = "config.urls" # Zmieniono na 'config.urls' zgodnie z Twoją strukturą katalogów
 
 TEMPLATES = [
     {
@@ -63,19 +72,20 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "config.wsgi.application"
+WSGI_APPLICATION = "config.wsgi.application" # Zmieniono na 'config.wsgi.application'
 
 # --- Baza danych: PostgreSQL z .env (DB_*) ---
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "postgres"),
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "5432"),
+        "NAME": os.getenv("DB_NAME"),       # Używa DB_NAME z Twojego .env
+        "USER": os.getenv("DB_USER"),       # Używa DB_USER z Twojego .env
+        "PASSWORD": os.getenv("DB_PASSWORD"), # Używa DB_PASSWORD z Twojego .env
+        "HOST": "db",                       # KLUCZOWE: Nazwa serwisu DB w Docker Compose
+        "PORT": "5432",                     # Port jest standardowy
     }
 }
+
 
 # --- Walidacja haseł ---
 AUTH_PASSWORD_VALIDATORS = [
@@ -87,9 +97,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # --- Lokale / czas ---
 LANGUAGE_CODE = "pl"
-TIME_ZONE = "Europe/Warsaw"
+TIME_ZONE = os.getenv("TZ", "Europe/Warsaw") # Odczyta TZ, jeśli jest w .env, inaczej ustawi domyślnie
 USE_I18N = True
-USE_TZ = True
+USE_TZ = True # Używanie stref czasowych
 
 # --- Statyczne / media ---
 STATIC_URL = "/static/"
