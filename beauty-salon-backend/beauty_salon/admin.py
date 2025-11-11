@@ -1,18 +1,22 @@
+# beauty_salon/admin.py
+
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import JSONField
 from django.forms import widgets
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
 from .models import (
     User, Usluga, Pracownik, Klient, Wizyta, Grafik, Notatka, Material, Platnosc, Faktura,
-    Powiadomienie, UstawieniaSystemowe, StatystykaSnapshot, LogEntry,
-    generate_employee_number, RaportPDF  # Wymagane do walidacji numeru pracownika
+    Powiadomienie, UstawieniaSystemowe, StatystykaSnapshot, LogEntry, Urlop, RaportPDF
 )
 
 
-# Pomocniczy widżet dla pól JSON
+# --- WIDŻET POMOCNICZY DLA PÓL JSON ---
+
 class PrettyJSONWidget(widgets.Textarea):
-    """Widżet do ładnego wyświetlania JSON w panelu admina."""
+    """Widget to display JSON fields neatly in the admin panel."""
 
     def __init__(self, **kwargs):
         kwargs['attrs'] = {'rows': 4, 'cols': 60}
@@ -21,6 +25,7 @@ class PrettyJSONWidget(widgets.Textarea):
     def render(self, name, value, attrs=None, renderer=None):
         import json
         if value and isinstance(value, dict):
+            # Używamy ensure_ascii=False dla poprawnego wyświetlania polskich znaków
             value = json.dumps(value, indent=2, ensure_ascii=False)
         return super().render(name, value, attrs, renderer)
 
@@ -30,7 +35,7 @@ class PrettyJSONWidget(widgets.Textarea):
 # ============================================================================
 
 class PracownikInline(admin.StackedInline):
-    """Edycja profilu Pracownika z poziomu edycji Użytkownika."""
+    """Inline do edycji profilu Pracownika z poziomu edycji Użytkownika."""
     model = Pracownik
     can_delete = False
     verbose_name_plural = 'Profil Pracownika'
@@ -39,12 +44,11 @@ class PracownikInline(admin.StackedInline):
         (None, {'fields': ('nr', 'imie', 'nazwisko', 'telefon', 'aktywny', 'kompetencje')}),
         ('Metryki', {'fields': ('liczba_wizyt', 'srednia_ocena', 'data_zatrudnienia'), 'classes': ('collapse',)}),
     )
-    # Pole nr ma być tylko do odczytu, ponieważ jest generowane przez funkcję
     readonly_fields = ('nr', 'liczba_wizyt', 'srednia_ocena')
 
 
 class KlientInline(admin.StackedInline):
-    """Edycja profilu Klienta z poziomu edycji Użytkownika."""
+    """Inline do edycji profilu Klienta z poziomu edycji Użytkownika."""
     model = Klient
     can_delete = False
     verbose_name_plural = 'Profil Klienta'
@@ -60,7 +64,9 @@ class KlientInline(admin.StackedInline):
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """Zarządzanie użytkownikami i ich rolami."""
+    """Panel do zarządzania użytkownikami, z uwzględnieniem ról."""
+
+    # Musimy dodać pola z BaseUserAdmin, a następnie dodać nasze niestandardowe
     list_display = (
         'email', 'is_active', 'is_staff', 'get_role_display_name',
         'last_login', 'created_at'
@@ -70,6 +76,7 @@ class UserAdmin(BaseUserAdmin):
     ordering = ('email',)
     inlines = [PracownikInline, KlientInline]
 
+    # Zmiana layoutu pola role w formularzu edycji
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Rola Biznesowa', {'fields': ('role',)}),
@@ -83,9 +90,11 @@ class UserAdmin(BaseUserAdmin):
         }),
         ('Historia', {'fields': ('last_login', 'created_at', 'updated_at')}),
     )
+
+    # BaseUserAdmin domyślnie używa 'username', musimy go usunąć
+    fieldsets = tuple(fs for fs in fieldsets if 'username' not in fs[1].get('fields', ()))
+
     readonly_fields = ('last_login', 'created_at', 'updated_at', 'last_login_ip')
-    # Używamy email jako login, więc usuwamy 'username' z formularza
-    BaseUserAdmin.fieldsets = tuple(fs for fs in BaseUserAdmin.fieldsets if 'username' not in fs[1]['fields'])
 
 
 @admin.register(Pracownik)
@@ -106,16 +115,10 @@ class PracownikAdmin(admin.ModelAdmin):
 
     user_email.short_description = 'Email Użytkownika'
 
-    # Wypełnianie numeru pracownika przy zapisie
-    def save_model(self, request, obj, form, change):
-        if not obj.nr:
-            obj.nr = generate_employee_number()
-        super().save_model(request, obj, form, change)
-
 
 @admin.register(Klient)
 class KlientAdmin(admin.ModelAdmin):
-    list_display = ('get_full_name', 'email', 'telefon', 'liczba_wizyt', 'laczna_wydana_kwota', 'zgoda_marketing',
+    list_display = ('get_full_name', 'email', 'telefon', 'zgoda_marketing', 'liczba_wizyt', 'laczna_wydana_kwota',
                     'deleted_at')
     list_filter = ('zgoda_marketing', 'preferowany_kontakt', 'deleted_at')
     search_fields = ('imie', 'nazwisko', 'email', 'telefon')
@@ -125,6 +128,10 @@ class KlientAdmin(admin.ModelAdmin):
         return obj.get_full_name()
 
     get_full_name.short_description = 'Klient'
+
+    @admin.action(description='Oznacz wybrane jako usunięte (GDPR)')
+    def mark_deleted(self, request, queryset):
+        queryset.update(deleted_at=timezone.now())
 
 
 # ============================================================================
@@ -140,10 +147,23 @@ class UslugaAdmin(admin.ModelAdmin):
     list_editable = ('publikowana',)
     readonly_fields = ('liczba_rezerwacji', 'created_at', 'updated_at')
 
-    # Dodanie JSON field do edycji (dla promocji)
     formfield_overrides = {
         JSONField: {'widget': PrettyJSONWidget},
     }
+
+
+@admin.register(Urlop)
+class UrlopAdmin(admin.ModelAdmin):
+    list_display = ('pracownik', 'typ', 'status', 'data_od', 'data_do', 'zatwierdzony_przez')
+    list_filter = ('status', 'typ', 'pracownik')
+    search_fields = ('pracownik__nazwisko', 'powod')
+    date_hierarchy = 'data_od'
+
+    fieldsets = (
+        (None, {'fields': ('pracownik', 'typ', 'status', 'data_od', 'data_do', 'powod')}),
+        ('Zatwierdzenie (Manager)', {'fields': ('zatwierdzony_przez', 'data_zatwierdzenia')}),
+    )
+    readonly_fields = ('data_zatwierdzenia', 'created_at', 'updated_at')
 
 
 class PlatnoscInline(admin.TabularInline):
@@ -158,8 +178,7 @@ class PlatnoscInline(admin.TabularInline):
 
 @admin.register(Wizyta)
 class WizytaAdmin(admin.ModelAdmin):
-    list_display = ('klient', 'pracownik', 'usluga', 'status', 'termin_start', 'kanal_rezerwacji',
-                    'przypomnienie_wyslane')
+    list_display = ('klient', 'pracownik', 'usluga', 'status', 'termin_start', 'kanal_rezerwacji')
     list_filter = ('status', 'kanal_rezerwacji', 'pracownik', 'usluga')
     search_fields = ('klient__nazwisko', 'pracownik__nazwisko', 'usluga__nazwa')
     date_hierarchy = 'termin_start'
@@ -167,7 +186,7 @@ class WizytaAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Podstawowe Informacje', {'fields': ('klient', 'pracownik', 'usluga', 'status', 'kanal_rezerwacji')}),
-        ('Termin', {'fields': ('termin_start', 'termin_koniec', 'timespan')}),  # timespan jest wypełniany auto
+        ('Termin', {'fields': ('termin_start', 'termin_koniec', 'timespan')}),
         ('Anulacje', {'fields': ('anulowana_przez', 'data_anulowania', 'powod_anulowania'), 'classes': ('collapse',)}),
         ('Notatki i Przypomnienia',
          {'fields': ('notatki_klienta', 'notatki_wewnetrzne', 'przypomnienie_wyslane', 'data_wyslania_przypomnienia')}),
@@ -190,17 +209,11 @@ class FakturaAdmin(admin.ModelAdmin):
     list_filter = ('zaplacona', 'data_wystawienia')
     search_fields = ('numer', 'klient__nazwisko')
     date_hierarchy = 'data_wystawienia'
-    fieldsets = (
-        ('Numeracja i Daty', {'fields': ('numer', 'data_wystawienia', 'data_sprzedazy', 'termin_platnosci')}),
-        ('Relacje', {'fields': ('klient', 'wizyta')}),
-        ('Kwoty i VAT', {'fields': ('kwota_netto', 'stawka_vat', 'kwota_vat', 'kwota_brutto')}),
-        ('Status', {'fields': ('zaplacona', 'data_zaplaty', 'plik_pdf')}),
-    )
     readonly_fields = ('kwota_vat', 'kwota_brutto', 'created_at', 'updated_at')
 
 
 # ============================================================================
-# 3. GRAFIK, NOTATKI, MATERIAŁY, POWIADOMIENIA
+# 3. POZOSTAŁE MODELE
 # ============================================================================
 
 @admin.register(Grafik)
@@ -239,10 +252,6 @@ class PowiadomienieAdmin(admin.ModelAdmin):
     readonly_fields = ('data_wyslania', 'liczba_prob', 'komunikat_bledu', 'created_at', 'updated_at')
 
 
-# ============================================================================
-# 4. RAPORTOWANIE, LOGOWANIE, UST. SYSTEMOWE
-# ============================================================================
-
 @admin.register(RaportPDF)
 class RaportPDFAdmin(admin.ModelAdmin):
     list_display = ('typ', 'tytul', 'data_od', 'data_do', 'wygenerowany_przez', 'created_at')
@@ -256,27 +265,23 @@ class RaportPDFAdmin(admin.ModelAdmin):
 
 @admin.register(LogEntry)
 class LogEntryAdmin(admin.ModelAdmin):
-    # Logi są tylko do odczytu (wymagane przez audit log)
+    # Logi są tylko do odczytu
     list_display = ('czas', 'typ', 'poziom', 'uzytkownik', 'adres_ip', 'entity_type')
     list_filter = ('poziom', 'typ')
     search_fields = ('opis', 'uzytkownik__email', 'adres_ip')
     date_hierarchy = 'czas'
     readonly_fields = list_display + ('opis', 'user_agent', 'entity_id', 'metadata', 'created_at', 'updated_at')
 
-    # Blokowanie możliwości edycji logów
-    def has_add_permission(self, request):
-        return False
+    def has_add_permission(self, request): return False
 
-    def has_change_permission(self, request, obj=None):
-        return False
+    def has_change_permission(self, request, obj=None): return False
 
-    def has_delete_permission(self, request, obj=None):
-        return False
+    def has_delete_permission(self, request, obj=None): return False
 
 
 @admin.register(UstawieniaSystemowe)
 class UstawieniaSystemoweAdmin(admin.ModelAdmin):
-    # Zapewnienie, że jest tylko jeden rekord (singleton)
+    # Singleton pattern
     def has_add_permission(self, request):
         return UstawieniaSystemowe.objects.count() == 0
 
