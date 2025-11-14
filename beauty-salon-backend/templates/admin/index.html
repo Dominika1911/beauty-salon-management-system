@@ -1,0 +1,169 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+    /* Proste style dla dashboardu */
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+    .dashboard-card {
+        padding: 20px;
+        background: var(--body-bg);
+        border: 1px solid var(--hairline-color);
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .dashboard-card h2 {
+        font-size: 1.5rem;
+        margin-top: 0;
+        border-bottom: 2px solid var(--primary);
+        padding-bottom: 10px;
+    }
+    .stat-list {
+        list-style: none;
+        padding: 0;
+    }
+    .stat-list li {
+        font-size: 1.1rem;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--hairline-color);
+        display: flex;
+        justify-content: space-between;
+    }
+    .stat-list li:last-child {
+        border-bottom: none;
+    }
+    .stat-list strong {
+        font-weight: 600;
+        color: var(--header-color);
+    }
+    .stat-value {
+        font-weight: 700;
+        font-size: 1.2rem;
+        color: var(--primary);
+    }
+    .upcoming-visit {
+        font-size: 0.9rem;
+        padding: 5px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+    <div class="dashboard-grid">
+
+        {% if today_stats %}
+        <div class="dashboard-card">
+            <h2>Statystyki na dziś</h2>
+            <ul class="stat-list">
+                <li><span>Wszystkie wizyty:</span> <strong class="stat-value">{{ today_stats.total }}</strong></li>
+                <li><span>Potwierdzone:</span> <strong>{{ today_stats.confirmed }}</strong></li>
+                <li><span>Zrealizowane:</span> <strong>{{ today_stats.completed }}</strong></li>
+                <li><span>Anulowane:</span> <strong>{{ today_stats.cancelled }}</strong></li>
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if month_stats %}
+        <div class="dashboard-card">
+            <h2>Statystyki (Miesiąc)</h2>
+            <ul class="stat-list">
+                <li><span>Wizyty w tym miesiącu:</span> <strong class="stat-value">{{ month_stats.total }}</strong></li>
+                <li><span>Przychód (miesiąc):</span> <strong class="stat-value">{{ month_stats.revenue|default:"0.00" }} PLN</strong></li>
+            </ul>
+        </div>
+        {% endif %}
+
+        <div class="dashboard-card">
+            <h2>System</h2>
+            <ul class="stat-list">
+                <li><span>Aktywni Klienci:</span> <strong class="stat-value">{{ active_clients }}</strong></li>
+                <li><span>Aktywni Pracownicy:</span> <strong class="stat-value">{{ active_employees }}</strong></li>
+                <li><span>Aktywne Usługi:</span> <strong class="stat-value">{{ active_services }}</strong></li>
+            </ul>
+        </div>
+
+        {% if upcoming_appointments %}
+        <div class="dashboard-card">
+            <h2>Nadchodzące wizyty (dziś/jutro)</h2>
+            <ul class="stat-list">
+                {% for wizyta in upcoming_appointments %}
+                <li>
+                    <span>
+                        <strong>{{ wizyta.klient.get_full_name }}</strong> ({{ wizyta.usluga.nazwa }})<br>
+                        <small class="upcoming-visit">{{ wizyta.termin_start|time:"H:i" }} u {{ wizyta.pracownik.imie }}</small>
+                    </span>
+                    <a href="{% url 'admin:beauty_salon_wizyta_change' wizyta.id %}">Zobacz</a>
+                </li>
+                {% empty %}
+                <li>Brak nadchodzących wizyt.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if pending_leaves %}
+        <div class="dashboard-card">
+            <h2>Urlopy do akceptacji</h2>
+            <ul class="stat-list">
+                {% for urlop in pending_leaves %}
+                <li>
+                    <span>
+                        <strong>{{ urlop.pracownik.get_full_name }}</strong><br>
+                        <small>{{ urlop.data_od }} - {{ urlop.data_do }}</small>
+                    </span>
+                    <a href="{% url 'admin:beauty_salon_urlop_change' urlop.id %}">Zatwierdź</a>
+                </li>
+                {% empty %}
+                <li>Brak wniosków o urlop.</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% if app_list %}
+        {% for app in app_list %}
+            <div class="app-{{ app.app_label }} module card">
+                <table>
+                    <caption>
+                        <a href="{{ app.app_url }}" class="section" title="{% blocktrans with name=app.name %}Models in the {{ name }} application{% endblocktrans %}">{{ app.name }}</a>
+                    </caption>
+                    {% for model in app.models %}
+                        <tr class="model-{{ model.object_name|lower }}">
+                        {% if model.admin_url %}
+                            <th scope="row"><a href="{{ model.admin_url }}">{{ model.name }}</a></th>
+                        {% else %}
+                            <th scope="row">{{ model.name }}</th>
+                        {% endif %}
+
+                        {% if model.add_url %}
+                            <td><a href="{{ model.add_url }}" class="addlink">{% trans 'Add' %}</a></td>
+                        {% else %}
+                            <td>&nbsp;</td>
+                        {% endif %}
+
+                        {% if model.admin_url %}
+                            {% if model.view_only %}
+                                <td><a href="{{ model.admin_url }}" class="viewlink">{% trans 'View' %}</a></td>
+                            {% else %}
+                                <td><a href="{{ model.admin_url }}" class="changelink">{% trans 'Change' %}</a></td>
+                            {% endif %}
+                        {% else %}
+                            <td>&nbsp;</td>
+                        {% endif %}
+                        </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>{% trans "You don't have permission to view or edit anything." %}</p>
+    {% endif %}
+</div>
+{% endblock %}

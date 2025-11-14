@@ -1,16 +1,17 @@
 import uuid
 from decimal import Decimal
-from datetime import timedelta
+from datetime import timedelta, datetime
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from django.contrib.postgres.fields import DateTimeRangeField
-from django.db.models import JSONField, F, Q
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators # RangeOperators dodano tutaj
+from django.db.models import JSONField, F, Q, Count, Sum
 from django.db.models.constraints import CheckConstraint
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from psycopg2.extras import DateTimeTZRange
+from django.contrib.postgres.constraints import ExclusionConstraint
 
 
 # ============================================================================
@@ -51,6 +52,12 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('role', 'manager')
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
         return self.create_user(email, password, **extra_fields)
 
 
@@ -125,13 +132,34 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimestampedModel):
     def is_salon_client(self):
         return self.role == 'client'
 
+    def can_manage_services(self):
+        return self.is_manager()
+
+    def can_manage_employees(self):
+        return self.is_manager()
+
+    def can_view_reports(self):
+        return self.is_manager() or self.is_salon_employee()
+
+    def can_manage_own_schedule(self):
+        return self.is_salon_employee()
+
+    def has_permission_for_appointment(self, wizyta):
+        if self.is_manager():
+            return True
+        if self.is_salon_employee() and hasattr(self, 'pracownik'):
+            return wizyta.pracownik == self.pracownik
+        if self.is_salon_client() and hasattr(self, 'klient'):
+            return wizyta.klient == self.klient
+        return False
+
 
 # ============================================================================
 # SERVICES
 # ============================================================================
 
 class Usluga(UUIDTimestampedModel):
-    """Service entity from PDF metody_klasy.pdf."""
+    """Service entity from thesis diagrams."""
     nazwa = models.CharField(_('nazwa'), max_length=200, db_index=True)
     kategoria = models.CharField(_('kategoria'), max_length=100, db_index=True)
     opis = models.TextField(_('opis'), blank=True)
@@ -145,7 +173,7 @@ class Usluga(UUIDTimestampedModel):
     zdjecie_url = models.CharField(_('zdjęcie URL'), max_length=500, blank=True)
     publikowana = models.BooleanField(_('publikowana'), default=True, db_index=True)
 
-    promocja = JSONField(_('promocja'), null=True, blank=True)
+    promocja = models.JSONField(_('promocja'), null=True, blank=True)
 
     liczba_rezerwacji = models.PositiveIntegerField(
         _('liczba rezerwacji'),
@@ -166,13 +194,27 @@ class Usluga(UUIDTimestampedModel):
     def __str__(self):
         return self.nazwa
 
+    def clean(self):
+        if self.cena < 0:
+            raise ValidationError({'cena': _('Cena nie może być ujemna')})
+        if self.czas_trwania.total_seconds() <= 0:
+            raise ValidationError({'czas_trwania': _('Czas trwania musi być większy niż 0')})
+
+    def get_price_with_promotion(self):
+        if not self.promocja or not self.promocja.get('active', False):
+            return self.cena
+
+        discount_percent = self.promocja.get('discount_percent', 0)
+        discounted_price = self.cena * (1 - Decimal(str(discount_percent)) / 100)
+        return discounted_price.quantize(Decimal('0.01'))
+
 
 # ============================================================================
 # EMPLOYEES
 # ============================================================================
 
 class Pracownik(UUIDTimestampedModel):
-    """Employee entity from PDF metody_klasy.pdf."""
+    """Employee entity from thesis diagrams."""
     nr = models.CharField(_('numer pracownika'), max_length=20, unique=True, db_index=True)
     imie = models.CharField(_('imię'), max_length=100)
     nazwisko = models.CharField(_('nazwisko'), max_length=100)
@@ -221,13 +263,16 @@ class Pracownik(UUIDTimestampedModel):
     def get_full_name(self):
         return f"{self.imie} {self.nazwisko}"
 
+    def has_competence_for_service(self, usluga):
+        return self.kompetencje.filter(id=usluga.id).exists()
+
 
 # ============================================================================
 # SCHEDULE (Grafik and Urlop)
 # ============================================================================
 
 class Urlop(UUIDTimestampedModel):
-    """Time-off model - demonstracja approval workflow dla pracy."""
+    """Time-off model (Urlop) - for workflow and reports."""
     STATUS_CHOICES = [
         ('oczekujacy', _('Oczekujący')),
         ('zatwierdzony', _('Zatwierdzony')),
@@ -277,10 +322,10 @@ class Urlop(UUIDTimestampedModel):
         return f"Urlop {self.pracownik} ({self.data_od} do {self.data_do})"
 
     def clean(self):
-        """Walidacja nakładania się urlopów i dat."""
         if self.data_do < self.data_od:
             raise ValidationError({'data_do': 'Data końca musi być późniejsza niż data początku.'})
 
+        # Walidacja nakładania się urlopów (dla oczekujących/zatwierdzonych)
         overlapping = Urlop.objects.filter(
             pracownik=self.pracownik,
             status__in=['oczekujacy', 'zatwierdzony'],
@@ -297,7 +342,7 @@ class Urlop(UUIDTimestampedModel):
 
 
 class Grafik(UUIDTimestampedModel):
-    """Schedule entity from PDF metody_klasy.pdf."""
+    """Schedule entity from thesis diagrams."""
     pracownik = models.ForeignKey(
         Pracownik,
         on_delete=models.CASCADE,
@@ -305,15 +350,20 @@ class Grafik(UUIDTimestampedModel):
         verbose_name=_('pracownik')
     )
 
-    okresy_dostepnosci = JSONField(
+    okresy_dostepnosci = models.JSONField(
         _('okresy dostępności'),
         default=list,
         help_text=_('Format: [{"day": "Monday", "start": "09:00", "end": "17:00"}, ...]')
     )
-    przerwy = JSONField(
+    przerwy = models.JSONField(
         _('przerwy'),
         default=list,
         help_text=_('Format: [{"start": "12:00", "end": "12:30"}, ...]')
+    )
+    urlopy = models.JSONField(
+        _('urlopy'),
+        default=list,
+        help_text=_('Format: [{"start": "2025-01-01", "end": "2025-01-07", "reason": "..."}, ...]')
     )
 
     STATUS_CHOICES = [
@@ -337,6 +387,29 @@ class Grafik(UUIDTimestampedModel):
     def __str__(self):
         return f"Grafik - {self.pracownik} ({self.get_status_display()})"
 
+    def clean(self):
+        """Validate schedule data."""
+        valid_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        for okres in self.okresy_dostepnosci:
+            if okres.get('day') not in valid_days:
+                raise ValidationError({'okresy_dostepnosci': _('Nieprawidłowy dzień tygodnia')})
+            try:
+                datetime.strptime(okres.get('start', ''), '%H:%M')
+                datetime.strptime(okres.get('end', ''), '%H:%M')
+            except ValueError:
+                raise ValidationError({'okresy_dostepnosci': _('Nieprawidłowy format czasu (użyj HH:MM)')})
+
+    def is_available_on_date(self, date):
+        """Check if employee is available on given date (checks Urlop model)."""
+        has_pending_or_approved_leave = Urlop.objects.filter(
+            pracownik=self.pracownik,
+            status__in=['oczekujacy', 'zatwierdzony'],
+            data_od__lte=date,
+            data_do__gte=date
+        ).exists()
+
+        return not has_pending_or_approved_leave
+
 
 # ============================================================================
 # CLIENTS
@@ -350,11 +423,14 @@ class ActiveClientsManager(models.Manager):
 
 
 class Klient(UUIDTimestampedModel):
-    """Client entity from PDF metody_klasy.pdf."""
+    """Client entity from thesis diagrams."""
     imie = models.CharField(_('imię'), max_length=100)
     nazwisko = models.CharField(_('nazwisko'), max_length=100)
     email = models.EmailField(_('email'), db_index=True)
     telefon = models.CharField(_('telefon'), max_length=20, blank=True)
+
+    # Numer klienta (CLI-0001)
+    nr = models.CharField(_('numer klienta'), max_length=20, unique=True, db_index=True)
 
     user = models.OneToOneField(
         User,
@@ -408,20 +484,73 @@ class Klient(UUIDTimestampedModel):
     def __str__(self):
         if self.deleted_at:
             return f"[USUNIĘTY] {self.id}"
-        return f"{self.imie} {self.nazwisko}"
+        return f"{self.nr} - {self.imie} {self.nazwisko}"
 
     def get_full_name(self):
         if self.deleted_at:
             return "[USUNIĘTY]"
         return f"{self.imie} {self.nazwisko}"
 
+    def soft_delete(self):
+        self.deleted_at = timezone.now()
+        self.imie = "USUNIĘTY"
+        self.nazwisko = "USUNIĘTY"
+        self.email = f"deleted_{self.id}@deleted.local"
+        self.telefon = ""
+        self.notatki_wewnetrzne = ""
+        self.save()
+
+    def save(self, *args, **kwargs):
+        # Automatyczne generowanie numeru klienta (jeśli brakuje)
+        if not self.nr:
+            self.nr = generate_client_number()
+
+        super().save(*args, **kwargs)
+
 
 # ============================================================================
-# RESERVATIONS (Wizyta - Logika walidacji w aplikacji)
+# RESERVATIONS
 # ============================================================================
+
+class WizytaQuerySet(models.QuerySet):
+    def active(self):
+        return self.filter(status__in=['oczekujaca', 'potwierdzona', 'w_trakcie'])
+
+    def upcoming(self):
+        return self.active().filter(termin_start__gte=timezone.now())
+
+    def past(self):
+        return self.filter(termin_start__lt=timezone.now())
+
+    def for_date_range(self, start_date, end_date):
+        return self.filter(
+            termin_start__date__gte=start_date,
+            termin_start__date__lte=end_date
+        )
+
+    def revenue_summary(self):
+        return self.aggregate(
+            total_visits=Count('id'),
+            total_revenue=Sum('platnosci__kwota', filter=Q(platnosci__status='zaplacona'))
+        )
+
+
+class WizytaManager(models.Manager):
+    def get_queryset(self):
+        return WizytaQuerySet(self.model, using=self._db)
+
+    def active(self):
+        return self.get_queryset().active()
+
+    def upcoming(self):
+        return self.get_queryset().upcoming()
+
+    def for_date_range(self, start_date, end_date):
+        return self.get_queryset().for_date_range(start_date, end_date)
+
 
 class Wizyta(UUIDTimestampedModel):
-    """Reservation/Visit entity from PDF metody_klasy.pdf."""
+    """Reservation/Visit entity from thesis diagrams."""
     STATUS_CHOICES = [
         ('oczekujaca', _('Oczekująca')),
         ('potwierdzona', _('Potwierdzona')),
@@ -475,6 +604,8 @@ class Wizyta(UUIDTimestampedModel):
         _('data wysłania przypomnienia'), null=True, blank=True
     )
 
+    objects = WizytaManager()
+
     class Meta:
         db_table = 'wizyty'
         verbose_name = _('wizyta')
@@ -488,9 +619,18 @@ class Wizyta(UUIDTimestampedModel):
             models.Index(fields=['kanal_rezerwacji']),
         ]
         constraints = [
-            CheckConstraint(
+            models.CheckConstraint(
                 check=Q(termin_koniec__gt=F('termin_start')),
                 name='wizyty_end_after_start'
+            ),
+            # DODANO: ExclusionConstraint dla twardego zabezpieczenia bazy danych
+            ExclusionConstraint(
+                name='no_employee_overlap',
+                expressions=[
+                    ('pracownik', RangeOperators.EQUAL),
+                    ('timespan', RangeOperators.OVERLAPS),
+                ],
+                condition=Q(status__in=['oczekujaca', 'potwierdzona', 'w_trakcie']),
             ),
         ]
 
@@ -498,14 +638,13 @@ class Wizyta(UUIDTimestampedModel):
         return f"{self.klient.get_full_name()} - {self.usluga.nazwa} ({self.termin_start.strftime('%Y-%m-%d %H:%M')})"
 
     def clean(self):
-        """Walidacja na poziomie aplikacji: Zapobiega nakładaniu się wizyt."""
         from django.core.exceptions import ValidationError
 
         # 1. Walidacja kolejności dat
         if self.termin_koniec <= self.termin_start:
             raise ValidationError({'termin_koniec': _('Termin końca musi być po terminie startu')})
 
-        # 2. Walidacja nakładania się wizyt (Logika GIST w Pythonie)
+        # 2. Walidacja nakładania się wizyt (Pracownik - logika Pythona)
         if self.pracownik_id and self.status in ['oczekujaca', 'potwierdzona', 'w_trakcie']:
             overlapping = Wizyta.objects.filter(
                 pracownik=self.pracownik,
@@ -515,10 +654,39 @@ class Wizyta(UUIDTimestampedModel):
             ).exclude(pk=self.pk)
 
             if overlapping.exists():
-                raise ValidationError('Pracownik jest zajęty w podanym terminie. Występuje nakładanie się wizyt.')
+                raise ValidationError(
+                    {'pracownik': _('Pracownik jest zajęty w podanym terminie. Występuje nakładanie się wizyt.')})
+
+        # 3. Walidacja kompetencji pracownika
+        if self.pracownik and self.usluga:
+            if not self.pracownik.has_competence_for_service(self.usluga):
+                raise ValidationError({'pracownik': _('Pracownik nie ma kompetencji do wykonania tej usługi')})
+
+        # 4. Walidacja terminu w przyszłości
+        if not self.pk and self.termin_start <= timezone.now():
+            raise ValidationError({'termin_start': _('Nie można rezerwować wizyt w przeszłości')})
+
+        # 5. Walidacja konfliktu klienta
+        if self.klient and self.status in ['oczekujaca', 'potwierdzona', 'w_trakcie']:
+            overlapping = Wizyta.objects.filter(
+                klient=self.klient,
+                status__in=['oczekujaca', 'potwierdzona', 'w_trakcie']
+            ).exclude(pk=self.pk)
+
+            for wizyta in overlapping:
+                if (self.termin_start < wizyta.termin_koniec and
+                        self.termin_koniec > wizyta.termin_start):
+                    raise ValidationError({'termin_start': _('Klient ma już wizytę w tym czasie')})
+
+        # 6. Walidacja długości usługi
+        expected_duration = self.termin_koniec - self.termin_start
+        if self.usluga and self.usluga.czas_trwania != expected_duration:
+            raise ValidationError(
+                {'termin_koniec': _(f'Czas trwania musi wynosić dokładnie {self.usluga.czas_trwania}')})
 
     def save(self, *args, **kwargs):
-        """Wymuszenie pełnej walidacji i synchronizacja pola timespan."""
+        from psycopg2.extras import DateTimeTZRange
+
         self.full_clean()
         self.timespan = DateTimeTZRange(
             self.termin_start,
@@ -526,6 +694,18 @@ class Wizyta(UUIDTimestampedModel):
             bounds='[)'
         )
         super().save(*args, **kwargs)
+
+    def can_be_cancelled(self):
+        if self.status in ['odwolana', 'no_show', 'zrealizowana']:
+            return False
+
+        settings = UstawieniaSystemowe.objects.first()
+        if settings and settings.polityka_zaliczek:
+            hours_before = settings.polityka_zaliczek.get('godziny_anulowania', 24)
+            cancellation_deadline = self.termin_start - timedelta(hours=hours_before)
+            return timezone.now() <= cancellation_deadline
+
+        return True
 
 
 # ============================================================================
@@ -536,8 +716,10 @@ class Notatka(UUIDTimestampedModel):
     wizyta = models.ForeignKey(Wizyta, on_delete=models.CASCADE, related_name='notatki', verbose_name=_('wizyta'))
     czas = models.DateTimeField(_('czas'), auto_now_add=True)
     tresc = models.TextField(_('treść'))
-    autor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='notatki',
-                              verbose_name=_('autor'))
+    autor = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='notatki',
+        verbose_name=_('autor')
+    )
     widoczna_dla_klienta = models.BooleanField(_('widoczna dla klienta'), default=False)
 
     class Meta:
@@ -688,8 +870,25 @@ class Faktura(UUIDTimestampedModel):
     def __str__(self):
         return f"Faktura {self.numer} - {self.kwota_brutto} PLN"
 
+    def clean(self):
+        if self.kwota_netto < 0:
+            raise ValidationError({'kwota_netto': _('Kwota netto nie może być ujemna')})
+
+        calculated_vat, calculated_brutto = calculate_vat(self.kwota_netto, self.stawka_vat)
+
+        if abs(self.kwota_vat - calculated_vat) > Decimal('0.02'):
+            raise ValidationError({'kwota_vat': _('Nieprawidłowa kwota VAT')})
+
+        if abs(self.kwota_brutto - calculated_brutto) > Decimal('0.02'):
+            raise ValidationError({'kwota_brutto': _('Nieprawidłowa kwota brutto')})
+
+
+# ============================================================================
+# NOTIFICATIONS
+# ============================================================================
 
 class Powiadomienie(UUIDTimestampedModel):
+    """Notification entity from thesis diagrams."""
     TYPE_CHOICES = [
         ('potwierdzenie', _('Potwierdzenie rezerwacji')),
         ('przypomnienie', _('Przypomnienie o wizycie')),
@@ -748,6 +947,7 @@ class Powiadomienie(UUIDTimestampedModel):
 
 
 class RaportPDF(UUIDTimestampedModel):
+    """PDF Report entity from thesis diagrams."""
     TYPE_CHOICES = [
         ('lista_wizyt', _('Lista wizyt')),
         ('lista_klientow', _('Lista klientów')),
@@ -766,7 +966,7 @@ class RaportPDF(UUIDTimestampedModel):
     data_od = models.DateField(_('data od'), null=True, blank=True)
     data_do = models.DateField(_('data do'), null=True, blank=True)
 
-    parametry = JSONField(
+    parametry = models.JSONField(
         _('parametry'), default=dict, blank=True, help_text=_('Additional report parameters')
     )
 
@@ -790,7 +990,12 @@ class RaportPDF(UUIDTimestampedModel):
         return f"{self.get_typ_display()} - {self.tytul} ({self.created_at.strftime('%Y-%m-%d')})"
 
 
+# ============================================================================
+# AUDIT LOG
+# ============================================================================
+
 class LogEntry(UUIDTimestampedModel):
+    """Audit log entity from thesis diagrams."""
     TYPE_CHOICES = [
         ('rezerwacja', _('Rezerwacja wizyty')),
         ('zmiana_statusu', _('Zmiana statusu wizyty')),
@@ -819,12 +1024,20 @@ class LogEntry(UUIDTimestampedModel):
     czas = models.DateTimeField(_('czas'), auto_now_add=True, db_index=True)
     typ = models.CharField(_('typ'), max_length=30, choices=TYPE_CHOICES, db_index=True)
     poziom = models.CharField(
-        _('poziom'), max_length=20, choices=LEVEL_CHOICES, default='info'
+        _('poziom'),
+        max_length=20,
+        choices=LEVEL_CHOICES,
+        default='info'
     )
     opis = models.TextField(_('opis'))
 
     uzytkownik = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='log_entries', verbose_name=_('użytkownik')
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='log_entries',
+        verbose_name=_('użytkownik')
     )
 
     adres_ip = models.GenericIPAddressField(_('adres IP'), null=True, blank=True)
@@ -833,7 +1046,7 @@ class LogEntry(UUIDTimestampedModel):
     entity_type = models.CharField(_('typ encji'), max_length=50, blank=True)
     entity_id = models.UUIDField(_('ID encji'), null=True, blank=True)
 
-    metadata = JSONField(_('metadane'), default=dict, blank=True)
+    metadata = models.JSONField(_('metadane'), default=dict, blank=True)
 
     class Meta:
         db_table = 'logi'
@@ -853,29 +1066,41 @@ class LogEntry(UUIDTimestampedModel):
         return f"{self.get_typ_display()} - {user_str} ({self.czas.strftime('%Y-%m-%d %H:%M')})"
 
 
+# ============================================================================
+# SYSTEM SETTINGS
+# ============================================================================
+
 class UstawieniaSystemowe(UUIDTimestampedModel):
+    """System settings singleton from thesis diagrams."""
     slot_minuty = models.PositiveIntegerField(
-        _('slot minuty'), default=30, validators=[MinValueValidator(5), MaxValueValidator(120)],
+        _('slot minuty'),
+        default=30,
+        validators=[MinValueValidator(5), MaxValueValidator(120)],
         help_text=_('Długość slotu czasowego (5-120 minut)')
     )
 
     bufor_minuty = models.PositiveIntegerField(
-        _('bufor minuty'), default=0, validators=[MaxValueValidator(60)],
+        _('bufor minuty'),
+        default=0,
+        validators=[MaxValueValidator(60)],
         help_text=_('Bufor między wizytami (0-60 minut)')
     )
 
-    polityka_zaliczek = JSONField(
-        _('polityka zaliczek'), default=dict,
+    polityka_zaliczek = models.JSONField(
+        _('polityka zaliczek'),
+        default=dict,
         help_text=_('Format: {"wymagana": true, "procent": 20, "godziny_anulowania": 24}')
     )
 
-    harmonogram_powiadomien = JSONField(
-        _('harmonogram powiadomień'), default=dict,
+    harmonogram_powiadomien = models.JSONField(
+        _('harmonogram powiadomień'),
+        default=dict,
         help_text=_('Format: {"potwierdzenie": "natychmiast", "przypomnienie_godziny": 24}')
     )
 
-    godziny_otwarcia = JSONField(
-        _('godziny otwarcia'), default=dict,
+    godziny_otwarcia = models.JSONField(
+        _('godziny otwarcia'),
+        default=dict,
         help_text=_('Format: {"poniedzialek": {"start": "09:00", "end": "18:00"}, ...}')
     )
 
@@ -885,14 +1110,20 @@ class UstawieniaSystemowe(UUIDTimestampedModel):
     email_kontaktowy = models.EmailField(_('email kontaktowy'), blank=True)
 
     stawka_vat_domyslna = models.DecimalField(
-        _('stawka VAT domyślna %'), max_digits=5, decimal_places=2, default=Decimal('23.00')
+        _('stawka VAT domyślna %'),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('23.00')
     )
 
     tryb_konserwacji = models.BooleanField(_('tryb konserwacji'), default=False)
     komunikat_konserwacji = models.TextField(_('komunikat konserwacji'), blank=True)
 
     ostatnia_modyfikacja_przez = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, related_name='modyfikacje_ustawien',
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='modyfikacje_ustawien',
         verbose_name=_('ostatnia modyfikacja przez')
     )
 
@@ -905,17 +1136,26 @@ class UstawieniaSystemowe(UUIDTimestampedModel):
         return f"{self.nazwa_salonu} - Ustawienia (slot: {self.slot_minuty}min)"
 
     def save(self, *args, **kwargs):
-        # Enforce singleton pattern
+        """Enforce singleton pattern."""
         if not self.pk:
             existing = UstawieniaSystemowe.objects.first()
             if existing:
                 self.pk = existing.pk
+                if not self.created_at:
+                    self.created_at = existing.created_at
+
         super().save(*args, **kwargs)
+
         if self.pk:
             UstawieniaSystemowe.objects.exclude(pk=self.pk).delete()
 
 
+# ============================================================================
+# STATISTICS SNAPSHOT
+# ============================================================================
+
 class StatystykaSnapshot(UUIDTimestampedModel):
+    """Statistics snapshot for thesis: time-series analytics."""
     PERIOD_CHOICES = [
         ('dzienny', _('Dzienny')),
         ('tygodniowy', _('Tygodniowy')),
@@ -932,20 +1172,29 @@ class StatystykaSnapshot(UUIDTimestampedModel):
     liczba_noshow = models.PositiveIntegerField(_('liczba no-show'), default=0)
 
     przychod_total = models.DecimalField(
-        _('przychód total'), max_digits=12, decimal_places=2, default=Decimal('0.00')
+        _('przychód total'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00')
     )
     przychod_zaliczek = models.DecimalField(
-        _('przychód z zaliczek'), max_digits=12, decimal_places=2, default=Decimal('0.00')
+        _('przychód z zaliczek'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00')
     )
 
     liczba_nowych_klientow = models.PositiveIntegerField(_('liczba nowych klientów'), default=0)
     liczba_powracajacych_klientow = models.PositiveIntegerField(_('liczba powracających klientów'), default=0)
 
     srednie_oblozenie_pracownikow = models.DecimalField(
-        _('średnie obłożenie pracowników %'), max_digits=5, decimal_places=2, default=Decimal('0.00')
+        _('średnie obłożenie pracowników %'),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00')
     )
 
-    dodatkowe_metryki = JSONField(_('dodatkowe metryki'), default=dict, blank=True)
+    dodatkowe_metryki = models.JSONField(_('dodatkowe metryki'), default=dict, blank=True)
 
     class Meta:
         db_table = 'statystyki_snapshots'
@@ -978,6 +1227,19 @@ def generate_employee_number():
         return 'EMP-0001'
 
 
+def generate_client_number():
+    """Generate next client number (CLI-0001, CLI-0002, etc.)."""
+    last_cli = Klient.objects.order_by('-nr').first()
+    if not last_cli:
+        return 'CLI-0001'
+
+    try:
+        last_num = int(last_cli.nr.split('-')[1])
+        return f'CLI-{last_num + 1:04d}'
+    except (IndexError, ValueError):
+        return 'CLI-0001'
+
+
 def generate_invoice_number(date=None):
     """Generate invoice number (FV/YEAR/MONTH/SEQUENCE)."""
     if date is None:
@@ -1003,7 +1265,7 @@ def generate_invoice_number(date=None):
 
 def calculate_vat(kwota_netto, stawka_vat):
     """Calculate VAT amount from net amount and rate with validation."""
-    from decimal import Decimal, InvalidOperation
+    from decimal import InvalidOperation
 
     try:
         if not isinstance(kwota_netto, Decimal):
@@ -1023,15 +1285,21 @@ def calculate_vat(kwota_netto, stawka_vat):
     return vat_amount, gross_amount
 
 
-def get_available_time_slots(pracownik, data, _usluga):
-    """Calculate available time slots for employee on given date."""
+def get_available_time_slots(pracownik, data, usluga):
+    """
+    Calculate available time slots for employee on given date.
 
+    Args:
+        pracownik: Pracownik instance
+        data: date object
+        usluga: Usluga instance
+
+    Returns:
+        List of available datetime slots
+    """
     settings = UstawieniaSystemowe.objects.first()
     if not settings:
-        return []
-
-    _slot_duration = timedelta(minutes=settings.slot_minuty)
-    _buffer_duration = timedelta(minutes=settings.bufor_minuty)
+        raise ValueError("Brak ustawień systemowych")
 
     grafik = Grafik.objects.filter(
         pracownik=pracownik,
@@ -1041,12 +1309,171 @@ def get_available_time_slots(pracownik, data, _usluga):
     if not grafik:
         return []
 
-    _existing = Wizyta.objects.filter(
+    if not grafik.is_available_on_date(data):
+        return []
+
+    weekday_map = {
+        0: 'Monday', 1: 'Tuesday', 2: 'Wednesday',
+        3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'
+    }
+    day_name = weekday_map[data.weekday()]
+
+    day_schedule = None
+    for okres in grafik.okresy_dostepnosci:
+        if okres.get('day') == day_name:
+            day_schedule = okres
+            break
+
+    if not day_schedule:
+        return []
+
+    start_time = datetime.strptime(day_schedule['start'], '%H:%M').time()
+    end_time = datetime.strptime(day_schedule['end'], '%H:%M').time()
+
+    work_start = timezone.make_aware(datetime.combine(data, start_time))
+    work_end = timezone.make_aware(datetime.combine(data, end_time))
+
+    slot_duration = timedelta(minutes=settings.slot_minuty)
+    buffer_duration = timedelta(minutes=settings.bufor_minuty)
+    service_duration = usluga.czas_trwania
+
+    all_slots = []
+    current_slot = work_start
+
+    while current_slot + service_duration <= work_end:
+        all_slots.append(current_slot)
+        current_slot += slot_duration
+
+    existing_appointments = Wizyta.objects.filter(
         pracownik=pracownik,
         termin_start__date=data,
         status__in=['oczekujaca', 'potwierdzona', 'w_trakcie']
-    ).order_by('termin_start')
+    ).values_list('termin_start', 'termin_koniec')
+
+    breaks = []
+    for przerwa in grafik.przerwy:
+        break_start = datetime.strptime(przerwa['start'], '%H:%M').time()
+        break_end = datetime.strptime(przerwa['end'], '%H:%M').time()
+        breaks.append((
+            timezone.make_aware(datetime.combine(data, break_start)),
+            timezone.make_aware(datetime.combine(data, break_end))
+        ))
 
     available_slots = []
+    for slot in all_slots:
+        slot_end = slot + service_duration
+        is_available = True
+
+        for apt_start, apt_end in existing_appointments:
+            apt_end_with_buffer = apt_end + buffer_duration
+            if slot < apt_end_with_buffer and slot_end > apt_start:
+                is_available = False
+                break
+
+        if is_available:
+            for break_start, break_end in breaks:
+                if slot < break_end and slot_end > break_start:
+                    is_available = False
+                    break
+
+        if is_available:
+            available_slots.append(slot)
 
     return available_slots
+
+
+def calculate_employee_workload(pracownik, data_od, data_do):
+    """
+    Oblicza obłożenie pracownika (dla raportu PDF).
+    Returns: {'available_hours': X, 'booked_hours': Y, 'workload_percent': Z}
+    """
+    available_minutes = 0
+    current_date = data_od
+
+    weekday_map = {
+        0: 'Monday', 1: 'Tuesday', 2: 'Wednesday',
+        3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'
+    }
+
+    grafik = pracownik.grafiki.filter(status='aktywny').first()
+
+    while current_date <= data_do:
+        if grafik and grafik.is_available_on_date(current_date):
+            day_name = weekday_map[current_date.weekday()]
+
+            for okres in grafik.okresy_dostepnosci:
+                if okres.get('day') == day_name:
+                    start = datetime.strptime(okres['start'], '%H:%M')
+                    end = datetime.strptime(okres['end'], '%H:%M')
+                    available_minutes += (end - start).total_seconds() // 60
+
+                    for przerwa in grafik.przerwy:
+                        break_start = datetime.strptime(przerwa['start'], '%H:%M')
+                        break_end = datetime.strptime(przerwa['end'], '%H:%M')
+                        available_minutes -= (break_end - break_start).total_seconds() // 60
+                    break
+
+        current_date += timedelta(days=1)
+
+    booked_appointments = Wizyta.objects.filter(
+        pracownik=pracownik,
+        termin_start__date__gte=data_od,
+        termin_start__date__lte=data_do,
+        status__in=['potwierdzona', 'w_trakcie', 'zrealizowana']
+    )
+
+    booked_minutes = sum(
+        (apt.termin_koniec - apt.termin_start).total_seconds() // 60
+        for apt in booked_appointments
+    )
+
+    available_hours = available_minutes / 60
+    booked_hours = booked_minutes / 60
+    workload_percent = (booked_hours / available_hours * 100) if available_hours > 0 else 0
+
+    return {
+        'available_hours': round(available_hours, 2),
+        'booked_hours': round(booked_hours, 2),
+        'workload_percent': round(workload_percent, 2)
+    }
+
+
+def get_top_services(limit=5, data_od=None, data_do=None):
+    """Get most popular services (for PDF report)."""
+    filters = Q(status__in=['potwierdzona', 'w_trakcie', 'zrealizowana'])
+
+    if data_od:
+        filters &= Q(termin_start__date__gte=data_od)
+    if data_do:
+        filters &= Q(termin_start__date__lte=data_do)
+
+    wizyty = Wizyta.objects.filter(filters)
+
+    return Usluga.objects.filter(
+        wizyty__in=wizyty
+    ).annotate(
+        total_bookings=Count('wizyty')
+    ).order_by('-total_bookings')[:limit]
+
+
+def get_cancellation_stats(data_od, data_do):
+    """Get cancellation and no-show statistics (for PDF report)."""
+    wizyty = Wizyta.objects.filter(
+        termin_start__date__gte=data_od,
+        termin_start__date__lte=data_do
+    )
+
+    total = wizyty.count()
+    cancelled = wizyty.filter(status='odwolana').count()
+    no_show = wizyty.filter(status='no_show').count()
+    completed = wizyty.filter(status='zrealizowana').count()
+
+    return {
+        'total': total,
+        'cancelled': cancelled,
+        'no_show': no_show,
+        'completed': completed,
+        'cancelled_percent': round((cancelled / total * 100) if total > 0 else 0, 2),
+        'no_show_percent': round((no_show / total * 100) if total > 0 else 0, 2),
+        'completion_rate': round((completed / total * 100) if total > 0 else 0, 2)
+    }
