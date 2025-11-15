@@ -58,11 +58,8 @@ coverage/
 htmlcov/
 
 # --- Database (Docker) ---
-database/.env
-!database/.env.example
-database/pgdata/
-database/data/
-database/postgres-data/
+database/
+
 
 # Frontend env (lokalne)
 beauty-salon-frontend/.env
