@@ -2,9 +2,10 @@
 Beauty Salon Management System - Django Admin
 Autor: Dominika Jedynak, nr albumu: 92721
 
-Wersja: OSTATECZNA - Profesjonalny panel administracyjny.
-FINALNA POPRAWKA: Naprawiono błąd AttributeError przez przeniesienie akcji
-do definicji klas Admin oraz poprawiono błędy składni.
+Wersja: OSTATECZNA - Profesjonalny panel administracyjny, ZAKTUALIZOWANY:
+1. Poprawne importy helperów z utils.py.
+2. Usunięto pole 'urlopy' z GrafikAdmin.
+3. Zastąpiono pole 'czas' polem 'created_at' w NotatkaAdmin i NotatkaInline.
 """
 
 import csv
@@ -22,19 +23,24 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
+# ============================================================================
+# 1. POPRAWIONE IMPORTY PO REFAKTORYZACJI
+# ============================================================================
 from .models import (
     User, Usluga, Pracownik, Grafik, Urlop, Klient,
     Wizyta, Notatka, Material, Platnosc, Faktura,
     Powiadomienie, RaportPDF, LogEntry, UstawieniaSystemowe,
-    StatystykaSnapshot, generate_invoice_number, calculate_vat
+    StatystykaSnapshot
 )
+# generate_invoice_number i calculate_vat zostały przeniesione do utils.py
+from .utils import generate_invoice_number, calculate_vat
 
 if TYPE_CHECKING:
     from .models import User as UserModel
 
 
 # ============================================================================
-# DEFINICJE AKCJI (Przeniesione na górę dla czytelności)
+# DEFINICJE AKCJI
 # ============================================================================
 
 def export_to_csv(modeladmin, request, queryset: QuerySet):
@@ -85,7 +91,7 @@ send_reminder_notifications.short_description = 'Wyślij przypomnienia'
 def generate_invoices(modeladmin, request, queryset: QuerySet):
     """Generuj faktury dla wybranych wizyt."""
     count = 0
-    ustawienia = UstawieniaSystemowe.objects.first()
+    ustawienia = UstawieniaSystemowe.load()
     stawka_vat = ustawienia.stawka_vat_domyslna if ustawienia else Decimal('23.00')
 
     for wizyta in queryset.filter(status='zrealizowana'):
@@ -160,11 +166,12 @@ class GrafikInline(admin.TabularInline):
     can_delete = False
 
 
+# 3a. POPRAWKA NOTATKA INLINE: czas -> created_at
 class NotatkaInline(admin.TabularInline):
     model = Notatka
     extra = 0
-    fields = ['tresc', 'autor', 'widoczna_dla_klienta', 'czas']
-    readonly_fields = ['czas', 'autor']
+    fields = ['tresc', 'autor', 'widoczna_dla_klienta', 'created_at']
+    readonly_fields = ['created_at', 'autor']
     show_change_link = True
     raw_id_fields = ['autor']
 
@@ -408,8 +415,9 @@ class GrafikAdmin(admin.ModelAdmin):
         (_('Pracownik'), {
             'fields': ('pracownik', 'status'),
         }),
+        # 2. POPRAWKA GRAFIK: Usunięcie nieistniejącego pola 'urlopy'
         (_('Harmonogram'), {
-            'fields': ('okresy_dostepnosci', 'przerwy', 'urlopy'),
+            'fields': ('okresy_dostepnosci', 'przerwy'),
         }),
         (_('Timestamps'), {
             'fields': ('created_at', 'updated_at'),
@@ -477,7 +485,7 @@ class KlientAdmin(admin.ModelAdmin):
     ordering = ['nazwisko', 'imie']
     readonly_fields = ['liczba_wizyt', 'laczna_wydana_kwota', 'deleted_at']
     raw_id_fields = ['user']
-    actions = [export_to_csv]  # ZMIANA: Przeniesiono akcję
+    actions = [export_to_csv]
     fieldsets = (
         (_('Dane osobowe'), {
             'fields': ('nr', 'imie', 'nazwisko', 'email', 'telefon', 'user'),
@@ -526,7 +534,6 @@ class WizytaAdmin(admin.ModelAdmin):
     readonly_fields = ['timespan', 'data_anulowania']
     inlines = [NotatkaInline, PlatnoscInline]
     raw_id_fields = ['klient', 'pracownik', 'usluga', 'anulowana_przez']
-    # ZMIANA: Przeniesiono akcje
     actions = ['potwierdz_wizyty', 'anuluj_wizyty', 'oznacz_jako_no_show',
                send_reminder_notifications, generate_invoices, export_to_csv]
     fieldsets = (
@@ -602,7 +609,7 @@ class PlatnoscAdmin(admin.ModelAdmin):
     date_hierarchy = 'data_platnosci'
     readonly_fields = ['created_at']
     raw_id_fields = ['wizyta']
-    actions = ['oznacz_jako_zaplacone', export_to_csv]  # ZMIANA: Przeniesiono akcje
+    actions = ['oznacz_jako_zaplacone', export_to_csv]
     fieldsets = (
         (_('Płatność'), {
             'fields': ('wizyta', 'kwota', 'typ', 'status'),
@@ -729,7 +736,7 @@ class RaportPDFAdmin(admin.ModelAdmin):
     id_short.short_description = 'ID'
 
     def rozmiar_display(self, obj):
-        """NAPRAWIONO: Poprawiono błąd składni i format_html."""
+        """Poprawiono błąd składni i format_html."""
         if not obj.rozmiar_pliku:
             return format_html("{}", '-')
         if obj.rozmiar_pliku < 1024:
@@ -806,7 +813,7 @@ class UstawieniaSystemoweAdmin(admin.ModelAdmin):
             'fields': ('polityka_zaliczek', 'harmonogram_powiadomien'),
         }),
         (_('Finansowe'), {
-            'fields': ('stawka_vat_domyslna',),
+            'fields': ('stawka_vat_domyślna',),
         }),
         (_('Konserwacja'), {
             'fields': ('tryb_konserwacji', 'komunikat_konserwacji'),
@@ -918,13 +925,19 @@ class MaterialAdmin(admin.ModelAdmin):
 
 @admin.register(Notatka)
 class NotatkaAdmin(admin.ModelAdmin):
-    list_display = ['id_short', 'wizyta_link', 'autor', 'czas',
+    list_display = ['id_short', 'wizyta_link', 'autor',
+                    # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+                    'created_at',
                     'widoczna_dla_klienta', 'tresc_short']
-    list_filter = ['widoczna_dla_klienta', 'czas']
+    # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+    list_filter = ['widoczna_dla_klienta', 'created_at']
     search_fields = ['tresc', 'wizyta__klient__imie', 'wizyta__klient__nazwisko', 'autor__email']
-    ordering = ['-czas']
-    date_hierarchy = 'czas'
-    readonly_fields = ['czas', 'autor']
+    # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+    ordering = ['-created_at']
+    # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+    date_hierarchy = 'created_at'
+    # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+    readonly_fields = ['created_at', 'autor']
     raw_id_fields = ['wizyta', 'autor']
     fieldsets = (
         (_('Notatka'), {
@@ -934,7 +947,8 @@ class NotatkaAdmin(admin.ModelAdmin):
             'fields': ('widoczna_dla_klienta',),
         }),
         (_('Czas'), {
-            'fields': ('czas',),
+            # POPRAWKA: Zmieniamy 'czas' na 'created_at'
+            'fields': ('created_at',),
         }),
     )
 
@@ -952,7 +966,7 @@ class NotatkaAdmin(admin.ModelAdmin):
     def wizyta_link(self, obj):
         url = reverse('admin:{}_{}_change'.format(obj.wizyta._meta.app_label, obj.wizyta._meta.model_name),
                       args=[obj.wizyta.id])
-        return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.wizka.id)[:8])
+        return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.wizyta.id)[:8])
 
     wizyta_link.short_description = 'Wizyta'
 
@@ -984,17 +998,17 @@ class BeautySalonAdminSite(admin.AdminSite):
             termin_start__date=today
         )
 
-        upcoming_appointments = Wizyta.objects.filter(
-            termin_start__gte=timezone.now(),
-            termin_start__date__lte=tomorrow,
-            status__in=['oczekujaca', 'potwierdzona']
+        # Użycie Wizyta.objects.upcoming() z managera
+        upcoming_appointments = Wizyta.objects.upcoming().filter(
+            termin_start__date__lte=tomorrow
         ).select_related('klient', 'pracownik', 'usluga')[:10]
 
         # Statystyki miesiąca
         month_start = today.replace(day=1)
-        month_appointments = Wizyta.objects.filter(
-            termin_start__date__gte=month_start,
-            termin_start__date__lte=today
+        # Użycie Wizyta.objects.for_date_range() z managera
+        month_appointments = Wizyta.objects.for_date_range(
+            start_date=month_start,
+            end_date=today
         )
 
         # Oczekujące urlopy
@@ -1014,16 +1028,16 @@ class BeautySalonAdminSite(admin.AdminSite):
             },
             'month_stats': {
                 'total': month_appointments.count(),
-                'revenue': month_appointments.aggregate(
-                    total=Sum('platnosci__kwota', filter=Q(platnosci__status='zaplacona'))
-                )['total'] or 0,
+                # Użycie metody revenue_summary() z WizytaQuerySet/WizytaManager
+                'revenue': month_appointments.revenue_summary()['total_revenue'] or 0,
             },
             'upcoming_appointments': upcoming_appointments,
             'pending_leaves': pending_leaves,
-            'recent_logs': recent_logs,
-            'active_clients': Klient.objects.filter(deleted_at__isnull=True).count(),
+            # Użycie Klient.active z ActiveManager
+            'active_clients': Klient.active.count(),
             'active_employees': Pracownik.objects.filter(aktywny=True).count(),
             'active_services': Usluga.objects.filter(publikowana=True).count(),
+            'recent_logs': recent_logs,
         })
 
         return super().index(request, extra_context)

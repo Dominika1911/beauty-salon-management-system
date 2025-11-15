@@ -1,4 +1,4 @@
-# beauty-salon-backend/beauty_salon/settings.py
+# beauty-salon-backend/config/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -8,13 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Ładowanie zmiennych z pliku .env.
 # Wczyta plik .env znajdujący się w folderze beauty-salon-backend
-load_dotenv(BASE_DIR / ".env") 
+load_dotenv(BASE_DIR / ".env")
 
 # --- Podstawy ---
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-dont-use-in-prod")
 DEBUG = os.getenv("DEBUG", "1") == "1"
 # Dodano "backend" dla ruchu wewnątrz Dockera
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "backend"] 
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "backend"]
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
@@ -36,11 +36,11 @@ INSTALLED_APPS = [
     "corsheaders",
 
     # Twoja aplikacja
-    "beauty_salon.apps.BeautySalonConfig", 
+    "beauty_salon.apps.BeautySalonConfig",
 ]
 
 # Używamy własnego modelu użytkownika (upewnij się, że masz zdefiniowany ten model)
-AUTH_USER_MODEL = "beauty_salon.User" 
+AUTH_USER_MODEL = "beauty_salon.User"
 
 # --- Middleware ---
 MIDDLEWARE = [
@@ -78,11 +78,11 @@ WSGI_APPLICATION = "config.wsgi.application" # Zmieniono na 'config.wsgi.applica
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),       # Używa DB_NAME z Twojego .env
-        "USER": os.getenv("DB_USER"),       # Używa DB_USER z Twojego .env
-        "PASSWORD": os.getenv("DB_PASSWORD"), # Używa DB_PASSWORD z Twojego .env
-        "HOST": "db",                       # KLUCZOWE: Nazwa serwisu DB w Docker Compose
-        "PORT": "5432",                     # Port jest standardowy
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", "db"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 
@@ -104,6 +104,13 @@ USE_TZ = True # Używanie stref czasowych
 # --- Statyczne / media ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# ZMIANA: Powiedz Django, aby szukało plików CSS (np. beauty_base.css)
+# również w folderze 'static' na głównym poziomie projektu.
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
