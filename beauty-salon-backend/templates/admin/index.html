@@ -26,153 +26,94 @@
     </div>
 
     <div class="quick-actions-grid">
-        <a href="{% url 'admin:beauty_salon_wizyta_add' %}" class="quick-action-card"
-           aria-label="{% trans 'Dodaj nową wizytę' %}">
+        <a href="{% url 'admin:beauty_salon_appointment_add' %}" class="quick-action-card"
+           aria-label="{% trans 'Dodaj nową wizytę' %}" style="--quick-action-color: var(--beauty-accent-soft);">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span>{% trans "Nowa wizyta" %}</span>
+            <div class="quick-action-content">
+                <strong>{% trans 'Dodaj wizytę' %}</strong>
+                <span>{% trans 'Rezerwacja terminu dla klienta.' %}</span>
+            </div>
         </a>
-        <a href="{% url 'admin:beauty_salon_klient_add' %}" class="quick-action-card info"
-           aria-label="{% trans 'Dodaj nowego klienta' %}">
+        <a href="{% url 'admin:beauty_salon_client_add' %}" class="quick-action-card"
+           aria-label="{% trans 'Dodaj nowego klienta' %}" style="--quick-action-color: var(--dashboard-info-bg);">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <circle cx="9" cy="7" r="4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
             </svg>
-            <span>{% trans "Nowy klient" %}</span>
+            <div class="quick-action-content">
+                <strong>{% trans 'Dodaj klienta' %}</strong>
+                <span>{% trans 'Rejestracja nowego użytkownika.' %}</span>
+            </div>
         </a>
-        <a href="{% url 'admin:beauty_salon_ustawieniasystemowe_changelist' %}" class="quick-action-card settings"
-           aria-label="{% trans 'Przejdź do ustawień salonu' %}">
+        <a href="{% url 'admin:beauty_salon_employee_add' %}" class="quick-action-card"
+           aria-label="{% trans 'Dodaj nowego pracownika' %}" style="--quick-action-color: var(--dashboard-success-bg);">
             <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <circle cx="12" cy="12" r="3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.33 1.1V21a2 2 0 1 1-4 0v-.1a1.65 1.65 0 0 0-.33-1.1A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-.6-1 1.65 1.65 0 0 0-1.1-.33H3a2 2 0 1 1 0-4h.1a1.65 1.65 0 0 0 1.1-.33A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6 1.65 1.65 0 0 0 .33-1.1V3a2 2 0 1 1 4 0v.1a1.65 1.65 0 0 0 .33 1.1 1.65 1.65 0 0 0 1 .6 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 .6 1 1.65 1.65 0 0 0 1.1.33H21a2 2 0 1 1 0 4h-.1a1.65 1.65 0 0 0-1.1.33 1.65 1.65 0 0 0-.4 1.34Z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0h4m-4 0v11m0 0h4m-4 0v-4" />
             </svg>
-            <span>{% trans "Ustawienia salonu" %}</span>
+            <div class="quick-action-content">
+                <strong>{% trans 'Dodaj pracownika' %}</strong>
+                <span>{% trans 'Nowy ekspert do zespołu.' %}</span>
+            </div>
+        </a>
+        <a href="{% url 'admin:beauty_salon_service_add' %}" class="quick-action-card"
+           aria-label="{% trans 'Dodaj nową usługę' %}" style="--quick-action-color: var(--dashboard-warning-bg);">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <div class="quick-action-content">
+                <strong>{% trans 'Dodaj usługę' %}</strong>
+                <span>{% trans 'Nowa pozycja w cenniku.' %}</span>
+            </div>
         </a>
     </div>
 
     <div class="section-heading">
-        {% trans "Dziś w salonie" %}
-        <span>{% trans "Podsumowanie wizyt na dzisiaj" %}</span>
+        {% trans "SALON I FINANSE" %}
+        <small>{% trans "Przetworzone dane na dzisiaj" %}</small>
     </div>
 
-    {% if today_stats %}
     <div class="stats-grid">
-        <div class="stat-card primary">
-            <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M8 7V3m8 4V3M5 11h14M5 19h14M5 11V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M5 19v-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <div>
-                <div class="stat-label">{% trans "Dzisiejsze wizyty" %}</div>
-                <div class="stat-value">{{ today_stats.total }}</div>
-                <div class="stat-meta">{% trans "Wszystkie zaplanowane na dziś" %}</div>
-            </div>
-        </div>
-
-        <div class="stat-card success">
-            <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M5 13l4 4L19 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <div>
-                <div class="stat-label">{% trans "Potwierdzone" %}</div>
-                <div class="stat-value">{{ today_stats.confirmed }}</div>
-                <div class="stat-meta">{% trans "Klient potwierdził wizytę" %}</div>
-            </div>
-        </div>
-
         <div class="stat-card info">
             <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M9 12l2 2 4-4m5 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M12 20.578A6.5 6.5 0 0019.294 17H4.706a6.5 6.5 0 007.294 3.578zM18 10a2 2 0 100-4 2 2 0 000 4z"/></svg>
             </div>
             <div>
-                <div class="stat-label">{% trans "Zrealizowane" %}</div>
-                <div class="stat-value">{{ today_stats.completed }}</div>
-                <div class="stat-meta">{% trans "Ukończone wizyty" %}</div>
+                <div class="stat-label">{% trans "AKTYWNI KLIENCI" %}</div>
+                <div class="stat-value">0</div>
+                <div class="stat-meta">{% trans "Zapisani w systemie" %}</div>
             </div>
         </div>
 
-        <div class="stat-card danger">
+        <div class="stat-card warning">
             <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M10.29 3.86L1.82 18a1 1 0 0 0 .86 1.5h18.64a1 1 0 0 0 .86-1.5L13.71 3.86a1 1 0 0 0-1.72 0zM12 9v4m0 4h.01" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M12 20.578A6.5 6.5 0 0019.294 17H4.706a6.5 6.5 0 007.294 3.578zM18 10a2 2 0 100-4 2 2 0 000 4z"/></svg>
             </div>
             <div>
-                <div class="stat-label">{% trans "Anulowane" %}</div>
-                <div class="stat-value">{{ today_stats.cancelled }}</div>
-                <div class="stat-meta">{% trans "Odwołane dzisiejsze wizyty" %}</div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <div class="section-heading">
-        {% trans "Salon i finanse" %}
-        <span>{% trans "Aktywne zasoby i przychód" %}</span>
-    </div>
-
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="9" cy="7" r="4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <div>
-                <div class="stat-label">{% trans "Aktywni klienci" %}</div>
-                <div class="stat-value">{{ active_clients|default:0 }}</div>
-                <div class="stat-meta">{% trans "Z zapisanymi danymi w systemie" %}</div>
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M9 12l2 2 4-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <circle cx="9" cy="7" r="4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M17 11.5V21" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M21 17h-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-            </div>
-            <div>
-                <div class="stat-label">{% trans "Aktywni pracownicy" %}</div>
-                <div class="stat-value">{{ active_employees|default:0 }}</div>
+                <div class="stat-label">{% trans "AKTYWNI PRACOWNICY" %}</div>
+                <div class="stat-value">0</div>
                 <div class="stat-meta">{% trans "Widoczni w grafiku" %}</div>
             </div>
         </div>
 
-        <div class="stat-card">
+        <div class="stat-card success">
             <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M4 6h16M4 12h10M4 18h6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             </div>
             <div>
-                <div class="stat-label">{% trans "Aktywne usługi" %}</div>
-                <div class="stat-value">{{ active_services|default:0 }}</div>
+                <div class="stat-label">{% trans "AKTYWNE USŁUGI" %}</div>
+                <div class="stat-value">0</div>
                 <div class="stat-meta">{% trans "Dostępne do rezerwacji" %}</div>
             </div>
         </div>
 
-        <div class="stat-card success">
+        <div class="stat-card primary">
             <div class="stat-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M12 8c-2.21 0-4 1.343-4 3 0 1.657 1.79 3 4 3s4 1.343 4 3-1.79 3-4 3-4-1.343-4-3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M12 3v4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zM9 9h6m-3 3v6m0-6h-6m6 0v6m-6-6v6"/></svg>
             </div>
             <div>
-                <div class="stat-label">{% trans "Przychód (miesiąc)" %}</div>
-                <div class="stat-value">
-                    {{ month_stats.revenue|default:"0"|floatformat:2 }} PLN
-                </div>
+                <div class="stat-label">{% trans "PRZYCHÓD (MIESIĄC)" %}</div>
+                <div class="stat-value">0,00 PLN</div>
                 <div class="stat-meta">{% trans "Łączny przychód tego miesiąca" %}</div>
             </div>
         </div>
@@ -180,187 +121,34 @@
 
     <div class="content-grid">
 
-        <div class="dashboard-card">
+        <div class="dashboard-card" style="min-height: 300px;">
             <div class="card-header">
-                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M8 7V3m8 4V3M5 11h14M5 19h14M5 11V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6M5 19v-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h2>{% trans "Nadchodzące wizyty (dziś/jutro)" %}</h2>
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <h2>{% trans "Nadchodzące wizyty (dzisiaj i jutro)" %}</h2>
             </div>
             <div class="card-body">
-                {% if upcoming_appointments %}
-                    <ul class="info-list">
-                        {% for wizyta in upcoming_appointments %}
-                            <li class="info-item">
-                                <div class="info-icon-dot"></div>
-                                <div class="info-content">
-                                    <div class="time-pill">
-                                        <span class="time-pill-dot"></span>
-                                        <span>{% if wizyta.termin_start.date == today.date %}{{ wizyta.termin_start|time:"H:i" }}{% else %}{{ wizyta.termin_start|date:"d.m" }} {{ wizyta.termin_start|time:"H:i" }}{% endif %}</span>
-                                    </div>
-                                    <div class="info-content-title">
-                                        {{ wizyta.klient.get_full_name }}
-                                    </div>
-                                    <div class="info-content-sub">
-                                        {{ wizyta.usluga.nazwa }} • {{ wizyta.pracownik.get_full_name }}
-                                    </div>
-                                    <div class="info-meta-row">
-                                        <span class="badge-pill neutral">{% trans "Wizyta zaplanowana" %}</span>
-                                    </div>
-                                </div>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="empty-state">
-                        <strong>{% trans "Brak nadchodzących wizyt" %}</strong><br>
-                        {% trans "Dodaj nową wizytę, aby kalendarz nie świecił pustkami." %}
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="dashboard-card">
-            <div class="card-header warning">
-                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M5 4h14M5 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10l4-4V6a2 2 0 0 0-2-2M9 4v4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h2>{% trans "Urlopy do akceptacji" %}</h2>
-            </div>
-            <div class="card-body">
-                {% if pending_leaves %}
-                    <ul class="info-list">
-                        {% for urlop in pending_leaves %}
-                            <li class="info-item">
-                                <div class="info-icon-dot warning"></div>
-                                <div class="info-content">
-                                    <div class="info-content-title">
-                                        {{ urlop.pracownik.get_full_name }}
-                                    </div>
-                                    <div class="info-content-sub">
-                                        {{ urlop.data_od|date:"d.m.Y" }} – {{ urlop.data_do|date:"d.m.Y" }}
-                                    </div>
-                                    <div class="info-meta-row">
-                                        <span class="badge-pill">{% trans "Typ:" %} {{ urlop.get_typ_display }}</span>
-                                        <span class="badge-pill neutral">{% trans "Oczekuje na akceptację" %}</span>
-                                    </div>
-                                </div>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                {% else %}
-                    <div class="empty-state">
-                        {% trans "Obecnie nie ma urlopów wymagających Twojej decyzji." %}
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-
-        {% if month_stats %}
-        <div class="dashboard-card">
-            <div class="card-header success">
-                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M3 3v18h18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 14l3-3 3 3 4-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h2>{% trans "Podsumowanie miesiąca" %}</h2>
-            </div>
-            <div class="card-body">
-                <div class="summary-row">
-                    <div class="summary-pill">
-                        <span class="label">{% trans "Liczba wizyt" %}</span>
-                        <span class="value">{{ month_stats.total }}</span>
-                    </div>
-                    <div class="summary-pill">
-                        <span class="label">{% trans "Przychód" %}</span>
-                        <span class="value">{{ month_stats.revenue|default:"0"|floatformat:2 }} PLN</span>
-                    </div>
+                <div class="empty-state">
+                    {% trans "Brak nadchodzących wizyt do wyświetlenia." %}
                 </div>
-                <p class="info-content-sub" style="margin-top:8px;">
-                    {% trans "Monitoruj wyniki miesiąca i reaguj na wolne terminy, aby maksymalizować wykorzystanie kalendarza." %}
-                </p>
-            </div>
+                </div>
         </div>
-        {% endif %}
 
-        {% if recent_logs %}
-        <div class="dashboard-card">
-            <div class="card-header info">
-                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path d="M12 8v4l3 3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <h2>{% trans "Ostatnie aktywności" %}</h2>
+        <div class="dashboard-card" style="min-height: 300px;">
+            <div class="card-header warning">
+                <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+                <h2>{% trans "Oczekujące akceptacje" %}</h2>
             </div>
             <div class="card-body">
-                <ul class="info-list">
-                    {% for log in recent_logs|slice:":5" %}
-                        <li class="info-item">
-                            <div class="info-icon-dot success"></div>
-                            <div class="info-content">
-                                <div class="info-content-title">
-                                    {{ log.get_typ_display }}
-                                </div>
-                                <div class="info-content-sub">
-                                    {{ log.uzytkownik.get_full_name|default:log.uzytkownik.email|default:"System" }} • {{ log.czas|timesince }} {% trans "temu" %}
-                                </div>
-                            </div>
-                        </li>
-                    {% endfor %}
-                </ul>
+                 <div class="empty-state">
+                    {% trans "Obecnie brak urlopów do rozpatrzenia." %}
+                </div>
             </div>
         </div>
-        {% endif %}
 
     </div>
 
-    <div class="app-list-wrapper">
-        <h2 class="section-heading">{% trans "Wszystkie Moduły Systemu" %}</h2>
-        <div class="app-list">
-            {% if app_list %}
-                {% for app in app_list %}
-                    <div class="app-{{ app.app_label }} module card">
-                        <table>
-                            <caption>
-                                <a href="{{ app.app_url }}" title="{% blocktrans with name=app.name %}Modele w aplikacji {{ name }}{% endblocktrans %}">
-                                    {{ app.name }}
-                                </a>
-                            </caption>
-                            {% for model in app.models %}
-                                <tr class="model-{{ model.object_name|lower }}">
-                                {% if model.admin_url %}
-                                    <th scope="row"><a href="{{ model.admin_url }}">{{ model.name }}</a></th>
-                                {% else %}
-                                    <th scope="row">{{ model.name }}</th>
-                                {% endif %}
 
-                                {% if model.add_url %}
-                                    <td><a href="{{ model.add_url }}" class="addlink">{% trans 'Dodaj' %}</a></td>
-                                {% else %}
-                                    <td>&nbsp;</td>
-                                {% endif %}
 
-                                {% if model.admin_url %}
-                                    {% if model.view_only %}
-                                        <td><a href="{{ model.admin_url }}" class="viewlink">{% trans 'Zobacz' %}</a></td>
-                                    {% else %}
-                                        <td><a href="{{ model.admin_url }}" class="changelink">{% trans 'Zmień' %}</a></td>
-                                    {% endif %}
-                                {% else %}
-                                    <td>&nbsp;</td>
-                                {% endif %}
-                                </tr>
-                            {% endfor %}
-                        </table>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <div class="empty-state" style="margin-top: 50px;">
-                <p>{% trans "Nie masz uprawnień do przeglądania lub edytowania czegokolwiek." %}</p>
-            </div>
-        {% endif %}
-    </div>
 
 </div>
 </div>

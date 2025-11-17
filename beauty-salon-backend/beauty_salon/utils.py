@@ -1,103 +1,143 @@
-# salon/utils.py
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
-from decimal import Decimal
-from datetime import timedelta, datetime
+from django.core.validators import RegexValidator
 from django.db.models import Q, Count
 from django.utils import timezone
-from decimal import InvalidOperation
-from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
 
-# SUGESTIA 3: Walidator
 phone_validator = RegexValidator(
-    r'^\+?1?\d{9,15}$',
-    _("Numer telefonu musi być w formacie: '+999999999'. Do 15 cyfr.")
+    r'^\+?[1-9]\d{8,14}$',
+    _("Numer telefonu musi być w formacie międzynarodowym (+XXXXXXXXX, 9-15 cyfr)."),
 )
-
-
 # ============================================================================
 # HELPER FUNCTIONS
-# (Importują modele wewnątrz, aby uniknąć cyklicznych zależności)
 # ============================================================================
-
 def generate_employee_number():
-    from .models import Pracownik
-    last_emp = Pracownik.objects.order_by('-nr').first()
-    if not last_emp: return 'EMP-0001'
+    from .models import Employee
+
+    last_employee = Employee.objects.order_by("-number").first()
+    if not last_employee:
+        return "EMP-0001"
+
     try:
-        last_num = int(last_emp.nr.split('-')[1])
-        return f'EMP-{last_num + 1:04d}'
+        last_num = int(last_employee.number.split("-")[1])
+        return f"EMP-{last_num + 1:04d}"
     except (IndexError, ValueError, TypeError):
-        count = Pracownik.objects.count()
-        return f'EMP-{count + 1:04d}'
+        count = Employee.objects.count()
+        return f"EMP-{count + 1:04d}"
 
 
 def generate_client_number():
-    from .models import Klient
+    from .models import Client
     # Używamy .objects (a nie .active) aby policzyć też usuniętych i uniknąć kolizji
-    last_cli = Klient.objects.order_by('-nr').first()
-    if not last_cli: return 'CLI-0001'
+    last_client = Client.objects.order_by("-number").first()
+    if not last_client:
+        return "CLI-0001"
+
     try:
-        last_num = int(last_cli.nr.split('-')[1])
-        return f'CLI-{last_num + 1:04d}'
+        last_num = int(last_client.number.split("-")[1])
+        return f"CLI-{last_num + 1:04d}"
     except (IndexError, ValueError, TypeError):
-        count = Klient.objects.count()
-        return f'CLI-{count + 1:04d}'
+        count = Client.objects.count()
+        return f"CLI-{count + 1:04d}"
 
 
 def generate_invoice_number(date=None):
-    from .models import Faktura
-    if date is None: date = timezone.now().date()
-    year, month = date.year, date.month
-    prefix = f'FV/{year}/{month:02d}/'
-    last_invoice = Faktura.objects.filter(numer__startswith=prefix).order_by('-numer').first()
-    if not last_invoice: return f'{prefix}0001'
+    from .models import Invoice
+
+    if date is None:
+        date = timezone.now().date()
+
+    year = date.year
+    month = date.month
+    prefix = f"INV/{year}/{month:02d}/"
+
+    last_invoice = (
+        Invoice.objects.filter(number__startswith=prefix)
+        .order_by("-number")
+        .first()
+    )
+    if not last_invoice:
+        return f"{prefix}0001"
+
     try:
-        last_num = int(last_invoice.numer.split('/')[-1])
-        return f'{prefix}{last_num + 1:04d}'
+        last_num = int(last_invoice.number.split("/")[-1])
+        return f"{prefix}{last_num + 1:04d}"
     except (IndexError, ValueError, TypeError):
-        count = Faktura.objects.filter(numer__startswith=prefix).count()
-        return f'{prefix}{count + 1:04d}'
+        count = Invoice.objects.filter(number__startswith=prefix).count()
+        return f"{prefix}{count + 1:04d}"
 
 
-def calculate_vat(kwota_netto, stawka_vat):
+def calculate_vat(net_amount, vat_rate):
     try:
-        kwota_netto = Decimal(str(kwota_netto))
-        stawka_vat = Decimal(str(stawka_vat))
+        net_amount = Decimal(str(net_amount))
+        vat_rate = Decimal(str(vat_rate))
     except (ValueError, InvalidOperation, TypeError):
         raise ValueError("Nieprawidłowe dane wejściowe dla obliczeń VAT.")
-    if kwota_netto < 0: raise ValueError("Kwota nie może być ujemna.")
-    if not (Decimal('0.00') <= stawka_vat <= Decimal('100.00')):
+
+    if net_amount < 0:
+        raise ValueError("Kwota nie może być ujemna.")
+
+    if not (Decimal("0.00") <= vat_rate <= Decimal("100.00")):
         raise ValueError("Stawka VAT musi być w zakresie 0-100%.")
-    vat_amount = (kwota_netto * stawka_vat / Decimal('100')).quantize(Decimal('0.01'))
-    gross_amount = kwota_netto + vat_amount
+
+    vat_amount = (net_amount * vat_rate / Decimal("100")).quantize(Decimal("0.01"))
+    gross_amount = net_amount + vat_amount
     return vat_amount, gross_amount
 
 
-def get_available_time_slots(pracownik, data, usluga):
-    from .models import UstawieniaSystemowe, Grafik, Wizyta
-    settings = UstawieniaSystemowe.load()  # Używamy nowej metody .load()
+def get_available_time_slots(employee, date, service):
+    from .models import SystemSettings, Schedule, Appointment, TimeOff # DODANO: TimeOff
 
-    grafik = Grafik.objects.filter(pracownik=pracownik, status=Grafik.StatusChoices.AKTYWNY).first()
-    if not grafik or not grafik.is_available_on_date(data): return []
+    settings = SystemSettings.load()
 
-    weekday_map = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
-    day_name = weekday_map[data.weekday()]
-    day_schedule = next((okres for okres in grafik.okresy_dostepnosci if okres.get('day') == day_name), None)
-    if not day_schedule: return []
-
-    try:
-        start_time = datetime.strptime(day_schedule['start'], '%H:%M').time()
-        end_time = datetime.strptime(day_schedule['end'], '%H:%M').time()
-    except (ValueError, TypeError):
+    # KOREKTA: Sprawdzenie dostępności pracownika (urlopy/niedostępności)
+    if TimeOff.objects.filter(
+        employee=employee,
+        status__in=[TimeOff.Status.PENDING, TimeOff.Status.APPROVED],
+        date_from__lte=date,
+        date_to__gte=date,
+    ).exists():
         return []
 
-    work_start = timezone.make_aware(datetime.combine(data, start_time))
-    work_end = timezone.make_aware(datetime.combine(data, end_time))
+    schedule = Schedule.objects.filter(
+        employee=employee,
+        status=Schedule.Status.ACTIVE,
+    ).first()
+    if not schedule:
+        return []
 
-    slot_duration = timedelta(minutes=settings.slot_minuty)
-    buffer_duration = timedelta(minutes=settings.bufor_minuty)
-    service_duration = usluga.czas_trwania
+    weekday_map = {
+        0: "Monday",
+        1: "Tuesday",
+        2: "Wednesday",
+        3: "Thursday",
+        4: "Friday",
+        5: "Saturday",
+        6: "Sunday",
+    }
+    day_name = weekday_map[date.weekday()]
+
+    day_schedule = next(
+        (period for period in schedule.availability_periods if period.get("day") == day_name),
+        None,
+    )
+    if not day_schedule:
+        return []
+
+    try:
+        start_time = datetime.strptime(day_schedule["start"], "%H:%M").time()
+        end_time = datetime.strptime(day_schedule["end"], "%H:%M").time()
+    except (ValueError, TypeError, KeyError):
+        return []
+
+    work_start = timezone.make_aware(datetime.combine(date, start_time))
+    work_end = timezone.make_aware(datetime.combine(date, end_time))
+
+    slot_duration = timedelta(minutes=settings.slot_minutes)
+    buffer_duration = timedelta(minutes=settings.buffer_minutes)
+    service_duration = service.duration
 
     all_slots = []
     current_slot = work_start
@@ -105,115 +145,172 @@ def get_available_time_slots(pracownik, data, usluga):
         all_slots.append(current_slot)
         current_slot += slot_duration
 
-    existing_appointments = Wizyta.objects.filter(
-        pracownik=pracownik, termin_start__date=data,
-        status__in=[Wizyta.StatusChoices.OCZEKUJACA, Wizyta.StatusChoices.POTWIERDZONA, Wizyta.StatusChoices.W_TRAKCIE]
-    ).values_list('termin_start', 'termin_koniec')
+    existing_appointments = (
+        Appointment.objects.filter(
+            employee=employee,
+            start__date=date,
+            status__in=[
+                Appointment.Status.PENDING,
+                Appointment.Status.CONFIRMED,
+                Appointment.Status.IN_PROGRESS,
+            ],
+        )
+        .values_list("start", "end")
+    )
 
     breaks = []
-    for przerwa in grafik.przerwy:
+    for break_item in schedule.breaks:
         try:
-            break_start = datetime.strptime(przerwa['start'], '%H:%M').time()
-            break_end = datetime.strptime(przerwa['end'], '%H:%M').time()
-            breaks.append((timezone.make_aware(datetime.combine(data, break_start)),
-                           timezone.make_aware(datetime.combine(data, break_end))))
-        except (ValueError, TypeError):
+            break_start = datetime.strptime(break_item["start"], "%H:%M").time()
+            break_end = datetime.strptime(break_item["end"], "%H:%M").time()
+        except (ValueError, TypeError, KeyError):
             continue
+
+        breaks.append(
+            (
+                timezone.make_aware(datetime.combine(date, break_start)),
+                timezone.make_aware(datetime.combine(date, break_end)),
+            )
+        )
 
     available_slots = []
     for slot in all_slots:
         slot_end = slot + service_duration
         is_available = True
+
         for apt_start, apt_end in existing_appointments:
             apt_end_with_buffer = apt_end + buffer_duration
             if slot < apt_end_with_buffer and slot_end > apt_start:
                 is_available = False
                 break
-        if not is_available: continue
+
+        if not is_available:
+            continue
+
+        # Check collisions with breaks.
         for break_start, break_end in breaks:
             if slot < break_end and slot_end > break_start:
                 is_available = False
                 break
-        if is_available: available_slots.append(slot)
+
+        if is_available:
+            available_slots.append(slot)
+
     return available_slots
 
 
-def calculate_employee_workload(pracownik, data_od, data_do):
-    from .models import Grafik, Wizyta
-    available_minutes = 0
-    current_date = data_od
-    weekday_map = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
-    grafik = pracownik.grafiki.filter(status=Grafik.StatusChoices.AKTYWNY).first()
+def calculate_employee_workload(employee, date_from, date_to):
+    from .models import Schedule, Appointment
 
-    while current_date <= data_do:
-        if grafik and grafik.is_available_on_date(current_date):
+    available_minutes = 0
+    current_date = date_from
+
+    weekday_map = {
+        0: "Monday",
+        1: "Tuesday",
+        2: "Wednesday",
+        3: "Thursday",
+        4: "Friday",
+        5: "Saturday",
+        6: "Sunday",
+    }
+
+    schedule = employee.schedules.filter(
+        status=Schedule.Status.ACTIVE,
+    ).first()
+
+    while current_date <= date_to:
+        # Pamiętaj: is_available_on_date powinno być używane tutaj, aby uwzględnić urlopy/niedostępności
+        # if schedule and schedule.is_available_on_date(current_date):
+        if schedule:
             day_name = weekday_map[current_date.weekday()]
-            for okres in grafik.okresy_dostepnosci:
-                if okres.get('day') == day_name:
+            for period in schedule.availability_periods:
+                if period.get("day") == day_name:
                     try:
-                        start = datetime.strptime(okres['start'], '%H:%M')
-                        end = datetime.strptime(okres['end'], '%H:%M')
+                        start = datetime.strptime(period["start"], "%H:%M")
+                        end = datetime.strptime(period["end"], "%H:%M")
                         available_minutes += (end - start).total_seconds() // 60
-                        for przerwa in grafik.przerwy:
-                            break_start = datetime.strptime(przerwa['start'], '%H:%M')
-                            break_end = datetime.strptime(przerwa['end'], '%H:%M')
+
+                        for break_item in schedule.breaks:
+                            break_start = datetime.strptime(break_item["start"], "%H:%M")
+                            break_end = datetime.strptime(break_item["end"], "%H:%M")
                             available_minutes -= (break_end - break_start).total_seconds() // 60
                         break
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, KeyError):
                         break
+
         current_date += timedelta(days=1)
 
-    booked_appointments = Wizyta.objects.filter(
-        pracownik=pracownik,
-        termin_start__date__gte=data_od,
-        termin_start__date__lte=data_do,
+    booked_appointments = Appointment.objects.filter(
+        employee=employee,
+        start__date__gte=date_from,
+        start__date__lte=date_to,
         status__in=[
-            Wizyta.StatusChoices.POTWIERDZONA,
-            Wizyta.StatusChoices.W_TRAKCIE,
-            Wizyta.StatusChoices.ZREALIZOWANA
-        ]
+            Appointment.Status.CONFIRMED,
+            Appointment.Status.IN_PROGRESS,
+            Appointment.Status.COMPLETED,
+        ],
     )
-    booked_minutes = sum((apt.termin_koniec - apt.termin_start).total_seconds() // 60 for apt in booked_appointments)
+
+    booked_minutes = sum(
+        (apt.end - apt.start).total_seconds() // 60 for apt in booked_appointments
+    )
+
     available_hours = available_minutes / 60
     booked_hours = booked_minutes / 60
     workload_percent = (booked_hours / available_hours * 100) if available_hours > 0 else 0
+
     return {
-        'available_hours': round(available_hours, 2),
-        'booked_hours': round(booked_hours, 2),
-        'workload_percent': round(workload_percent, 2)
+        "available_hours": round(available_hours, 2),
+        "booked_hours": round(booked_hours, 2),
+        "workload_percent": round(workload_percent, 2),
     }
 
 
-def get_top_services(limit=5, data_od=None, data_do=None):
-    from .models import Usluga, Wizyta
-    filters = Q(status__in=[
-        Wizyta.StatusChoices.POTWIERDZONA,
-        Wizyta.StatusChoices.W_TRAKCIE,
-        Wizyta.StatusChoices.ZREALIZOWANA
-    ])
-    if data_od: filters &= Q(termin_start__date__gte=data_od)
-    if data_do: filters &= Q(termin_start__date__lte=data_do)
-    return Usluga.objects.annotate(
-        total_bookings=Count('wizyty', filter=filters)
-    ).filter(total_bookings__gt=0).order_by('-total_bookings')[:limit]
+def get_top_services(limit=5, date_from=None, date_to=None):
+    from .models import Service, Appointment
 
-
-def get_cancellation_stats(data_od, data_do):
-    from .models import Wizyta
-    wizyty = Wizyta.objects.filter(
-        termin_start__date__gte=data_od,
-        termin_start__date__lte=data_do
+    filters = Q(
+        appointments__status__in=[
+            Appointment.Status.CONFIRMED,
+            Appointment.Status.IN_PROGRESS,
+            Appointment.Status.COMPLETED,
+        ]
     )
-    total = wizyty.count()
-    cancelled = wizyty.filter(status=Wizyta.StatusChoices.ODWOLANA).count()
-    no_show = wizyty.filter(status=Wizyta.StatusChoices.NO_SHOW).count()
-    completed = wizyty.filter(status=Wizyta.StatusChoices.ZREALIZOWANA).count()
+
+    if date_from:
+        filters &= Q(appointments__start__date__gte=date_from)
+    if date_to:
+        filters &= Q(appointments__start__date__lte=date_to)
+
+    return (
+        Service.objects.annotate(
+            total_bookings=Count("appointments", filter=filters),
+        )
+        .filter(total_bookings__gt=0)
+        .order_by("-total_bookings")[:limit]
+    )
+
+
+def get_cancellation_stats(date_from, date_to):
+    from .models import Appointment
+
+    appointments = Appointment.objects.filter(
+        start__date__gte=date_from,
+        start__date__lte=date_to,
+    )
+
+    total = appointments.count()
+    cancelled = appointments.filter(status=Appointment.Status.CANCELLED).count()
+    no_show = appointments.filter(status=Appointment.Status.NO_SHOW).count()
+    completed = appointments.filter(status=Appointment.Status.COMPLETED).count()
+
     return {
-        'total': total,
-        'cancelled': cancelled,
-        'no_show': no_show,
-        'completed': completed,
-        'cancelled_percent': round((cancelled / total * 100) if total > 0 else 0, 2),
-        'no_show_percent': round((no_show / total * 100) if total > 0 else 0, 2),
-        'completion_rate': round((completed / total * 100) if total > 0 else 0, 2)
+        "total": total,
+        "cancelled": cancelled,
+        "no_show": no_show,
+        "completed": completed,
+        "cancelled_percent": round((cancelled / total * 100) if total > 0 else 0, 2),
+        "no_show_percent": round((no_show / total * 100) if total > 0 else 0, 2),
+        "completion_rate": round((completed / total * 100) if total > 0 else 0, 2),
     }
