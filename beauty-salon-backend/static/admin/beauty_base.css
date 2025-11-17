@@ -179,7 +179,6 @@ body.login .submit-row input[type="submit"] {
 ======================================================================== */
 
 input,
-select,
 textarea {
     border-radius: 8px;
     border: 1px solid #E0E0E0;
@@ -190,23 +189,10 @@ textarea {
 }
 
 input:focus,
-select:focus,
 textarea:focus {
     outline: none;
     border-color: var(--beauty-primary);
     box-shadow: 0 0 0 1px rgba(233, 30, 99, 0.15), 0 4px 10px rgba(0, 0, 0, 0.06);
-}
-
-select {
-    padding-right: 28px;
-
-    /* GWARANTOWANA SZEROKOŚĆ DLA SELECT */
-    /* Użycie !important i ustawienie min-width jest krytyczne */
-    width: 200px !important; /* Wymuszamy dużą szerokość, aby tekst się zmieścił */
-    min-width: 180px !important;
-    max-width: 95% !important;
-    box-sizing: border-box;
-    margin-right: 0 !important;
 }
 
 fieldset {
@@ -242,29 +228,6 @@ label {
     font-size: 13px;
     color: #444;
 }
-
-/* ========================================================================
-   POPRAWKA FORMULARZY (USUWANIE OGRANICZEŃ SZEROKOŚCI RZĘDU)
-   Dodane na końcu, by miało najwyższy priorytet
-======================================================================== */
-
-/* Celuje we wszystkie kontener pól, zmuszając je do bycia szerokimi */
-.form-row .field-box,
-.form-row .vTextField,
-.form-row .vDateField,
-.form-row .vTimeField,
-.form-row .related-widget-wrapper {
-    width: 100% !important;
-    max-width: 100% !important;
-    box-sizing: border-box;
-}
-
-/* Upewnia się, że DIV, w którym pola są osadzone, też akceptuje pełną szerokość */
-.form-row > div:nth-child(2) {
-    flex-grow: 1 !important;
-    min-width: 50%;
-}
-
 
 /* ========================================================================
    TABELKI / LISTY OBIEKTÓW
@@ -699,37 +662,73 @@ body.django-version-5 #container {
 }
 
 /* ========================================================================
-   KOREKTY SZEROKOŚCI FORMULARZY (NAPRAWA UMIERALNOŚCI SELECT)
+   KOREKTY SZEROKOŚCI FORMULARZY (NAPRAWA SELECT)
+   MUSI BYĆ NA KOŃCU PLIKU - NAJWYŻSZY PRIORYTET!
 ======================================================================== */
 
-/* NAPRAWIA PROBLEM UCINANIA POLA SELECT/INPUT */
-
-/* 1. Resetuje reguły, które mogły ograniczać pole formularza (input/select) */
+/* 1. Resetuje reguły kontenerów pól */
 .form-row .field-box,
 .form-row .vTextField,
 .form-row .vDateField,
 .form-row .vTimeField,
 .form-row .related-widget-wrapper {
-    /* Wymuś pełną szerokość dostępną w rzędzie */
     width: 100% !important;
     max-width: 100% !important;
-    box-sizing: border-box;
+    box-sizing: border-box !important;
 }
 
-/* 2. Gwarantowana minimalna szerokość dla samego elementu SELECT */
-.form-row select,
-select {
-    width: auto !important;
-    min-width: 180px !important; /* Wymuszona szerokość, aby tekst się nie ucinał */
-    max-width: 100% !important;
-    box-sizing: border-box;
-    margin-right: 0 !important;
-}
-
-/* 3. Neutralizacja kolidujących stylów Django dla podziału na kolumny */
+/* 2. Zapewnia, że druga kolumna (pole) zajmie całą przestrzeń */
 .form-row > div:nth-child(2) {
-    /* Zapewnia, że druga kolumna (pole) zajmie całą przestrzeń po etykiecie */
     flex-grow: 1 !important;
-    min-width: 50%;
+    min-width: 50% !important;
 }
 
+/* 3. NAJWAŻNIEJSZE - STYLE DLA SELECT */
+/* Musi być na samym końcu, aby nadpisać wszystkie inne reguły */
+select,
+.form-row select,
+#content select,
+div.field-box select,
+body select,
+html body select {
+    border-radius: 8px !important;
+    border: 1px solid #E0E0E0 !important;
+    padding: 16px 10px !important; /* Zwiększony padding góra/dół do 16px */
+    padding-right: 32px !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+    transition: border-color var(--transition-base), box-shadow var(--transition-base) !important;
+    font-size: 14px !important;
+    line-height: 2.0 !important; /* Zwiększona wysokość linii do 2.0 */
+
+    /* KRYTYCZNE - SZEROKOŚĆ - OGRANICZONA */
+    width: auto !important;
+    min-width: 200px !important;
+    max-width: 300px !important; /* Zmniejszone z 400px na 300px */
+    min-height: 52px !important; /* ZWIĘKSZONA WYSOKOŚĆ z 48px na 52px */
+    box-sizing: border-box !important;
+    display: inline-block !important;
+}
+
+select:focus,
+.form-row select:focus {
+    outline: none !important;
+    border-color: var(--beauty-primary) !important;
+    box-shadow: 0 0 0 1px rgba(233, 30, 99, 0.15), 0 4px 10px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 4. Responsive - dla małych ekranów */
+@media (max-width: 768px) {
+    select,
+    .form-row select {
+        min-width: 200px !important;
+        font-size: 13px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    select,
+    .form-row select {
+        min-width: 150px !important;
+        font-size: 12px !important;
+    }
+}
