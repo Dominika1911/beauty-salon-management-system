@@ -1,46 +1,60 @@
+"""
+Django settings for config project.
+
+Projekt: Beauty Salon Management System
+"""
+
 from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+# =====================================================================
+# ŚCIEŻKI I ENV
+# =====================================================================
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = BASE_DIR.parent  # katalog wyżej (tam gdzie .env)
 
-load_dotenv(BASE_DIR.parent / ".env")
+# Wczytanie zmiennych z pliku .env w katalogu głównym projektu
+load_dotenv(PROJECT_ROOT / ".env")
 
+# =====================================================================
+# PODSTAWOWE USTAWIENIA
+# =====================================================================
 
-def env_list(name: str, default: str = "") -> list[str]:
-    value = os.getenv(name, default)
-    return [item.strip() for item in value.split(",") if item.strip()]
+# Klucz – trzymaj TYLKO w .env
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "DEV-ONLY-CHANGE-ME")
 
-debug_env = os.getenv("DEBUG", "1")
-DEBUG = debug_env.lower() in ("1", "true", "yes", "y")
+# Na produkcji ustaw DEBUG = False i ogarnij ALLOWED_HOSTS
+DEBUG = True
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+]
 
-if not SECRET_KEY:
-    if not DEBUG:
-        raise EnvironmentError("DJANGO_SECRET_KEY jest wymagany w trybie produkcyjnym.")
-    SECRET_KEY = "insecure-key-for-development-only"
+# Skąd wolno wysyłać formularze (CSRF) – np. frontend Vite
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://[::1]:5173",
+]
 
-ALLOWED_HOSTS = env_list(
-    "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,[::1],backend",
-)
+# CORS (dla zapytań JS z frontendu)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://[::1]:5173",
+]
+CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = env_list(
-    "CSRF_TRUSTED_ORIGINS",
-    "http://localhost:5173,"
-    "http://127.0.0.1:5173,"
-    "http://[::1]:5173,"
-    "http://localhost:8000,"
-    "http://127.0.0.1:8000",
-)
-
-# --- Aplikacje ---
+# =====================================================================
+# APLIKACJE
+# =====================================================================
 
 INSTALLED_APPS = [
-    # Główna aplikacja (z custom adminem / modelem usera)
-    "beauty_salon.apps.BeautySalonConfig",
-
+    # Django core
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -48,21 +62,24 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Postgres-specific features
-    "django.contrib.postgres",
-
     # Third-party
     "rest_framework",
     "corsheaders",
+    "django_filters",
+
+    # Twoja appka z salonem
+    "beauty_salon.apps.BeautySalonConfig",
 ]
 
-AUTH_USER_MODEL = "beauty_salon.User"
-
-# --- Middleware ---
+# =====================================================================
+# MIDDLEWARE
+# =====================================================================
 
 MIDDLEWARE = [
+    # CORS NA POCZĄTKU
+    "corsheaders.middleware.CorsMiddleware",
+
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",  # musi być wysoko
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -73,15 +90,17 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "config.urls"
 
+# =====================================================================
+# TEMPLATES
+# =====================================================================
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # katalog templates w backendzie
         "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
-                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -92,86 +111,90 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# --- Baza danych: PostgreSQL z .env ---
-
-if not DEBUG:
-    required_db_env = ["DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT"]
-    missing_db = [var for var in required_db_env if not os.getenv(var)]
-    if missing_db:
-        raise EnvironmentError(
-            "Brak wymaganych zmiennych środowiskowych dla bazy danych: "
-            + ", ".join(missing_db)
-        )
+# =====================================================================
+# BAZA DANYCH (PostgreSQL z .env)
+# =====================================================================
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST", "db"),  # w Dockerze typowo "db"
+        "NAME": os.getenv("DB_NAME", "beauty_salon"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", "Haslo!123"),
+        # lokalnie (DEBUG=True) zawsze łączymy się z localhost,
+        # w produkcji / Dockerze bierzemy hosta z ENV (np. "db")
+        "HOST": "localhost" if DEBUG else os.getenv("DB_HOST", "db"),
         "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 
-# --- Walidacja haseł ---
+# =====================================================================
+# UŻYTKOWNICY / AUTH
+# =====================================================================
+
+AUTH_USER_MODEL = "beauty_salon.User"  # <- Twój custom User
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
 ]
 
-# --- Lokale / czas ---
+# =====================================================================
+# I18N / CZAS
+# =====================================================================
 
 LANGUAGE_CODE = "pl"
-TIME_ZONE = os.getenv("TZ", "Europe/Warsaw")
-USE_I18N = True
-USE_TZ = True
 
-# --- Statyczne / media ---
+TIME_ZONE = "Europe/Warsaw"
+USE_I18N = True
+USE_TZ = True  # w bazie UTC, w aplikacji PL
+
+# =====================================================================
+# STATIC / MEDIA
+# =====================================================================
 
 STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [
-    BASE_DIR / "static",
-]
+STATIC_ROOT = BASE_DIR / "static"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-# --- CORS / DRF ---
-
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOW_CREDENTIALS = True
-
-_cors_env = os.getenv("CORS_ALLOWED_ORIGINS")
-if _cors_env:
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+# =====================================================================
+# DRF – DJANGO AUTH (SESSION + BASIC)
+# =====================================================================
 
 REST_FRAMEWORK = {
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 20,
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
+    # Django auth:
+    # - SessionAuthentication -> działa w przeglądarce (cookies, np. po zalogowaniu w /admin/ albo /api-auth/login/)
+    # - BasicAuthentication   -> wygodne do Postmana
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
+
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
+
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
     ],
 }
 
-# --- Dodatkowe zabezpieczenia na produkcji ---
+# =====================================================================
+# DEFAULT AUTO FIELD
+# =====================================================================
 
-if not DEBUG:
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_HTTPONLY = True
-    CSRF_COOKIE_HTTPONLY = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 rok
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

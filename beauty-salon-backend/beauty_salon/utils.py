@@ -10,10 +10,17 @@ phone_validator = RegexValidator(
     r'^\+?[1-9]\d{8,14}$',
     _("Numer telefonu musi być w formacie międzynarodowym (+XXXXXXXXX, 9-15 cyfr)."),
 )
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
 def generate_employee_number():
+    """
+    Generuje numer pracownika w formacie EMP-XXXX (4 cyfry).
+    UWAGA: Ta funkcja jest używana jako fallback - główna logika jest w signals.py
+    """
     from .models import Employee
 
     last_employee = Employee.objects.order_by("-number").first()
@@ -29,8 +36,13 @@ def generate_employee_number():
 
 
 def generate_client_number():
+    """
+    Generuje numer klienta w formacie CLI-XXXX (4 cyfry).
+    UWAGA: Ta funkcja jest używana jako fallback - główna logika jest w signals.py
+    Używamy .objects (a nie .active) aby policzyć też usuniętych i uniknąć kolizji
+    """
     from .models import Client
-    # Używamy .objects (a nie .active) aby policzyć też usuniętych i uniknąć kolizji
+
     last_client = Client.objects.order_by("-number").first()
     if not last_client:
         return "CLI-0001"
@@ -44,6 +56,9 @@ def generate_client_number():
 
 
 def generate_invoice_number(date=None):
+    """
+    Generuje numer faktury w formacie INV/YYYY/MM/XXXX.
+    """
     from .models import Invoice
 
     if date is None:
@@ -70,6 +85,19 @@ def generate_invoice_number(date=None):
 
 
 def calculate_vat(net_amount, vat_rate):
+    """
+    Oblicza kwotę VAT i kwotę brutto na podstawie kwoty netto i stawki VAT.
+
+    Args:
+        net_amount: Kwota netto (Decimal lub float/int)
+        vat_rate: Stawka VAT w procentach (Decimal lub float/int), np. 23.00
+
+    Returns:
+        tuple: (vat_amount, gross_amount) jako Decimal
+
+    Raises:
+        ValueError: Jeśli dane wejściowe są nieprawidłowe
+    """
     try:
         net_amount = Decimal(str(net_amount))
         vat_rate = Decimal(str(vat_rate))
@@ -88,16 +116,27 @@ def calculate_vat(net_amount, vat_rate):
 
 
 def get_available_time_slots(employee, date, service):
-    from .models import SystemSettings, Schedule, Appointment, TimeOff # DODANO: TimeOff
+    """
+    Zwraca listę dostępnych slotów czasowych dla pracownika w danym dniu.
+
+    Args:
+        employee: Obiekt Employee
+        date: Data (datetime.date)
+        service: Obiekt Service
+
+    Returns:
+        list: Lista datetime obiektów reprezentujących dostępne sloty
+    """
+    from .models import SystemSettings, Schedule, Appointment, TimeOff
 
     settings = SystemSettings.load()
 
-    # KOREKTA: Sprawdzenie dostępności pracownika (urlopy/niedostępności)
+    # Sprawdzenie dostępności pracownika (urlopy/niedostępności)
     if TimeOff.objects.filter(
-        employee=employee,
-        status__in=[TimeOff.Status.PENDING, TimeOff.Status.APPROVED],
-        date_from__lte=date,
-        date_to__gte=date,
+            employee=employee,
+            status__in=[TimeOff.Status.PENDING, TimeOff.Status.APPROVED],
+            date_from__lte=date,
+            date_to__gte=date,
     ).exists():
         return []
 
@@ -200,6 +239,21 @@ def get_available_time_slots(employee, date, service):
 
 
 def calculate_employee_workload(employee, date_from, date_to):
+    """
+    Oblicza obłożenie pracownika w danym okresie.
+
+    Args:
+        employee: Obiekt Employee
+        date_from: Data początkowa (datetime.date)
+        date_to: Data końcowa (datetime.date)
+
+    Returns:
+        dict: {
+            'available_hours': float,
+            'booked_hours': float,
+            'workload_percent': float
+        }
+    """
     from .models import Schedule, Appointment
 
     available_minutes = 0
@@ -220,8 +274,6 @@ def calculate_employee_workload(employee, date_from, date_to):
     ).first()
 
     while current_date <= date_to:
-        # Pamiętaj: is_available_on_date powinno być używane tutaj, aby uwzględnić urlopy/niedostępności
-        # if schedule and schedule.is_available_on_date(current_date):
         if schedule:
             day_name = weekday_map[current_date.weekday()]
             for period in schedule.availability_periods:
@@ -268,6 +320,17 @@ def calculate_employee_workload(employee, date_from, date_to):
 
 
 def get_top_services(limit=5, date_from=None, date_to=None):
+    """
+    Zwraca najpopularniejsze usługi na podstawie liczby rezerwacji.
+
+    Args:
+        limit: Maksymalna liczba wyników (default: 5)
+        date_from: Data początkowa filtrowania (opcjonalne)
+        date_to: Data końcowa filtrowania (opcjonalne)
+
+    Returns:
+        QuerySet: Usługi posortowane według liczby rezerwacji
+    """
     from .models import Service, Appointment
 
     filters = Q(
@@ -293,6 +356,16 @@ def get_top_services(limit=5, date_from=None, date_to=None):
 
 
 def get_cancellation_stats(date_from, date_to):
+    """
+    Zwraca statystyki anulacji wizyt w danym okresie.
+
+    Args:
+        date_from: Data początkowa
+        date_to: Data końcowa
+
+    Returns:
+        dict: Statystyki anulacji i realizacji wizyt
+    """
     from .models import Appointment
 
     appointments = Appointment.objects.filter(

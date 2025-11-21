@@ -2,7 +2,7 @@
 Beauty Salon Management System - Django Admin
 Autor: Dominika Jedynak, nr albumu: 92721
 
-ZAKTUALIZOWANA WERSJA: Naprawiono błąd FieldError poprzez usunięcie notification_schedule.
+ZAKTUALIZOWANA WERSJA: Naprawiono błąd FieldError oraz dodano formularze użytkownika.
 """
 
 import csv
@@ -19,6 +19,10 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+
+# Importy dla formularzy użytkownika
+from django import forms
+from django.contrib.auth.forms import ReadOnlyPasswordHashField
 
 # ============================================================================
 # 1. IMPORTY MODELI
@@ -37,7 +41,60 @@ if TYPE_CHECKING:
     from .models import User as UserModel
 
 # ============================================================================
-# 2. DEFINICJA CUSTOM ADMIN SITE
+# 2. FORMULARZE UŻYTKOWNIKA
+# ============================================================================
+
+class CustomUserCreationForm(forms.ModelForm):
+    """Formularz tworzenia użytkownika w adminie (email + hasło 2x)."""
+    password1 = forms.CharField(label=_("Hasło"), widget=forms.PasswordInput)
+    password2 = forms.CharField(label=_("Powtórz hasło"), widget=forms.PasswordInput)
+
+    class Meta:
+        model = CustomUser
+        fields = ("email", "role", "is_active", "is_staff")
+
+    def clean_password2(self):
+        password1 = self.cleaned_data.get("password1")
+        password2 = self.cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            raise forms.ValidationError(_("Hasła w obu polach muszą być takie same."))
+        return password2
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.set_password(self.cleaned_data["password1"])
+        if commit:
+            user.save()
+        return user
+
+
+class CustomUserChangeForm(forms.ModelForm):
+    """Formularz edycji użytkownika w adminie (hasło tylko do odczytu)."""
+    password = ReadOnlyPasswordHashField(
+        label=_("Hasło"),
+        help_text=_("Możesz zmienić hasło używając formularza 'Zmień hasło' z panelu użytkownika."),
+    )
+
+    class Meta:
+        model = CustomUser
+        fields = (
+            "email",
+            "role",
+            "is_active",
+            "is_staff",
+            "is_superuser",
+            "groups",
+            "user_permissions",
+            "password",
+        )
+
+    def clean_password(self):
+        # Hasła nie zmieniamy w tym formularzu – zwracamy stare
+        return self.initial["password"]
+
+
+# ============================================================================
+# 3. DEFINICJA CUSTOM ADMIN SITE
 # ============================================================================
 
 class BeautySalonAdminSite(AdminSite):
@@ -48,7 +105,7 @@ class BeautySalonAdminSite(AdminSite):
 
 
 # ============================================================================
-# DEFINICJE AKCJI
+# 4. DEFINICJE AKCJI
 # ============================================================================
 
 def export_to_csv(modeladmin, request, queryset: QuerySet):
@@ -100,7 +157,6 @@ def generate_invoices(modeladmin, request, queryset: QuerySet):
     """Generuj faktury dla wybranych wizyt."""
     count = 0
     settings = SystemSettings.load()
-    # Zakładamy, że default_vat_rate jest zaimplementowane w models.SystemSettings
     vat_rate = settings.default_vat_rate if settings and hasattr(settings, 'default_vat_rate') else Decimal('23.00')
 
     for appointment in queryset.filter(status='completed'):
@@ -134,7 +190,7 @@ generate_invoices.short_description = 'Generuj faktury'
 
 
 # ============================================================================
-# INLINE DEFINITIONS
+# 5. INLINE DEFINITIONS
 # ============================================================================
 
 class EmployeeInline(admin.StackedInline):
@@ -193,7 +249,7 @@ class PaymentInline(admin.TabularInline):
 
 
 # ============================================================================
-# CUSTOM FILTERS
+# 6. CUSTOM FILTERS
 # ============================================================================
 
 class TodayAppointmentsFilter(SimpleListFilter):
@@ -241,12 +297,15 @@ class RevenueRangeFilter(SimpleListFilter):
 
 
 # ============================================================================
-# ADMIN CLASSES
+# 7. ADMIN CLASSES
 # ============================================================================
 
 @admin.register(CustomUser)
 class UserAdmin(BaseUserAdmin):
     """Admin dla custom User model."""
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
+
     list_display = ['email', 'role', 'is_active', 'is_staff', 'last_login',
                     'failed_login_attempts', 'account_status']
     list_filter = ['role', 'is_active', 'is_staff', 'is_superuser', 'created_at']
@@ -270,7 +329,7 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = (
         (None, {
             'classes': ('wide',),
-            'fields': ('email', 'password', 'password', 'role', 'is_active', 'is_staff'),
+            'fields': ('email', 'password1', 'password2', 'role', 'is_active', 'is_staff'),
         }),
     )
 
@@ -344,7 +403,6 @@ class ServiceAdmin(admin.ModelAdmin):
 
     def price_display(self, obj):
         if obj.promotion and obj.promotion.get('active'):
-            # Wymaga get_price_with_promotion w modelu Service
             try:
                 promo_price = obj.get_price_with_promotion()
                 return format_html(
@@ -386,7 +444,6 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    # Pola są teraz w Employee
     list_display = ['number', 'get_full_name', 'user', 'is_active', 'appointments_count',
                     'average_rating', 'hired_at']
     list_filter = ['is_active', 'hired_at']
@@ -446,14 +503,13 @@ class ScheduleAdmin(admin.ModelAdmin):
 
 @admin.register(TimeOff)
 class TimeOffAdmin(admin.ModelAdmin):
-    # Pola są teraz w TimeOff
     list_display = ['employee', 'type', 'date_from', 'date_to', 'status',
                     'days_count', 'approved_by']
     list_filter = ['status', 'type', 'date_from']
     search_fields = ['employee__first_name', 'employee__last_name', 'reason']
     ordering = ['-date_from']
-    readonly_fields = ['approved_at'] # Pole jest w TimeOff
-    raw_id_fields = ['employee', 'approved_by'] # Pola są w TimeOff
+    readonly_fields = ['approved_at']
+    raw_id_fields = ['employee', 'approved_by']
     actions = ['approve_time_offs', 'reject_time_offs']
     fieldsets = (
         (_('Pracownik'), {
@@ -468,7 +524,6 @@ class TimeOffAdmin(admin.ModelAdmin):
     )
 
     def days_count(self, obj):
-        # Wymaga logiki obliczającej dni
         days = (obj.date_to - obj.date_from).days + 1
         return format_html("{}", days)
 
@@ -493,7 +548,6 @@ class TimeOffAdmin(admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
-    # Pola są teraz w Client
     list_display = ['number', 'get_full_name', 'email', 'phone', 'visits_count',
                     'total_spent_amount', 'marketing_consent', 'deleted_status']
     list_filter = ['marketing_consent', 'preferred_contact', 'deleted_at', RevenueRangeFilter]
@@ -540,7 +594,6 @@ class ClientAdmin(admin.ModelAdmin):
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    # Pola są w Appointment
     list_display = ['id_short', 'client', 'employee', 'service', 'start',
                     'status', 'booking_channel', 'reminder_status']
     list_filter = ['status', 'booking_channel', 'start', 'reminder_sent', TodayAppointmentsFilter]
@@ -548,7 +601,6 @@ class AppointmentAdmin(admin.ModelAdmin):
                      'employee__last_name', 'service__name']
     ordering = ['-start']
     date_hierarchy = 'start'
-    # NAPRAWA: timespan jest teraz @property w modelu
     readonly_fields = ['timespan', 'cancelled_at']
     inlines = [NoteInline, PaymentInline]
     raw_id_fields = ['client', 'employee', 'service', 'cancelled_by']
@@ -660,7 +712,6 @@ class PaymentAdmin(admin.ModelAdmin):
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
-    # Pola są w Invoice
     list_display = ['number', 'client', 'issue_date', 'gross_amount',
                     'is_paid', 'due_date', 'payment_status']
     list_filter = ['is_paid', 'issue_date', 'due_date']
@@ -701,7 +752,6 @@ class InvoiceAdmin(admin.ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
-    # Pola są w Notification
     list_display = ['id_short', 'client', 'type', 'channel', 'status',
                     'scheduled_at', 'attempts_count']
     list_filter = ['type', 'channel', 'status', 'scheduled_at']
@@ -730,7 +780,6 @@ class NotificationAdmin(admin.ModelAdmin):
 
 @admin.register(ReportPDF)
 class ReportPDFAdmin(admin.ModelAdmin):
-    # Pola są w ReportPDF
     list_display = ['id_short', 'type', 'title', 'data_od', 'data_do',
                     'generated_by', 'created_at', 'size_display']
     list_filter = ['type', 'created_at']
@@ -757,7 +806,6 @@ class ReportPDFAdmin(admin.ModelAdmin):
     id_short.short_description = 'ID'
 
     def size_display(self, obj):
-        """Poprawiono błąd składni i format_html."""
         if not obj.file_size:
             return format_html("{}", '-')
         if obj.file_size < 1024:
@@ -831,7 +879,6 @@ class SystemSettingsAdmin(admin.ModelAdmin):
             'fields': ('slot_minutes', 'buffer_minutes', 'opening_hours'),
         }),
         (_('Polityki'), {
-            # USUNIĘTO 'notification_schedule'
             'fields': ('deposit_policy',),
         }),
         (_('Finansowe'), {
@@ -860,7 +907,6 @@ class SystemSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(StatsSnapshot)
 class StatsSnapshotAdmin(admin.ModelAdmin):
-    # Pola są w StatsSnapshot
     list_display = ['period', 'date_from', 'date_to', 'total_visits',
                     'completed_visits', 'revenue_total', 'employees_occupancy_avg']
     list_filter = ['period', 'date_from']
@@ -896,7 +942,6 @@ class StatsSnapshotAdmin(admin.ModelAdmin):
 
 @admin.register(MediaAsset)
 class MediaAssetAdmin(admin.ModelAdmin):
-    # Pola są w MediaAsset
     list_display = ['id_short', 'type', 'employee', 'file_name',
                     'size_display', 'is_active', 'created_at']
     list_filter = ['type', 'is_active', 'created_at']
@@ -994,10 +1039,13 @@ class NoteAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 
-# ZMIANA: Aktywacja Custom Admin Site (Dashboardu)
+# ============================================================================
+# 8. AKTYWACJA CUSTOM ADMIN SITE
+# ============================================================================
+
 admin_site = BeautySalonAdminSite(name='beauty_salon_admin')
 
-# Rejestracja wszystkich modeli w admin_site (ZMIANA NAZWY KLAS)
+# Rejestracja wszystkich modeli w admin_site
 admin_site.register(CustomUser, UserAdmin)
 admin_site.register(Service, ServiceAdmin)
 admin_site.register(Employee, EmployeeAdmin)

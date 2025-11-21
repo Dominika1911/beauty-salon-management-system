@@ -11,8 +11,7 @@ from django.utils.translation import gettext_lazy as _
 from django.core.cache import cache
 
 from .managers import ActiveManager, AppointmentManager
-from .utils import phone_validator, generate_client_number, calculate_vat, generate_employee_number, \
-    generate_invoice_number
+from .utils import phone_validator, calculate_vat, generate_invoice_number
 
 
 # ============================================================================
@@ -137,7 +136,6 @@ class Employee(TimestampedModel):
     first_name = models.CharField(_('imię'), max_length=100)
     last_name = models.CharField(_('nazwisko'), max_length=100)
 
-    # KOREKTA: Polskie verbose_name dla FK i M2M
     user = models.OneToOneField(User, on_delete=models.CASCADE, limit_choices_to={'role': User.RoleChoices.EMPLOYEE},
                                 related_name='employee', verbose_name=_('Konto użytkownika'))
     skills = models.ManyToManyField(Service, related_name='employees', blank=True, verbose_name=_('Kompetencje'))
@@ -158,9 +156,7 @@ class Employee(TimestampedModel):
 
     def get_full_name(self): return f"{self.first_name} {self.last_name}"
 
-    def save(self, *args, **kwargs):
-        if not self.number: self.number = generate_employee_number()
-        super().save(*args, **kwargs)
+    # USUNIĘTO: save() - obsługiwane przez signals.py
 
 
 # ============================================================================
@@ -172,7 +168,6 @@ class Schedule(TimestampedModel):
         ACTIVE = 'active', _('Aktywny');
         PENDING = 'pending', _('Oczekujący na zatwierdzenie')
 
-    # KOREKTA: Polskie verbose_name dla FK
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='schedules',
                                  verbose_name=_('Pracownik'))
     availability_periods = models.JSONField(_('okresy dostępności'), default=list)
@@ -201,7 +196,6 @@ class TimeOff(TimestampedModel):
         SICK = 'sick', _('Choroba')
         PERSONAL = 'personal', _('Osobiste/Inne')
 
-    # KOREKTA: Polskie verbose_name dla FK
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='time_offs',
                                  verbose_name=_('Pracownik'))
     date_from = models.DateField(_('data od'))
@@ -211,7 +205,7 @@ class TimeOff(TimestampedModel):
 
     type = models.CharField(_('typ'), max_length=20, choices=Type.choices, default=Type.VACATION)
     approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
-                                    related_name='approved_time_offs', verbose_name=_('Zatwierdzone przez'))  # KOREKTA
+                                    related_name='approved_time_offs', verbose_name=_('Zatwierdzone przez'))
     approved_at = models.DateTimeField(_('data zatwierdzenia'), null=True, blank=True)
 
     class Meta:
@@ -237,7 +231,6 @@ class Client(SoftDeletableModel, TimestampedModel):
     phone = models.CharField(_('telefon'), max_length=20, blank=True, validators=[phone_validator])
     number = models.CharField(_('numer klienta'), max_length=20, unique=True, db_index=True)
 
-    # KOREKTA: Polskie verbose_name dla FK
     user = models.OneToOneField(User, on_delete=models.SET_NULL, limit_choices_to={'role': User.RoleChoices.CLIENT},
                                 null=True, blank=True, related_name='client', verbose_name=_('Konto użytkownika'))
 
@@ -271,9 +264,7 @@ class Client(SoftDeletableModel, TimestampedModel):
             if hasattr(self, 'notifications'): self.notifications.all().delete()
             super().soft_delete()
 
-    def save(self, *args, **kwargs):
-        if not self.number: self.number = generate_client_number()
-        super().save(*args, **kwargs)
+    # USUNIĘTO: save() - obsługiwane przez signals.py
 
 
 # ============================================================================
@@ -289,7 +280,6 @@ class Appointment(TimestampedModel):
         CANCELLED = 'cancelled', _('Odwołana')
         NO_SHOW = 'no_show', _('Nieobecność (No-show)')
 
-    # KOREKTA: Polskie verbose_name dla FK
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='appointments', verbose_name=_('Klient'))
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='appointments',
                                  verbose_name=_('Pracownik'))
@@ -305,7 +295,7 @@ class Appointment(TimestampedModel):
     internal_notes = models.TextField(_('notatki wewnętrzne'), blank=True)
     cancelled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
                                      related_name='cancelled_appointments',
-                                     verbose_name=_('Anulowane przez'))  # KOREKTA
+                                     verbose_name=_('Anulowane przez'))
     cancelled_at = models.DateTimeField(_('data anulowania'), null=True, blank=True)
     cancellation_reason = models.TextField(_('powód anulowania'), blank=True)
     reminder_sent = models.BooleanField(_('przypomnienie wysłane'), default=False)
@@ -342,10 +332,10 @@ class Appointment(TimestampedModel):
 
 class Note(TimestampedModel):
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='notes',
-                                    verbose_name=_('Wizyta'))  # KOREKTA
+                                    verbose_name=_('Wizyta'))
     content = models.TextField(_('treść'))
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='notes',
-                               verbose_name=_('Autor'))  # KOREKTA
+                               verbose_name=_('Autor'))
     visible_for_client = models.BooleanField(_('widoczna dla klienta'), default=False)
 
     class Meta:
@@ -356,7 +346,7 @@ class Note(TimestampedModel):
 
 class MediaAsset(TimestampedModel):
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='media_assets',
-                                 verbose_name=_('Pracownik'))  # KOREKTA
+                                 verbose_name=_('Pracownik'))
     file_url = models.CharField(_('ścieżka URL'), max_length=500)
     type = models.CharField(_('typ'), max_length=20, default='portfolio')
     file_name = models.CharField(_('nazwa pliku'), max_length=255, blank=True)
@@ -382,7 +372,7 @@ class Payment(TimestampedModel):
         PENDING = 'pending', _('Oczekująca');
 
     appointment = models.ForeignKey(Appointment, on_delete=models.PROTECT, related_name='payments', null=True,
-                                    blank=True, verbose_name=_('Wizyta'))  # KOREKTA
+                                    blank=True, verbose_name=_('Wizyta'))
     amount = models.DecimalField(_('kwota'), max_digits=10, decimal_places=2)
     status = models.CharField(_('status'), max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
     paid_at = models.DateTimeField(_('data płatności'), null=True, blank=True, db_index=True)
@@ -400,7 +390,7 @@ class Payment(TimestampedModel):
 class Invoice(TimestampedModel):
     number = models.CharField(_('numer faktury'), max_length=50, unique=True, db_index=True)
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name='invoices',
-                               verbose_name=_('Klient'))  # KOREKTA
+                               verbose_name=_('Klient'))
     issue_date = models.DateField(_('data wystawienia'), db_index=True)
     net_amount = models.DecimalField(_('kwota netto'), max_digits=10, decimal_places=2)
     vat_rate = models.DecimalField(_('stawka VAT %'), max_digits=5, decimal_places=2, default=Decimal('23.00'))
@@ -409,7 +399,7 @@ class Invoice(TimestampedModel):
     is_paid = models.BooleanField(_('zapłacona'), default=False, db_index=True)
 
     appointment = models.ForeignKey(Appointment, on_delete=models.PROTECT, null=True, blank=True,
-                                    related_name='invoices', verbose_name=_('Wizyta'))  # KOREKTA
+                                    related_name='invoices', verbose_name=_('Wizyta'))
     sale_date = models.DateField(_('data sprzedaży'))
     due_date = models.DateField(_('termin płatności'), null=True, blank=True)
     paid_date = models.DateField(_('data opłacenia'), null=True, blank=True)
@@ -433,9 +423,9 @@ class Invoice(TimestampedModel):
 
 class Notification(TimestampedModel):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='notifications',
-                               verbose_name=_('Klient'))  # KOREKTA
+                               verbose_name=_('Klient'))
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, null=True, blank=True,
-                                    related_name='notifications', verbose_name=_('Wizyta'))  # KOREKTA
+                                    related_name='notifications', verbose_name=_('Wizyta'))
 
     type = models.CharField(_('typ'), max_length=20, default='confirmation')
     channel = models.CharField(_('kanał'), max_length=20, default='email')
@@ -461,7 +451,7 @@ class ReportPDF(TimestampedModel):
     data_do = models.DateField(_('data do'), null=True, blank=True)
     file_size = models.PositiveIntegerField(_('rozmiar pliku (B)'), default=0)
     generated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='reports',
-                                     verbose_name=_('Wygenerowane przez'))  # KOREKTA
+                                     verbose_name=_('Wygenerowane przez'))
     parameters = models.JSONField(_('parametry'), default=dict, blank=True)
 
     class Meta:
@@ -485,7 +475,7 @@ class AuditLog(models.Model):
     level = models.CharField(_('poziom'), max_length=20, default=Level.INFO, choices=Level.choices)
     timestamp = models.DateTimeField(_('czas'), default=timezone.now, db_index=True)
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='audit_logs',
-                             verbose_name=_('Użytkownik'))  # KOREKTA
+                             verbose_name=_('Użytkownik'))
     message = models.TextField(_('komunikat'), blank=True)
     adres_ip = models.GenericIPAddressField(_('adres IP'), null=True, blank=True)
     user_agent = models.CharField(_('user agent'), max_length=500, blank=True)
@@ -515,7 +505,7 @@ class SystemSettings(TimestampedModel):
     maintenance_message = models.TextField(_('komunikat konserwacji'), blank=True)
     last_modified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True,
                                          related_name='modyfikacje_ustawien',
-                                         verbose_name=_('Ostatnia modyfikacja przez'))  # KOREKTA
+                                         verbose_name=_('Ostatnia modyfikacja przez'))
 
     class Meta:
         db_table = 'ustawienia_systemowe';
