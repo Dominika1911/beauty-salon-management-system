@@ -1,3 +1,8 @@
+"""
+URL configuration for config project.
+Projekt: Beauty Salon Management System
+"""
+
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -12,9 +17,11 @@ urlpatterns = [
     # Customowy admin site
     path("admin/", admin_site.urls),
 
-    # całe API salonu pod /api/
+    # Całe API salonu pod /api/
     path("api/", include("beauty_salon.urls")),
 ]
 
+# W trybie deweloperskim serwuj pliki mediów
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

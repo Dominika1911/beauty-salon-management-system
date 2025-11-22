@@ -1,57 +1,124 @@
-# beauty_salon/urls.py
+"""
+Beauty Salon Management System - URL Configuration
+Autor: Dominika Jedynak, nr albumu: 92721
+
+Routing dla API salonu kosmetycznego.
+"""
 
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    # User & Auth
     UserViewSet,
+
+    # Services
     ServiceViewSet,
+
+    # Employees
     EmployeeViewSet,
+
+    # Clients
     ClientViewSet,
+
+    # Schedule & TimeOff
     ScheduleViewSet,
     TimeOffViewSet,
+
+    # Appointments
     AppointmentViewSet,
+
+    # Notes & Media
     NoteViewSet,
     MediaAssetViewSet,
+
+    # Payments & Invoices
     PaymentViewSet,
     InvoiceViewSet,
+
+    # Notifications & Reports
     NotificationViewSet,
     ReportPDFViewSet,
+
+    # Audit & System
     AuditLogViewSet,
-    StatsSnapshotViewSet,
     SystemSettingsView,
+    StatsSnapshotViewSet,
+
+    # Statistics & Dashboard
     StatisticsView,
     DashboardView,
     PopularServicesView,
 )
 
+# ✅ Importy widoków auth
+from .auth_views import (
+    csrf,
+    SessionLoginView,
+    SessionLogoutView,
+    AuthStatusView,
+)
+
+# =====================================================================
+# ROUTER DLA VIEWSETS
+# =====================================================================
+
 router = DefaultRouter()
-router.register(r"users", UserViewSet, basename="user")
-router.register(r"services", ServiceViewSet, basename="service")
-router.register(r"employees", EmployeeViewSet, basename="employee")
-router.register(r"clients", ClientViewSet, basename="client")
-router.register(r"schedules", ScheduleViewSet, basename="schedule")
-router.register(r"time-offs", TimeOffViewSet, basename="timeoff")
-router.register(r"appointments", AppointmentViewSet, basename="appointment")
-router.register(r"notes", NoteViewSet, basename="note")
-router.register(r"media-assets", MediaAssetViewSet, basename="mediaasset")
-router.register(r"payments", PaymentViewSet, basename="payment")
-router.register(r"invoices", InvoiceViewSet, basename="invoice")
-router.register(r"notifications", NotificationViewSet, basename="notification")
-router.register(r"reports", ReportPDFViewSet, basename="reportpdf")
-router.register(r"audit-logs", AuditLogViewSet, basename="auditlog")
-router.register(r"stats-snapshots", StatsSnapshotViewSet, basename="statssnapshot")
+
+# User Management
+router.register(r'users', UserViewSet, basename='user')
+
+# Services
+router.register(r'services', ServiceViewSet, basename='service')
+
+# Employees
+router.register(r'employees', EmployeeViewSet, basename='employee')
+
+# Clients
+router.register(r'clients', ClientViewSet, basename='client')
+
+# Schedule & TimeOff
+router.register(r'schedules', ScheduleViewSet, basename='schedule')
+router.register(r'time-offs', TimeOffViewSet, basename='timeoff')
+
+# Appointments
+router.register(r'appointments', AppointmentViewSet, basename='appointment')
+
+# Notes & Media
+router.register(r'notes', NoteViewSet, basename='note')
+router.register(r'media', MediaAssetViewSet, basename='media')
+
+# Payments & Invoices
+router.register(r'payments', PaymentViewSet, basename='payment')
+router.register(r'invoices', InvoiceViewSet, basename='invoice')
+
+# Notifications & Reports
+router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'reports', ReportPDFViewSet, basename='report')
+
+# Audit & Stats
+router.register(r'audit-logs', AuditLogViewSet, basename='auditlog')
+router.register(r'stats-snapshots', StatsSnapshotViewSet, basename='statssnapshot')
+
+# =====================================================================
+# URL PATTERNS
+# =====================================================================
 
 urlpatterns = [
-    # wszystkie CRUD-y z routera
-    path("", include(router.urls)),
+    # ✅ AUTHENTICATION ENDPOINTS
+    path('auth/csrf/', csrf, name='csrf'),
+    path('auth/login/', SessionLoginView.as_view(), name='login'),
+    path('auth/logout/', SessionLogoutView.as_view(), name='logout'),
+    path('auth/status/', AuthStatusView.as_view(), name='auth-status'),
 
-    # widoki specjalne
-    path("settings/", SystemSettingsView.as_view(), name="system-settings"),
-    path("statistics/", StatisticsView.as_view(), name="statistics"),
-    path("dashboard/", DashboardView.as_view(), name="dashboard"),
-    path("popular-services/", PopularServicesView.as_view(), name="popular-services"),
+    # SYSTEM SETTINGS (nie jest ViewSet)
+    path('settings/', SystemSettingsView.as_view(), name='system-settings'),
 
-    # logowanie DRF na sesjach Django (przeglądarka)
-    path("api-auth/", include("rest_framework.urls")),
+    # STATISTICS & DASHBOARD
+    path('statistics/', StatisticsView.as_view(), name='statistics'),
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('popular-services/', PopularServicesView.as_view(), name='popular-services'),
+
+    # ROUTER - wszystkie ViewSets
+    path('', include(router.urls)),
 ]
