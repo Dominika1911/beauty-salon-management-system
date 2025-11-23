@@ -2,7 +2,7 @@
 Beauty Salon Management System - Django Admin
 Autor: Dominika Jedynak, nr albumu: 92721
 
-ZAKTUALIZOWANA WERSJA: Naprawiono błąd FieldError oraz dodano formularze użytkownika.
+W pełni poprawiona wersja: Usunięto błędy AlreadyRegistered i admin.E108.
 """
 
 import csv
@@ -28,15 +28,12 @@ from django.contrib.auth.forms import ReadOnlyPasswordHashField
 # 1. IMPORTY MODELI
 # ============================================================================
 from .models import (
-    User as CustomUser,
-    Service, Employee, Schedule, TimeOff, Client,
-    Appointment, Note, MediaAsset, Payment, Invoice,
-    Notification, ReportPDF, AuditLog, SystemSettings,
-    StatsSnapshot
+    User as CustomUser, Service, Employee, Schedule, TimeOff, Client,
+    Appointment, Note, MediaAsset, Payment, Invoice, Notification,
+    ReportPDF, AuditLog, SystemSettings, StatsSnapshot
 )
 from .utils import generate_invoice_number, calculate_vat
 
-# Używamy aliasu CustomUser, aby nie kolidować z importami User wewnątrz funkcji
 if TYPE_CHECKING:
     from .models import User as UserModel
 
@@ -89,8 +86,70 @@ class CustomUserChangeForm(forms.ModelForm):
         )
 
     def clean_password(self):
-        # Hasła nie zmieniamy w tym formularzu – zwracamy stare
-        return self.initial["password"]
+        return self.initial.get("password")
+
+
+class UserAdmin(BaseUserAdmin):
+    """Standardowy Admin dla CustomUser."""
+    form = CustomUserChangeForm
+    add_form = CustomUserCreationForm
+    list_display = ('email', 'role', 'is_staff', 'is_active', 'account_status') # <-- Używa 'account_status'
+    list_filter = ('role', 'is_staff', 'is_active')
+    fieldsets = (
+        (_('Dane konta'), {'fields': ('email', 'password')}),
+        (_('Dane osobowe'), {'fields': ('first_name', 'last_name')}),
+        (_('Role i uprawnienia'), {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        (_('Zabezpieczenia'), {'fields': ('failed_login_attempts', 'account_locked_until', 'last_login_ip')}),
+        (_('Daty'), {'fields': ('last_login', 'created_at')}),
+    )
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'password1', 'password2', 'role', 'is_active', 'is_staff'),
+        }),
+    )
+    search_fields = ('email', 'first_name', 'last_name')
+    ordering = ('email',)
+    readonly_fields = ('last_login', 'created_at', 'failed_login_attempts', 'account_locked_until', 'last_login_ip')
+    actions = ['activate_users', 'deactivate_users']
+    inlines = []
+
+    # ✅ DODANA METODA: Rozwiązuje błąd admin.E108
+    def account_status(self, obj: 'UserModel'):
+        locked_until_str = obj.account_locked_until.strftime('%Y-%m-%d %H:%M') if obj.account_locked_until else ''
+        if obj.account_locked_until and obj.account_locked_until > timezone.now():
+            return format_html(
+                '<span style="color: red; font-weight: bold;">Zablokowane do {}</span>',
+                locked_until_str
+            )
+        elif obj.failed_login_attempts >= 3:
+            return format_html(
+                '<span style="color: orange;">{} nieudanych prób</span>',
+                obj.failed_login_attempts
+            )
+        elif obj.is_active:
+            return format_html('<span style="color: green;">{}</span>', 'Aktywne')
+        else:
+            return format_html('<span style="color: gray;">{}</span>', 'Nieaktywne')
+
+    account_status.short_description = 'Status konta'
+
+    def get_inline_instances(self, request, obj: Optional['UserModel'] = None):
+        """Dynamiczne inlines na podstawie roli."""
+        if obj is None:
+            return []
+
+        inlines = []
+        if obj.role == 'employee' or obj.is_superuser:
+            if hasattr(obj, 'employee'):
+                inlines.append(EmployeeInline(self.model, self.admin_site))
+
+        if obj.role == 'client' or obj.is_superuser:
+            if hasattr(obj, 'client_profile'):
+                inlines.append(ClientInline(self.model, self.admin_site))
+
+        inlines.extend(super().get_inline_instances(request, obj))
+        return inlines
 
 
 # ============================================================================
@@ -172,6 +231,7 @@ def generate_invoices(modeladmin, request, queryset: QuerySet):
             number=generate_invoice_number(),
             client=appointment.client,
             appointment=appointment,
+            client_name=appointment.client.get_full_name() if appointment.client else "Klient nieznany",
             issue_date=timezone.now().date(),
             sale_date=appointment.start.date(),
             due_date=timezone.now().date() + timedelta(days=14),
@@ -204,9 +264,8 @@ class EmployeeInline(admin.StackedInline):
         'skills',
         ('appointments_count', 'average_rating'),
     )
-    readonly_fields = ('appointments_count', 'average_rating',)
+    readonly_fields = ('number', 'appointments_count', 'average_rating',)
     raw_id_fields = ['skills']
-
 
 class ClientInline(admin.StackedInline):
     model = Client
@@ -217,11 +276,10 @@ class ClientInline(admin.StackedInline):
         ('number', 'first_name', 'last_name', 'email', 'phone'),
         ('visits_count', 'total_spent_amount'),
         ('marketing_consent', 'preferred_contact'),
-        'internal_notes',
+        ('internal_notes',),
         ('deleted_at',)
     )
-    readonly_fields = ('deleted_at', 'visits_count', 'total_spent_amount',)
-
+    readonly_fields = ('number', 'deleted_at', 'visits_count', 'total_spent_amount',)
 
 class ScheduleInline(admin.TabularInline):
     model = Schedule
@@ -297,86 +355,9 @@ class RevenueRangeFilter(SimpleListFilter):
 
 
 # ============================================================================
-# 7. ADMIN CLASSES
+# 7. ADMIN CLASSES (KLASY BEZ DEKORATORÓW @admin.register)
 # ============================================================================
 
-@admin.register(CustomUser)
-class UserAdmin(BaseUserAdmin):
-    """Admin dla custom User model."""
-    form = CustomUserChangeForm
-    add_form = CustomUserCreationForm
-
-    list_display = ['email', 'role', 'is_active', 'is_staff', 'last_login',
-                    'failed_login_attempts', 'account_status']
-    list_filter = ['role', 'is_active', 'is_staff', 'is_superuser', 'created_at']
-    search_fields = ['email']
-    ordering = ['-created_at']
-    readonly_fields = ['created_at', 'updated_at', 'last_login']
-    fieldsets = (
-        (None, {'fields': ('email', 'password')}),
-        (_('Role & Permissions'), {
-            'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
-        }),
-        (_('Security'), {
-            'fields': ('last_login', 'last_login_ip', 'failed_login_attempts', 'account_locked_until'),
-            'classes': ('collapse',),
-        }),
-        (_('Timestamps'), {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',),
-        }),
-    )
-    add_fieldsets = (
-        (None, {
-            'classes': ('wide',),
-            'fields': ('email', 'password1', 'password2', 'role', 'is_active', 'is_staff'),
-        }),
-    )
-
-    def account_status(self, obj: 'UserModel'):
-        locked_until_str = obj.account_locked_until.strftime('%Y-%m-%d %H:%M') if obj.account_locked_until else ''
-        if obj.account_locked_until and obj.account_locked_until > timezone.now():
-            return format_html(
-                '<span style="color: red; font-weight: bold;">Zablokowane do {}</span>',
-                locked_until_str
-            )
-        elif obj.failed_login_attempts >= 3:
-            return format_html(
-                '<span style="color: orange;">{} nieudanych prób</span>',
-                obj.failed_login_attempts
-            )
-        elif obj.is_active:
-            return format_html('<span style="color: green;">{}</span>', 'Aktywne')
-        else:
-            return format_html('<span style="color: gray;">{}</span>', 'Nieaktywne')
-
-    account_status.short_description = 'Status konta'
-
-    def get_inline_instances(self, request, obj: Optional['UserModel'] = None):
-        if obj is None:
-            return []
-
-        inlines = []
-        is_superuser = getattr(obj, 'is_superuser', False)
-
-        if obj.role == 'employee' or is_superuser:
-            if hasattr(obj, 'employee') or is_superuser:
-                inlines.append(EmployeeInline)
-
-        if obj.role == 'client' or is_superuser:
-            if hasattr(obj, 'client') or is_superuser:
-                inlines.append(ClientInline)
-
-        if is_superuser:
-            if obj.role == 'employee' and not hasattr(obj, 'employee'):
-                inlines.append(EmployeeInline)
-            if obj.role == 'client' and not hasattr(obj, 'client'):
-                inlines.append(ClientInline)
-
-        return inlines
-
-
-@admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
     list_display = ['name', 'category', 'price_display', 'duration',
                     'is_published', 'reservations_count', 'promotion_status']
@@ -442,20 +423,19 @@ class ServiceAdmin(admin.ModelAdmin):
     unpublish_services.short_description = 'Ukryj wybrane usługi'
 
 
-@admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
     list_display = ['number', 'get_full_name', 'user', 'is_active', 'appointments_count',
                     'average_rating', 'hired_at']
     list_filter = ['is_active', 'hired_at']
     search_fields = ['number', 'first_name', 'last_name', 'user__email']
     ordering = ['last_name', 'first_name']
-    readonly_fields = ['appointments_count', 'average_rating']
+    readonly_fields = ['number', 'appointments_count', 'average_rating']
     filter_horizontal = ['skills']
     inlines = [ScheduleInline]
     raw_id_fields = ['user']
     fieldsets = (
         (_('Dane osobowe'), {
-            'fields': ('number', 'first_name', 'last_name', 'user', 'phone'),
+            'fields': ('first_name', 'last_name', 'user', 'phone'),
         }),
         (_('Zatrudnienie'), {
             'fields': ('hired_at', 'is_active'),
@@ -464,7 +444,7 @@ class EmployeeAdmin(admin.ModelAdmin):
             'fields': ('skills',),
         }),
         (_('Statystyki'), {
-            'fields': ('appointments_count', 'average_rating'),
+            'fields': ('number', 'appointments_count', 'average_rating'),
             'classes': ('collapse',),
         }),
     )
@@ -474,7 +454,6 @@ class EmployeeAdmin(admin.ModelAdmin):
         return qs.select_related('user').prefetch_related('skills')
 
 
-@admin.register(Schedule)
 class ScheduleAdmin(admin.ModelAdmin):
     list_display = ['employee', 'status', 'created_at', 'availability_days_count']
     list_filter = ['status', 'created_at']
@@ -501,7 +480,6 @@ class ScheduleAdmin(admin.ModelAdmin):
     availability_days_count.short_description = 'Dni w tygodniu'
 
 
-@admin.register(TimeOff)
 class TimeOffAdmin(admin.ModelAdmin):
     list_display = ['employee', 'type', 'date_from', 'date_to', 'status',
                     'days_count', 'approved_by']
@@ -546,25 +524,24 @@ class TimeOffAdmin(admin.ModelAdmin):
     reject_time_offs.short_description = 'Odrzuć wybrane urlopy'
 
 
-@admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     list_display = ['number', 'get_full_name', 'email', 'phone', 'visits_count',
                     'total_spent_amount', 'marketing_consent', 'deleted_status']
     list_filter = ['marketing_consent', 'preferred_contact', 'deleted_at', RevenueRangeFilter]
     search_fields = ['number', 'first_name', 'last_name', 'email', 'phone']
     ordering = ['last_name', 'first_name']
-    readonly_fields = ['visits_count', 'total_spent_amount', 'deleted_at']
+    readonly_fields = ['number', 'visits_count', 'total_spent_amount', 'deleted_at']
     raw_id_fields = ['user']
     actions = [export_to_csv]
     fieldsets = (
         (_('Dane osobowe'), {
-            'fields': ('number', 'first_name', 'last_name', 'email', 'phone', 'user'),
+            'fields': ('first_name', 'last_name', 'email', 'phone', 'user'),
         }),
         (_('Marketing'), {
             'fields': ('marketing_consent', 'preferred_contact'),
         }),
         (_('Statystyki'), {
-            'fields': ('visits_count', 'total_spent_amount'),
+            'fields': ('number', 'visits_count', 'total_spent_amount'),
             'classes': ('collapse',),
         }),
         (_('Notatki'), {
@@ -592,7 +569,6 @@ class ClientAdmin(admin.ModelAdmin):
         return qs.select_related('user')
 
 
-@admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
     list_display = ['id_short', 'client', 'employee', 'service', 'start',
                     'status', 'booking_channel', 'reminder_status']
@@ -611,7 +587,7 @@ class AppointmentAdmin(admin.ModelAdmin):
             'fields': ('client', 'employee', 'service', 'status'),
         }),
         (_('Termin'), {
-            'fields': ('start', 'end'),
+            'fields': ('start', 'end', 'timespan'),
         }),
         (_('Szczegóły rezerwacji'), {
             'fields': ('booking_channel', 'client_notes', 'internal_notes'),
@@ -669,7 +645,6 @@ class AppointmentAdmin(admin.ModelAdmin):
     mark_as_no_show.short_description = 'Oznacz jako no-show'
 
 
-@admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = ['id_short', 'appointment_link', 'type', 'amount', 'status',
                     'method', 'paid_at']
@@ -696,8 +671,11 @@ class PaymentAdmin(admin.ModelAdmin):
 
     def appointment_link(self, obj):
         if obj.appointment:
-            url = reverse('admin:{}_{}_change'.format(obj.appointment._meta.app_label, obj.appointment._meta.model_name),
-                          args=[obj.appointment.id])
+            opts = obj.appointment._meta
+            url = reverse(
+                f'{admin_site.name}:{opts.app_label}_{opts.model_name}_change',
+                args=[obj.appointment.pk]
+            )
             return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.appointment.id)[:8])
         return format_html("{}", '-')
 
@@ -710,7 +688,6 @@ class PaymentAdmin(admin.ModelAdmin):
     mark_as_paid.short_description = 'Oznacz jako zapłacone'
 
 
-@admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
     list_display = ['number', 'client', 'issue_date', 'gross_amount',
                     'is_paid', 'due_date', 'payment_status']
@@ -722,16 +699,16 @@ class InvoiceAdmin(admin.ModelAdmin):
     raw_id_fields = ['client', 'appointment']
     fieldsets = (
         (_('Faktura'), {
-            'fields': ('number', 'client', 'appointment'),
+            'fields': ('number', 'client', 'appointment', 'client_name', 'client_tax_id'),
         }),
         (_('Daty'), {
-            'fields': ('issue_date', 'sale_date', 'due_date'),
+            'fields': ('issue_date', 'sale_date', 'due_date', 'paid_date'),
         }),
         (_('Kwoty'), {
             'fields': ('net_amount', 'vat_rate', 'vat_amount', 'gross_amount'),
         }),
         (_('Płatność'), {
-            'fields': ('is_paid', 'paid_date'),
+            'fields': ('status', 'is_paid'),
         }),
         (_('Plik'), {
             'fields': ('pdf_file',),
@@ -750,7 +727,6 @@ class InvoiceAdmin(admin.ModelAdmin):
     payment_status.short_description = 'Status'
 
 
-@admin.register(Notification)
 class NotificationAdmin(admin.ModelAdmin):
     list_display = ['id_short', 'client', 'type', 'channel', 'status',
                     'scheduled_at', 'attempts_count']
@@ -778,9 +754,8 @@ class NotificationAdmin(admin.ModelAdmin):
     id_short.short_description = 'ID'
 
 
-@admin.register(ReportPDF)
 class ReportPDFAdmin(admin.ModelAdmin):
-    list_display = ['id_short', 'type', 'title', 'data_od', 'data_do',
+    list_display = ['id_short', 'type', 'title', 'date_from', 'date_to',
                     'generated_by', 'created_at', 'size_display']
     list_filter = ['type', 'created_at']
     search_fields = ['title', 'generated_by__email']
@@ -790,13 +765,13 @@ class ReportPDFAdmin(admin.ModelAdmin):
     raw_id_fields = ['generated_by']
     fieldsets = (
         (_('Raport'), {
-            'fields': ('type', 'title', 'file_path'),
+            'fields': ('type', 'title', 'file', 'file_path'),
         }),
         (_('Zakres'), {
-            'fields': ('data_od', 'data_do', 'parameters'),
+            'fields': ('date_from', 'date_to', 'parameters'),
         }),
         (_('Metadata'), {
-            'fields': ('generated_by', 'file_size', 'created_at'),
+            'fields': ('generated_by', 'file_size', 'created_at', 'notes'),
         }),
     )
 
@@ -818,19 +793,18 @@ class ReportPDFAdmin(admin.ModelAdmin):
     size_display.short_description = 'Rozmiar'
 
 
-@admin.register(AuditLog)
 class AuditLogAdmin(admin.ModelAdmin):
-    list_display = ['timestamp', 'type', 'level', 'user', 'message_short',
+    list_display = ['created_at', 'type', 'level', 'user', 'message_short',
                     'entity_display', 'adres_ip']
-    list_filter = ['type', 'level', 'timestamp']
+    list_filter = ['type', 'level', 'created_at']
     search_fields = ['message', 'user__email', 'adres_ip']
-    ordering = ['-timestamp']
-    date_hierarchy = 'timestamp'
-    readonly_fields = ['timestamp']
+    ordering = ['-created_at']
+    date_hierarchy = 'created_at'
+    readonly_fields = ['created_at']
     raw_id_fields = ['user']
     fieldsets = (
         (_('Log'), {
-            'fields': ('timestamp', 'type', 'level', 'message'),
+            'fields': ('created_at', 'type', 'level', 'message'),
         }),
         (_('Użytkownik'), {
             'fields': ('user', 'adres_ip', 'user_agent'),
@@ -865,7 +839,6 @@ class AuditLogAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(SystemSettings)
 class SystemSettingsAdmin(admin.ModelAdmin):
     list_display = ['salon_name', 'slot_minutes', 'buffer_minutes',
                     'maintenance_mode', 'last_modified_by']
@@ -905,7 +878,6 @@ class SystemSettingsAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
 
-@admin.register(StatsSnapshot)
 class StatsSnapshotAdmin(admin.ModelAdmin):
     list_display = ['period', 'date_from', 'date_to', 'total_visits',
                     'completed_visits', 'revenue_total', 'employees_occupancy_avg']
@@ -940,25 +912,24 @@ class StatsSnapshotAdmin(admin.ModelAdmin):
         return False
 
 
-@admin.register(MediaAsset)
 class MediaAssetAdmin(admin.ModelAdmin):
     list_display = ['id_short', 'type', 'employee', 'file_name',
                     'size_display', 'is_active', 'created_at']
     list_filter = ['type', 'is_active', 'created_at']
     search_fields = ['file_name', 'description', 'employee__first_name', 'employee__last_name']
     ordering = ['-created_at']
-    readonly_fields = ['created_at']
-    raw_id_fields = ['employee']
+    readonly_fields = ['created_at', 'file_size', 'size_bytes']
+    raw_id_fields = ['employee', 'client', 'appointment']
     actions = ['activate_assets', 'deactivate_assets']
     fieldsets = (
         (_('Materiał'), {
-            'fields': ('type', 'employee', 'file_url', 'description'),
+            'fields': ('type', 'name', 'employee', 'client', 'appointment', 'description'),
         }),
         (_('Plik'), {
-            'fields': ('file_name', 'size_bytes', 'mime_type'),
+            'fields': ('file', 'file_url', 'file_name', 'file_size', 'size_bytes', 'mime_type'),
         }),
         (_('Status'), {
-            'fields': ('is_active',),
+            'fields': ('is_active', 'is_private'),
         }),
     )
 
@@ -987,25 +958,23 @@ class MediaAssetAdmin(admin.ModelAdmin):
 
     def deactivate_assets(self, request, queryset: QuerySet):
         updated = queryset.update(is_active=False)
-        self.message_user(request, format_html('Deaktywuj {} materiałów.', updated))
+        self.message_user(request, format_html('Deaktywowano {} materiałów.', updated))
 
     deactivate_assets.short_description = 'Deaktywuj wybrane materiały'
 
 
-@admin.register(Note)
 class NoteAdmin(admin.ModelAdmin):
     list_display = ['id_short', 'appointment_link', 'author',
-                    'created_at',
-                    'visible_for_client', 'content_short']
+                    'created_at', 'visible_for_client', 'content_short']
     list_filter = ['visible_for_client', 'created_at']
     search_fields = ['content', 'appointment__client__first_name', 'appointment__client__last_name', 'author__email']
     ordering = ['-created_at']
     date_hierarchy = 'created_at'
     readonly_fields = ['created_at', 'author']
-    raw_id_fields = ['appointment', 'author']
+    raw_id_fields = ['appointment', 'client', 'author']
     fieldsets = (
         (_('Notatka'), {
-            'fields': ('appointment', 'author', 'content'),
+            'fields': ('appointment', 'client', 'author', 'content'),
         }),
         (_('Widoczność'), {
             'fields': ('visible_for_client',),
@@ -1027,9 +996,14 @@ class NoteAdmin(admin.ModelAdmin):
     content_short.short_description = 'Treść'
 
     def appointment_link(self, obj):
-        url = reverse('admin:{}_{}_change'.format(obj.appointment._meta.app_label, obj.appointment._meta.model_name),
-                      args=[obj.appointment.id])
-        return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.appointment.id)[:8])
+        if obj.appointment:
+            opts = obj.appointment._meta
+            url = reverse(
+                f'{admin_site.name}:{opts.app_label}_{opts.model_name}_change',
+                args=[obj.appointment.pk]
+            )
+            return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.appointment.id)[:8])
+        return format_html("{}", '-')
 
     appointment_link.short_description = 'Wizyta'
 

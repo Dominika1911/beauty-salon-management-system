@@ -12,7 +12,6 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-
 # ============================================================================
 # IMPORTY PERMISSIONS Z OSOBNEGO PLIKU
 # ============================================================================
@@ -30,7 +29,6 @@ from .permissions import (
 
 User = get_user_model()
 
-
 # ============================================================================
 # IMPORTY MODELI
 # ============================================================================
@@ -46,13 +44,12 @@ from .models import (
     MediaAsset,
     Payment,
     Invoice,
-    Notification,
+    Notification,  # <--- UPEWNIJ SIĘ, ŻE JEST TUTAJ
     ReportPDF,
     AuditLog,
     SystemSettings,
     StatsSnapshot,
 )
-
 
 # ============================================================================
 # IMPORTY SERIALIZERÓW
@@ -109,19 +106,20 @@ from .serializers import (
     EmployeeStatisticsSerializer,
 )
 
+
 # ============================================================================
 # AUDIT LOG HELPER
 # ============================================================================
 
 
 def create_audit_log(
-    user,
-    type: str,
-    message: str,
-    entity=None,
-    request=None,
-    level=AuditLog.Level.INFO,
-    metadata=None,
+        user,
+        type: str,
+        message: str,
+        entity=None,
+        request=None,
+        level=AuditLog.Level.INFO,
+        metadata=None,
 ):
     """Prosty helper do tworzenia wpisów w AuditLog."""
     return AuditLog.objects.create(
@@ -142,10 +140,10 @@ def create_audit_log(
 
 class UserViewSet(viewsets.ModelViewSet):
     """
-    ZarzÄ…dzanie uÅ¼ytkownikami systemu.
+    Zarządzanie użytkownikami systemu.
 
-    - Manager: peÅ‚ny dostÄ™p (lista, tworzenie, edycja, reset hasÅ‚a)
-    - KaÅ¼dy zalogowany: endpoint `me` + `change_password`
+    - Manager: pełny dostęp (lista, tworzenie, edycja, reset hasła)
+    - Każdy zalogowany: endpoint `me` + `change_password`
     """
 
     queryset = User.objects.all()
@@ -168,18 +166,18 @@ class UserViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "reset_password":
             return [IsManager()]
-        # wszystko inne â€“ tylko manager
+        # wszystko inne – tylko manager
         return [IsManager()]
 
     @action(detail=False, methods=["get"])
     def me(self, request):
-        """Zwraca dane zalogowanego uÅ¼ytkownika."""
+        """Zwraca dane zalogowanego użytkownika."""
         serializer = UserDetailSerializer(request.user)
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def reset_password(self, request, pk=None):
-        """Reset hasÅ‚a wskazanego uÅ¼ytkownika (tylko manager)."""
+        """Reset hasła wskazanego użytkownika (tylko manager)."""
         user = self.get_object()
         serializer = PasswordResetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -193,16 +191,16 @@ class UserViewSet(viewsets.ModelViewSet):
         create_audit_log(
             user=request.user,
             type="user.reset_password",
-            message=f"Reset hasÅ‚a dla uÅ¼ytkownika {user.email}",
+            message=f"Reset hasła dla użytkownika {user.email}",
             entity=user,
             request=request,
         )
 
-        return Response({"detail": "HasÅ‚o zostaÅ‚o zresetowane."})
+        return Response({"detail": "Hasło zostało zresetowane."})
 
     @action(detail=False, methods=["post"])
     def change_password(self, request):
-        """Zmiana wÅ‚asnego hasÅ‚a."""
+        """Zmiana własnego hasła."""
         serializer = PasswordChangeSerializer(
             data=request.data, context={"request": request}
         )
@@ -218,12 +216,12 @@ class UserViewSet(viewsets.ModelViewSet):
         create_audit_log(
             user=user,
             type="user.change_password",
-            message="UÅ¼ytkownik zmieniÅ‚ wÅ‚asne hasÅ‚o.",
+            message="Użytkownik zmienił własne hasło.",
             entity=user,
             request=request,
         )
 
-        return Response({"detail": "HasÅ‚o zostaÅ‚o zmienione."})
+        return Response({"detail": "Hasło zostało zmienione."})
 
 
 # ==================== SERVICE VIEWS ====================
@@ -231,9 +229,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
 class ServiceViewSet(viewsets.ModelViewSet):
     """
-    UsÅ‚ugi salonu.
+    Usługi salonu.
 
-    - Lista / szczegÃ³Å‚y: dostÄ™pne dla wszystkich (publiczny katalog usÅ‚ug)
+    - Lista / szczegóły: dostępne dla wszystkich (publiczny katalog usług)
     - Tworzenie/edycja/usuwanie: manager lub pracownik
     """
 
@@ -256,9 +254,19 @@ class ServiceViewSet(viewsets.ModelViewSet):
             return [permissions.AllowAny()]
         return [IsManagerOrEmployee()]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Niezalogowani i Klienci widzą tylko opublikowane
+        if not self.request.user.is_authenticated or (
+                hasattr(self.request.user, "is_salon_client")
+                and self.request.user.is_salon_client
+        ):
+            return queryset.filter(is_published=True)
+        return queryset
+
     @action(detail=False, methods=["get"])
     def published(self, request):
-        """Lista tylko opublikowanych usÅ‚ug."""
+        """Lista tylko opublikowanych usług."""
         qs = self.filter_queryset(
             self.get_queryset().filter(is_published=True)
         )
@@ -273,7 +281,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     """
     Pracownicy salonu.
 
-    - Publicznie: lista / szczegÃ³Å‚y (np. do wyboru w rezerwacji)
+    - Publicznie: lista / szczegóły (np. do wyboru w rezerwacji)
     - Tworzenie/edycja/usuwanie: tylko manager
     """
 
@@ -310,14 +318,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def active(self, request):
-        """Lista aktywnych pracownikÃ³w."""
+        """Lista aktywnych pracowników."""
         qs = self.filter_queryset(self.get_queryset().filter(is_active=True))
         serializer = EmployeeListSerializer(qs, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=["get"])
     def me(self, request):
-        """Dane pracownika powiÄ…zanego z zalogowanym uÅ¼ytkownikiem."""
+        """Dane pracownika powiązanego z zalogowanym użytkownikiem."""
         user = request.user
         if not user.is_authenticated:
             return Response(
@@ -328,7 +336,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             employee = user.employee
         except Employee.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z pracownikiem."},
+                {"detail": "Konto nie jest powiązane z pracownikiem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         serializer = EmployeeDetailSerializer(employee)
@@ -336,14 +344,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def services(self, request, pk=None):
-        """UsÅ‚ugi wykonywane przez pracownika."""
+        """Usługi wykonywane przez pracownika."""
         employee = self.get_object()
         serializer = ServiceListSerializer(employee.skills.all(), many=True)
         return Response(serializer.data)
 
     @action(detail=True, methods=["get"])
     def upcoming_appointments(self, request, pk=None):
-        """NajbliÅ¼sze wizyty danego pracownika."""
+        """Najbliższe wizyty danego pracownika."""
         employee = self.get_object()
         now = timezone.now()
         qs = Appointment.objects.filter(
@@ -361,8 +369,8 @@ class ClientViewSet(viewsets.ModelViewSet):
     """
     Klienci salonu.
 
-    - Manager/pracownik: peÅ‚ne zarzÄ…dzanie klientami
-    - Klient: dostÄ™p do wÅ‚asnego profilu przez `me` oraz `my_appointments`
+    - Manager/pracownik: pełne zarządzanie klientami
+    - Klient: dostęp do własnego profilu przez `me` oraz `my_appointments`
     """
 
     queryset = Client.objects.select_related("user").all()
@@ -405,33 +413,33 @@ class ClientViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         user = self.request.user
 
-        # Manager/pracownik â€“ wszyscy klienci
+        # Manager/pracownik – wszyscy klienci
         if (
-            user.is_authenticated
-            and (
-                (hasattr(user, "is_manager") and user.is_manager())
+                user.is_authenticated
+                and (
+                (hasattr(user, "is_manager") and user.is_manager)
                 or (
-                    hasattr(user, "is_salon_employee")
-                    and user.is_salon_employee()
+                        hasattr(user, "is_salon_employee")
+                        and user.is_salon_employee
                 )
-            )
+        )
         ):
             return qs
 
-        # Klient â€“ tylko wÅ‚asny rekord
+        # Klient – tylko własny rekord
         if (
-            user.is_authenticated
-            and hasattr(user, "is_salon_client")
-            and user.is_salon_client()
+                user.is_authenticated
+                and hasattr(user, "is_salon_client")
+                and user.is_salon_client
         ):
             return qs.filter(user=user)
 
-        # Inni â€“ nic
+        # Inni – nic
         return qs.none()
 
     @action(detail=False, methods=["get"])
     def me(self, request):
-        """Profil klienta powiÄ…zanego z zalogowanym uÅ¼ytkownikiem."""
+        """Profil klienta powiązanego z zalogowanym użytkownikiem."""
         user = request.user
         if not user.is_authenticated:
             return Response(
@@ -439,10 +447,10 @@ class ClientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            client = user.client
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z klientem."},
+                {"detail": "Konto nie jest powiązane z klientem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         serializer = ClientDetailSerializer(client)
@@ -450,14 +458,14 @@ class ClientViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def soft_deleted(self, request):
-        """Lista miÄ™kko usuniÄ™tych klientÃ³w (tylko personel)."""
+        """Lista miękko usuniętych klientów (tylko personel)."""
         qs = Client.objects.filter(deleted_at__isnull=False)
         serializer = ClientListSerializer(qs, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=["post"])
     def soft_delete(self, request):
-        """MiÄ™kkie usuniÄ™cie klienta (tylko personel)."""
+        """Miękkie usunięcie klienta (tylko personel)."""
         serializer = ClientSoftDeleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         client = serializer.save()
@@ -465,13 +473,13 @@ class ClientViewSet(viewsets.ModelViewSet):
         create_audit_log(
             user=request.user,
             type="client.soft_delete",
-            message=f"MiÄ™kko usuniÄ™to klienta {client.get_full_name()}",
+            message=f"Miękko usunięto klienta {client.get_full_name()}",
             entity=client,
             request=request,
         )
 
         return Response(
-            {"detail": "Klient zostaÅ‚ oznaczony jako usuniÄ™ty."},
+            {"detail": "Klient został oznaczony jako usunięty."},
             status=status.HTTP_200_OK,
         )
 
@@ -493,10 +501,10 @@ class ClientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            client = user.client
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z klientem."},
+                {"detail": "Konto nie jest powiązane z klientem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -510,9 +518,9 @@ class ClientViewSet(viewsets.ModelViewSet):
 
 class ScheduleViewSet(viewsets.ModelViewSet):
     """
-    Grafiki pracy pracownikÃ³w.
+    Grafiki pracy pracowników.
 
-    - Manager/pracownik: peÅ‚ny dostÄ™p
+    - Manager/pracownik: pełny dostęp
     """
 
     queryset = Schedule.objects.select_related("employee").all()
@@ -530,16 +538,16 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if (
-            user.is_authenticated
-            and hasattr(user, "is_manager")
-            and user.is_manager()
+                user.is_authenticated
+                and hasattr(user, "is_manager")
+                and user.is_manager
         ):
             return qs
 
         if (
-            user.is_authenticated
-            and hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                user.is_authenticated
+                and hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs.filter(employee__user=user)
 
@@ -558,7 +566,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
             employee = user.employee
         except Employee.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z pracownikiem."},
+                {"detail": "Konto nie jest powiązane z pracownikiem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -572,9 +580,9 @@ class ScheduleViewSet(viewsets.ModelViewSet):
 
 class TimeOffViewSet(viewsets.ModelViewSet):
     """
-    Urlopy / nieobecnoÅ›ci pracownikÃ³w.
+    Urlopy / nieobecności pracowników.
 
-    - Manager/pracownik: przeglÄ…d
+    - Manager/pracownik: przegląd
     - Zatwierdzanie: tylko manager
     """
 
@@ -599,16 +607,16 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = self.request.user
 
         if (
-            user.is_authenticated
-            and hasattr(user, "is_manager")
-            and user.is_manager()
+                user.is_authenticated
+                and hasattr(user, "is_manager")
+                and user.is_manager
         ):
             return qs
 
         if (
-            user.is_authenticated
-            and hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                user.is_authenticated
+                and hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs.filter(employee__user=user)
 
@@ -627,7 +635,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
             employee = user.employee
         except Employee.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z pracownikiem."},
+                {"detail": "Konto nie jest powiązane z pracownikiem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -665,7 +673,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     Wizyty w salonie.
 
     - Manager/pracownik: wszystkie wizyty (tworzenie, edycja, zmiana statusu)
-    - Klient: tylko wÅ‚asne wizyty (przez list / retrieve)
+    - Klient: tylko własne wizyty (przez list / retrieve)
     """
 
     queryset = (
@@ -718,20 +726,20 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Manager/pracownik â€“ wszystkie wizyty
+        # Manager/pracownik – wszystkie wizyty
         if (
-            hasattr(user, "is_manager")
-            and user.is_manager()
+                hasattr(user, "is_manager")
+                and user.is_manager
         ) or (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs
 
-        # Klient â€“ tylko wÅ‚asne
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        # Klient – tylko własne
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
@@ -740,7 +748,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def today(self, request):
-        """Wizyty dzisiaj (filtrowane po roli uÅ¼ytkownika)."""
+        """Wizyty dzisiaj (filtrowane po roli użytkownika)."""
         today = timezone.localdate()
         qs = self.get_queryset().filter(start__date=today).order_by("start")
         serializer = AppointmentListSerializer(qs, many=True)
@@ -748,7 +756,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def upcoming(self, request):
-        """PrzyszÅ‚e wizyty (domyÅ›lnie od teraz)."""
+        """Przyszłe wizyty (domyślnie od teraz)."""
         now = timezone.now()
         qs = self.get_queryset().filter(start__gte=now).order_by("start")
         serializer = AppointmentListSerializer(qs, many=True)
@@ -756,23 +764,23 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def my_appointments(self, request):
-        """Wizyty zalogowanego uÅ¼ytkownika (klient/pracownik)."""
+        """Wizyty zalogowanego użytkownika (klient/pracownik)."""
         user = request.user
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return Response(
-                    {"detail": "Konto nie jest powiÄ…zane z klientem."},
+                    {"detail": "Konto nie jest powiązane z klientem."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = Appointment.objects.filter(client=client).order_by("-start")
-        elif hasattr(user, "is_salon_employee") and user.is_salon_employee():
+        elif hasattr(user, "is_salon_employee") and user.is_salon_employee:
             try:
                 employee = user.employee
             except Employee.DoesNotExist:
                 return Response(
-                    {"detail": "Konto nie jest powiÄ…zane z pracownikiem."},
+                    {"detail": "Konto nie jest powiązane z pracownikiem."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = Appointment.objects.filter(employee=employee).order_by("-start")
@@ -786,18 +794,71 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def change_status(self, request, pk=None):
         """
         Zmiana statusu wizyty (np. anulowanie, no-show).
+        Wprowadza logikę utraty zaliczki.
         """
         appointment = self.get_object()
         serializer = AppointmentStatusUpdateSerializer(
             appointment, data=request.data, partial=True, context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
+
+        old_status = appointment.status
+        new_status = serializer.validated_data.get('status')
+
+        # ----------------------------------------------------
+        # ✅ LOGIKA: OBSŁUGA UTRATY ZALICZKI
+        # ----------------------------------------------------
+
+        # Statusy, przy których następuje utrata zaliczki (kara)
+        FORFEIT_STATUSES = [Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
+
+        if new_status in FORFEIT_STATUSES:
+            # Sprawdź politykę w SystemSettings
+            settings = SystemSettings.load()
+
+            # Flaga decydująca o przepadku zaliczki, jeśli jest w ustawieniach
+            should_forfeit = settings.deposit_policy.get('forfeit_deposit_on_cancellation', False)
+
+            if should_forfeit:
+                # Znajdź aktywną zaliczkę powiązaną z tą wizytą
+                try:
+                    # Szukamy płatności, która ma status 'DEPOSIT'
+                    deposit = Payment.objects.get(
+                        appointment=appointment,
+                        status=Payment.Status.DEPOSIT
+                    )
+
+                    # Zmień status zaliczki na 'Utracona'
+                    # Uwaga: Ten status 'FORFEITED' musi być wcześniej dodany do Payment.Status w models.py!
+                    deposit.status = 'forfeited'  # Używamy stringa, ponieważ nie mamy dostępu do stałej Payment.Status.FORFEITED w tym pliku bez ryzyka konfliktu, zakładając, że models.py został zmieniony.
+                    deposit.paid_at = timezone.now()
+                    deposit.save()
+
+                    # Logowanie zdarzenia dla audytu
+                    create_audit_log(
+                        user=request.user,
+                        type="payment.deposit_forfeited",
+                        message=f"Zaliczka (ID={deposit.id}) utracona z powodu: {appointment.get_status_display()} wizyty ID={appointment.id}.",
+                        level=AuditLog.Level.WARNING,
+                        entity=deposit,
+                        request=request,
+                    )
+
+                except Payment.DoesNotExist:
+                    # To jest prawidłowe, jeśli wizyta nie miała zaliczki
+                    pass
+
+                    # ----------------------------------------------------
+        # KONIEC DODANEJ LOGIKI
+        # ----------------------------------------------------
+
+        # Zapisz zmianę statusu wizyty
         appointment = serializer.save()
 
         create_audit_log(
             user=request.user,
             type="appointment.change_status",
-            message=f"Zmiana statusu wizyty ID={appointment.id} na {appointment.status}",
+            message=f"Zmiana statusu wizyty ID={appointment.id} z {old_status} na {new_status}",
             entity=appointment,
             request=request,
         )
@@ -835,20 +896,20 @@ class NoteViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Manager/pracownik â€“ wszystkie notatki
+        # Manager/pracownik – wszystkie notatki
         if (
-            hasattr(user, "is_manager")
-            and user.is_manager()
+                hasattr(user, "is_manager")
+                and user.is_manager
         ) or (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs
 
-        # Klient â€“ tylko notatki widoczne przy jego wizytach
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        # Klient – tylko notatki widoczne przy jego wizytach
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(
@@ -860,7 +921,7 @@ class NoteViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def my_notes(self, request):
-        """Notatki stworzone przez zalogowanego uÅ¼ytkownika (dla personelu)."""
+        """Notatki stworzone przez zalogowanego użytkownika (dla personelu)."""
         user = request.user
         if not user.is_authenticated:
             return Response(
@@ -871,12 +932,15 @@ class NoteViewSet(viewsets.ModelViewSet):
         serializer = NoteSerializer(qs, many=True)
         return Response(serializer.data)
 
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
+
 
 class MediaAssetViewSet(viewsets.ModelViewSet):
     """
-    MateriaÅ‚y (portfolio, zdjÄ™cia efektÃ³w itd.).
+    Materiały (portfolio, zdjęcia efektów itd.).
 
-    - PodglÄ…d: dla wszystkich
+    - Podgląd: dla wszystkich
     - Tworzenie/edycja/usuwanie: manager/pracownik
     """
 
@@ -900,21 +964,21 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """
-        JeÅ›li dodaje pracownik â€“ automatycznie przypisujemy jego profil Employee.
-        Manager moÅ¼e wskazaÄ‡ dowolnego pracownika.
+        Jeśli dodaje pracownik – automatycznie przypisujemy jego profil Employee.
+        Manager może wskazać dowolnego pracownika.
         """
         user = self.request.user
         if (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
-            and not (hasattr(user, "is_manager") and user.is_manager())
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
+                and not (hasattr(user, "is_manager") and user.is_manager)
         ):
-            # pracownik â€“ przypinamy jego profil
+            # pracownik – przypinamy jego profil
             try:
                 employee = user.employee
             except Employee.DoesNotExist:
                 raise serializers.ValidationError(
-                    "Konto nie jest powiÄ…zane z pracownikiem."
+                    "Konto nie jest powiązane z pracownikiem."
                 )
             serializer.save(employee=employee)
         else:
@@ -926,10 +990,10 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
 
 class PaymentViewSet(viewsets.ModelViewSet):
     """
-    PÅ‚atnoÅ›ci za wizyty.
+    Płatności za wizyty.
 
-    - Personel: widzi wszystkie pÅ‚atnoÅ›ci, moÅ¼e je tworzyÄ‡ i oznaczaÄ‡ jako zapÅ‚acone
-    - Klient: widzi tylko swoje pÅ‚atnoÅ›ci
+    - Personel: widzi wszystkie płatności, może je tworzyć i oznaczaÄ‡ jako zapłacone
+    - Klient: widzi tylko swoje płatności
     """
 
     queryset = Payment.objects.select_related(
@@ -961,20 +1025,20 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel â€“ wszystkie
+        # Personel – wszystkie
         if (
-            hasattr(user, "is_manager")
-            and user.is_manager()
+                hasattr(user, "is_manager")
+                and user.is_manager
         ) or (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs
 
-        # Klient â€“ tylko wÅ‚asne
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        # Klient – tylko własne
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(appointment__client=client)
@@ -983,7 +1047,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def my_payments(self, request):
-        """PÅ‚atnoÅ›ci zalogowanego klienta."""
+        """Płatności zalogowanego klienta."""
         qs = self.get_queryset()
         serializer = PaymentSerializer(qs, many=True)
         return Response(serializer.data)
@@ -991,7 +1055,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def mark_as_paid(self, request):
         """
-        Oznacz wybranÄ… pÅ‚atnoÅ›Ä‡ jako zapÅ‚aconÄ….
+        Oznacz wybraną płatność jako zapłaconą.
         """
         serializer = PaymentMarkAsPaidSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -1000,14 +1064,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
         create_audit_log(
             user=request.user,
             type="payment.mark_as_paid",
-            message=f"PÅ‚atnoÅ›Ä‡ ID={payment.id} oznaczona jako zapÅ‚acona.",
+            message=f"Płatność ID={payment.id} oznaczona jako zapłacona.",
             entity=payment,
             request=request,
         )
 
         return Response(
             {
-                "detail": "PÅ‚atnoÅ›Ä‡ oznaczona jako zapÅ‚acona.",
+                "detail": "Płatność oznaczona jako zapłacona.",
                 "payment": PaymentSerializer(payment).data,
             }
         )
@@ -1018,7 +1082,7 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     Faktury.
 
     - Personel: widzi wszystkie
-    - Klient: widzi tylko wÅ‚asne faktury
+    - Klient: widzi tylko własne faktury
     """
 
     queryset = Invoice.objects.select_related("client", "appointment").all()
@@ -1038,20 +1102,20 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel â€“ wszystkie faktury
+        # Personel – wszystkie faktury
         if (
-            hasattr(user, "is_manager")
-            and user.is_manager()
+                hasattr(user, "is_manager")
+                and user.is_manager
         ) or (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs
 
-        # Klient â€“ tylko wÅ‚asne
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        # Klient – tylko własne
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
@@ -1073,7 +1137,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
     """
     Powiadomienia (np. przypomnienia o wizycie).
 
-    - Personel: zarzÄ…dza powiadomieniami
+    - Personel: zarządza powiadomieniami
     - Klient: widzi tylko swoje powiadomienia
     """
 
@@ -1104,20 +1168,20 @@ class NotificationViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel â€“ wszystkie powiadomienia
+        # Personel – wszystkie powiadomienia
         if (
-            hasattr(user, "is_manager")
-            and user.is_manager()
+                hasattr(user, "is_manager")
+                and user.is_manager
         ) or (
-            hasattr(user, "is_salon_employee")
-            and user.is_salon_employee()
+                hasattr(user, "is_salon_employee")
+                and user.is_salon_employee
         ):
             return qs
 
-        # Klient â€“ tylko wÅ‚asne
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        # Klient – tylko własne
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             try:
-                client = user.client
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
@@ -1130,6 +1194,9 @@ class NotificationViewSet(viewsets.ModelViewSet):
         qs = self.get_queryset()
         serializer = NotificationSerializer(qs, many=True)
         return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        serializer.save()
 
 
 class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
@@ -1158,16 +1225,16 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [IsManager]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ["type", "level", "user", "timestamp"]
-    ordering_fields = ["timestamp"]
-    ordering = ["-timestamp"]
+    filterset_fields = ["type", "level", "user", "created_at"]
+    ordering_fields = ["created_at"]
+    ordering = ["-created_at"]
 
 
 class SystemSettingsView(APIView):
     """
     Ustawienia systemowe.
 
-    - GET: kaÅ¼dy zalogowany
+    - GET: każdy zalogowany
     - PATCH: tylko manager
     """
 
@@ -1180,11 +1247,11 @@ class SystemSettingsView(APIView):
         return Response(serializer.data)
 
     def patch(self, request):
-        """Aktualizacja ustawieÅ„ (tylko manager)."""
+        """Aktualizacja ustawień (tylko manager)."""
         user = request.user
-        if not (hasattr(user, "is_manager") and user.is_manager()):
+        if not (hasattr(user, "is_manager") and user.is_manager):
             return Response(
-                {"detail": "Tylko manager moÅ¼e aktualizowaÄ‡ ustawienia systemowe."},
+                {"detail": "Tylko manager może aktualizować ustawienia systemowe."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -1201,7 +1268,7 @@ class SystemSettingsView(APIView):
         create_audit_log(
             user=user,
             type="system_settings.update",
-            message="Aktualizacja ustawieÅ„ systemowych.",
+            message="Aktualizacja ustawień systemowych.",
             entity=settings,
             request=request,
         )
@@ -1231,9 +1298,9 @@ class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
 
 class StatisticsView(APIView):
     """
-    Globalne statystyki salonu (wizyty, przychody, usÅ‚ugi, pracownicy).
+    Globalne statystyki salonu (wizyty, przychody, usługi, pracownicy).
 
-    DomyÅ›lny okres: ostatnie 30 dni (parametr ?days=).
+    Domyślny okres: ostatnie 30 dni (parametr ?days=).
     """
 
     permission_classes = [IsManagerOrEmployee]
@@ -1268,14 +1335,14 @@ class StatisticsView(APIView):
         ).count()
 
         total_revenue = (
-            Payment.objects.filter(
-                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-                created_at__gte=since,
-            ).aggregate(total=Sum("amount"))["total"]
-            or Decimal("0.00")
+                Payment.objects.filter(
+                    status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+                    created_at__gte=since,
+                ).aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
         )
 
-        # Statystyki usÅ‚ug
+        # Statystyki usług
         services_qs = (
             Service.objects.filter(is_published=True)
             .annotate(
@@ -1309,7 +1376,7 @@ class StatisticsView(APIView):
             service_stats_data, many=True
         ).data
 
-        # Statystyki pracownikÃ³w
+        # Statystyki pracowników
         employees_qs = (
             Employee.objects.filter(is_active=True)
             .annotate(
@@ -1325,7 +1392,7 @@ class StatisticsView(APIView):
             {
                 "employee": employee,
                 "total_appointments": employee.total_appointments or 0,
-                # Proste pole â€“ dokÅ‚adne wyliczanie obÅ‚oÅ¼enia wymagaÅ‚oby slotÃ³w czasowych
+                # Proste pole – dokładne wyliczanie obłożenia wymagałoby slotów czasowych
                 "occupancy_percent": Decimal("0.00"),
             }
             for employee in employees_qs
@@ -1361,11 +1428,11 @@ class StatisticsView(APIView):
 
 class DashboardView(APIView):
     """
-    Dashboard dopasowany do roli uÅ¼ytkownika:
+    Dashboard dopasowany do roli użytkownika:
 
-    - Manager: podsumowania + dzisiejsze / nadchodzÄ…ce wizyty
-    - Pracownik: dzisiejszy grafik + przyszÅ‚e wizyty
-    - Klient: nadchodzÄ…ce wizyty + historia + wydane Å›rodki
+    - Manager: podsumowania + dzisiejsze / nadchodzące wizyty
+    - Pracownik: dzisiejszy grafik + przyszłe wizyty
+    - Klient: nadchodzące wizyty + historia + wydane środki
     """
 
     permission_classes = [permissions.IsAuthenticated]
@@ -1376,15 +1443,15 @@ class DashboardView(APIView):
         today = timezone.localdate()
 
         # Klient
-        if hasattr(user, "is_salon_client") and user.is_salon_client():
+        if hasattr(user, "is_salon_client") and user.is_salon_client:
             return self._client_dashboard(user, now, today)
 
         # Pracownik
-        if hasattr(user, "is_salon_employee") and user.is_salon_employee():
+        if hasattr(user, "is_salon_employee") and user.is_salon_employee:
             return self._employee_dashboard(user, now, today)
 
         # Manager
-        if hasattr(user, "is_manager") and user.is_manager():
+        if hasattr(user, "is_manager") and user.is_manager:
             return self._manager_dashboard(user, now, today)
 
         # Fallback
@@ -1395,14 +1462,14 @@ class DashboardView(APIView):
 
     def _client_dashboard(self, user, now, today):
         """
-        Dashboard klienta â€“ uÅ¼ywamy user.client (OneToOneField),
-        jak pisaÅ‚eÅ› â€“ to jest prawidÅ‚owe podejÅ›cie.
+        Dashboard klienta – używamy user.client (OneToOneField),
+        jak pisałeś – to jest prawidłowe podejście.
         """
         try:
-            client = user.client
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z klientem."},
+                {"detail": "Konto nie jest powiązane z klientem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1422,11 +1489,11 @@ class DashboardView(APIView):
         ).order_by("-start")[:5]
 
         total_spent = (
-            Payment.objects.filter(
-                appointment__client=client,
-                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-            ).aggregate(total=Sum("amount"))["total"]
-            or Decimal("0.00")
+                Payment.objects.filter(
+                    appointment__client=client,
+                    status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+                ).aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
         )
 
         data = {
@@ -1444,13 +1511,13 @@ class DashboardView(APIView):
 
     def _employee_dashboard(self, user, now, today):
         """
-        Dashboard pracownika â€“ rÃ³wnieÅ¼ korzysta z user.employee (OneToOneField).
+        Dashboard pracownika – również korzysta z user.employee (OneToOneField).
         """
         try:
             employee = user.employee
         except Employee.DoesNotExist:
             return Response(
-                {"detail": "Konto nie jest powiÄ…zane z pracownikiem."},
+                {"detail": "Konto nie jest powiązane z pracownikiem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -1497,11 +1564,11 @@ class DashboardView(APIView):
         ).count()
 
         todays_revenue = (
-            Payment.objects.filter(
-                created_at__date=today,
-                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-            ).aggregate(total=Sum("amount"))["total"]
-            or Decimal("0.00")
+                Payment.objects.filter(
+                    created_at__date=today,
+                    status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+                ).aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
         )
 
         new_clients_today = Client.objects.filter(
@@ -1543,8 +1610,8 @@ class DashboardView(APIView):
 
 class PopularServicesView(APIView):
     """
-    Popularne usÅ‚ugi (na podstawie liczby wizyt w ostatnich X dniach).
-    Publiczne â€“ moÅ¼na uÅ¼yÄ‡ np. na stronie gÅ‚Ã³wnej.
+    Popularne usługi (na podstawie liczby wizyt w ostatnich X dniach).
+    Publiczne – można użyć np. na stronie głównej.
     """
 
     permission_classes = [permissions.AllowAny]

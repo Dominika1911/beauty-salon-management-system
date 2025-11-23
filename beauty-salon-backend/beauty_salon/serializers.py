@@ -250,10 +250,11 @@ class ServiceCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
 
-# ==================== EMPLOYEE SERIALIZERS ====================
+# ==================== EMPLOYEE SERIALIZERS (POPRAWIONE 'id' NA 'user') ====================
 
 
 class EmployeeSimpleSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
     full_name = serializers.CharField(source="get_full_name", read_only=True)
 
     class Meta:
@@ -263,6 +264,7 @@ class EmployeeSimpleSerializer(serializers.ModelSerializer):
 
 
 class EmployeeListSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     skills = ServiceListSerializer(many=True, read_only=True)
     user_email = serializers.EmailField(source="user.email", read_only=True)
@@ -275,7 +277,6 @@ class EmployeeListSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "full_name",
-            "user",
             "user_email",
             "phone",
             "hired_at",
@@ -289,6 +290,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
 
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
     full_name = serializers.CharField(source="get_full_name", read_only=True)
     skills = ServiceListSerializer(many=True, read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
@@ -308,7 +310,6 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "full_name",
-            "user",
             "user_email",
             "phone",
             "hired_at",
@@ -329,13 +330,10 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    def validate_user(self, value):
-        if not hasattr(value, "is_salon_employee") or not value.is_salon_employee():
-            raise serializers.ValidationError("Wybrane konto nie ma roli pracownika.")
-        return value
 
 
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="pk", read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=Service.objects.all(),
@@ -347,6 +345,7 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = [
+            "id",
             "user",
             "number",
             "first_name",
@@ -453,6 +452,7 @@ class ClientCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
         fields = [
+            "number",
             "first_name",
             "last_name",
             "email",
@@ -462,6 +462,7 @@ class ClientCreateUpdateSerializer(serializers.ModelSerializer):
             "preferred_contact",
             "internal_notes",
         ]
+        read_only_fields = ["number"]
 
     def validate_user(self, value):
         if value and (not hasattr(value, "is_salon_client") or not value.is_salon_client()):
@@ -989,7 +990,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "type",
             "level",
             "level_display",
-            "timestamp",
+            "created_at",
             "user",
             "user_email",
             "message",
@@ -999,7 +1000,7 @@ class AuditLogSerializer(serializers.ModelSerializer):
             "entity_id",
             "metadata",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "created_at"]
 
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
@@ -1027,13 +1028,14 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-    read_only_fields = [
-        "id",
-        "last_modified_by",
-        "last_modified_by_email",
-        "created_at",
-        "updated_at",
-    ]
+        read_only_fields = [
+            "id",
+            "last_modified_by",
+            "last_modified_by_email",
+            "created_at",
+            "updated_at",
+        ]
+
 
 
 class StatsSnapshotSerializer(serializers.ModelSerializer):

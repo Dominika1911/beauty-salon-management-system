@@ -19,39 +19,52 @@ phone_validator = RegexValidator(
 def generate_employee_number():
     """
     Generuje numer pracownika w formacie EMP-XXXX (4 cyfry).
-    UWAGA: Ta funkcja jest używana jako fallback - główna logika jest w signals.py
+    Filtruje stare rekordy z pustym numerem ('None') lub niepoprawnym formatem.
     """
+    # Import przeniesiony do funkcji
     from .models import Employee
 
-    last_employee = Employee.objects.order_by("-number").first()
+    # KLUCZOWA ZMIANA: Filtrujemy, aby wyeliminować NoneType i rekordy bez prefiksu 'EMP-'
+    last_employee = Employee.objects.filter(
+        number__startswith='EMP-'
+    ).order_by("-number").first()
+
     if not last_employee:
         return "EMP-0001"
 
     try:
+        # Ten kod jest teraz bezpieczniejszy
         last_num = int(last_employee.number.split("-")[1])
         return f"EMP-{last_num + 1:04d}"
-    except (IndexError, ValueError, TypeError):
-        count = Employee.objects.count()
+    except (IndexError, ValueError, TypeError, AttributeError):
+        # Fallback na wypadek uszkodzonego formatu EMP-XXXX
+        count = Employee.objects.filter(number__startswith='EMP-').count()
         return f"EMP-{count + 1:04d}"
 
 
 def generate_client_number():
     """
     Generuje numer klienta w formacie CLI-XXXX (4 cyfry).
-    UWAGA: Ta funkcja jest używana jako fallback - główna logika jest w signals.py
-    Używamy .objects (a nie .active) aby policzyć też usuniętych i uniknąć kolizji
+    Filtruje stare rekordy z pustym numerem ('None') lub niepoprawnym formatem.
     """
+    # Import przeniesiony do funkcji
     from .models import Client
 
-    last_client = Client.objects.order_by("-number").first()
+    # KLUCZOWA ZMIANA: Filtrujemy, aby wyeliminować NoneType i rekordy bez prefiksu 'CLI-'
+    last_client = Client.objects.filter(
+        number__startswith='CLI-'
+    ).order_by("-number").first()
+
     if not last_client:
         return "CLI-0001"
 
     try:
+        # Ten kod jest teraz bezpieczniejszy
         last_num = int(last_client.number.split("-")[1])
         return f"CLI-{last_num + 1:04d}"
-    except (IndexError, ValueError, TypeError):
-        count = Client.objects.count()
+    except (IndexError, ValueError, TypeError, AttributeError):
+        # Fallback na wypadek uszkodzonego formatu CLI-XXXX
+        count = Client.objects.filter(number__startswith='CLI-').count()
         return f"CLI-{count + 1:04d}"
 
 
@@ -59,6 +72,7 @@ def generate_invoice_number(date=None):
     """
     Generuje numer faktury w formacie INV/YYYY/MM/XXXX.
     """
+    #  Import przeniesiony do funkcji
     from .models import Invoice
 
     if date is None:
@@ -79,7 +93,7 @@ def generate_invoice_number(date=None):
     try:
         last_num = int(last_invoice.number.split("/")[-1])
         return f"{prefix}{last_num + 1:04d}"
-    except (IndexError, ValueError, TypeError):
+    except (IndexError, ValueError, TypeError, AttributeError):
         count = Invoice.objects.filter(number__startswith=prefix).count()
         return f"{prefix}{count + 1:04d}"
 
@@ -87,16 +101,6 @@ def generate_invoice_number(date=None):
 def calculate_vat(net_amount, vat_rate):
     """
     Oblicza kwotę VAT i kwotę brutto na podstawie kwoty netto i stawki VAT.
-
-    Args:
-        net_amount: Kwota netto (Decimal lub float/int)
-        vat_rate: Stawka VAT w procentach (Decimal lub float/int), np. 23.00
-
-    Returns:
-        tuple: (vat_amount, gross_amount) jako Decimal
-
-    Raises:
-        ValueError: Jeśli dane wejściowe są nieprawidłowe
     """
     try:
         net_amount = Decimal(str(net_amount))
@@ -118,15 +122,8 @@ def calculate_vat(net_amount, vat_rate):
 def get_available_time_slots(employee, date, service):
     """
     Zwraca listę dostępnych slotów czasowych dla pracownika w danym dniu.
-
-    Args:
-        employee: Obiekt Employee
-        date: Data (datetime.date)
-        service: Obiekt Service
-
-    Returns:
-        list: Lista datetime obiektów reprezentujących dostępne sloty
     """
+    # Import przeniesiony do funkcji
     from .models import SystemSettings, Schedule, Appointment, TimeOff
 
     settings = SystemSettings.load()
@@ -241,19 +238,8 @@ def get_available_time_slots(employee, date, service):
 def calculate_employee_workload(employee, date_from, date_to):
     """
     Oblicza obłożenie pracownika w danym okresie.
-
-    Args:
-        employee: Obiekt Employee
-        date_from: Data początkowa (datetime.date)
-        date_to: Data końcowa (datetime.date)
-
-    Returns:
-        dict: {
-            'available_hours': float,
-            'booked_hours': float,
-            'workload_percent': float
-        }
     """
+    # Import przeniesiony do funkcji
     from .models import Schedule, Appointment
 
     available_minutes = 0
@@ -269,13 +255,19 @@ def calculate_employee_workload(employee, date_from, date_to):
         6: "Sunday",
     }
 
-    schedule = employee.schedules.filter(
-        status=Schedule.Status.ACTIVE,
-    ).first()
+    schedule = employee.schedule
+    if not schedule:
+        return {
+            "available_hours": 0.0,
+            "booked_hours": 0.0,
+            "workload_percent": 0.0,
+        }
 
     while current_date <= date_to:
-        if schedule:
-            day_name = weekday_map[current_date.weekday()]
+        day_name = weekday_map[current_date.weekday()]
+
+        # Filtrujemy dostępność i przerwy tylko dla aktywnego grafiku
+        if schedule.status == Schedule.Status.ACTIVE:
             for period in schedule.availability_periods:
                 if period.get("day") == day_name:
                     try:
@@ -322,15 +314,8 @@ def calculate_employee_workload(employee, date_from, date_to):
 def get_top_services(limit=5, date_from=None, date_to=None):
     """
     Zwraca najpopularniejsze usługi na podstawie liczby rezerwacji.
-
-    Args:
-        limit: Maksymalna liczba wyników (default: 5)
-        date_from: Data początkowa filtrowania (opcjonalne)
-        date_to: Data końcowa filtrowania (opcjonalne)
-
-    Returns:
-        QuerySet: Usługi posortowane według liczby rezerwacji
     """
+    # Import przeniesiony do funkcji
     from .models import Service, Appointment
 
     filters = Q(
@@ -358,14 +343,8 @@ def get_top_services(limit=5, date_from=None, date_to=None):
 def get_cancellation_stats(date_from, date_to):
     """
     Zwraca statystyki anulacji wizyt w danym okresie.
-
-    Args:
-        date_from: Data początkowa
-        date_to: Data końcowa
-
-    Returns:
-        dict: Statystyki anulacji i realizacji wizyt
     """
+    # Import przeniesiony do funkcji
     from .models import Appointment
 
     appointments = Appointment.objects.filter(

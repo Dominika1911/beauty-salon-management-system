@@ -151,9 +151,8 @@ DATABASES = {
         "NAME": os.getenv("DB_NAME", "beauty_salon"),
         "USER": os.getenv("DB_USER", "postgres"),
         "PASSWORD": os.getenv("DB_PASSWORD", "Haslo!123"),
-        # lokalnie (DEBUG=True) zawsze łączymy się z localhost,
-        # w produkcji / Dockerze bierzemy hosta z ENV (np. "db")
-        "HOST": "localhost" if DEBUG else os.getenv("DB_HOST", "db"),
+        # KLUCZOWA ZMIANA
+        "HOST": os.getenv("DB_HOST", "localhost"),  # np. lokalnie DB_HOST=localhost, w Dockerze DB_HOST=db
         "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
