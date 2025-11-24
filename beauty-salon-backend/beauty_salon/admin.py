@@ -161,6 +161,83 @@ class BeautySalonAdminSite(AdminSite):
     site_header = _("Beauty Salon Management System - Panel Administratora")
     site_title = _("BSMS Admin")
     index_title = _("Zarządzanie Systemem")
+    index_template = "admin/index.html"
+
+    def get_dashboard_context(self):
+        """Dane do kafelków i list na stronie głównej admina."""
+        today = timezone.now().date()
+        tomorrow = today + timedelta(days=1)
+        month_start = today.replace(day=1)
+
+        # --- proste liczniki ---
+        # aktywni = nieusunięci (SoftDeletableModel.active)
+        active_clients = Client.active.count()
+        active_employees = Employee.active.filter(
+            is_active=True,
+            schedule__status=Schedule.Status.ACTIVE,
+        ).distinct().count()
+        active_services = Service.active.filter(
+            is_published=True,
+        ).count()
+
+        # --- przychód w bieżącym miesiącu (tylko opłacone płatności) ---
+        month_payments = Payment.objects.filter(
+            status=Payment.Status.PAID,
+            paid_at__isnull=False,
+            paid_at__date__gte=month_start,
+            paid_at__date__lte=today,
+        )
+        revenue_month = month_payments.aggregate(
+            total=Sum("amount")
+        )["total"] or Decimal("0.00")
+
+        # --- nadchodzące wizyty (dziś + jutro) ---
+        upcoming_appointments = (
+            Appointment.objects.filter(
+                start__date__gte=today,
+                start__date__lte=tomorrow,
+                status__in=[
+                    Appointment.Status.PENDING,
+                    Appointment.Status.CONFIRMED,
+                    Appointment.Status.IN_PROGRESS,
+                ],
+            )
+            .select_related("client", "employee", "service")
+            .order_by("start")[:10]
+        )
+
+        # --- oczekujące urlopy ---
+        pending_timeoffs = (
+            TimeOff.objects.filter(
+                status=TimeOff.Status.PENDING,
+                date_to__gte=today,
+            )
+            .select_related("employee")
+            .order_by("date_from")[:10]
+        )
+
+        # --- ostatnia miesięczna migawka statystyk (jak jest) ---
+        latest_monthly_snapshot = StatsSnapshot.objects.filter(
+            period=StatsSnapshot.Period.MONTHLY
+        ).order_by("-date_from").first()
+
+        return {
+            "dashboard_active_clients": active_clients,
+            "dashboard_active_employees": active_employees,
+            "dashboard_active_services": active_services,
+            "dashboard_revenue_month": revenue_month,
+            "dashboard_upcoming_appointments": upcoming_appointments,
+            "dashboard_pending_timeoffs": pending_timeoffs,
+            "dashboard_latest_snapshot": latest_monthly_snapshot,
+        }
+
+    def index(self, request, extra_context=None):
+        """Podmiana index tak, żeby dodać nasze zmienne do template'u."""
+        if extra_context is None:
+            extra_context = {}
+        extra_context.update(self.get_dashboard_context())
+        return super().index(request, extra_context=extra_context)
+
 
 
 # ============================================================================

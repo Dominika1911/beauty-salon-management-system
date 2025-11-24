@@ -80,7 +80,7 @@
             </div>
             <div>
                 <div class="stat-label">{% trans "AKTYWNI KLIENCI" %}</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ dashboard_active_clients }}</div>
                 <div class="stat-meta">{% trans "Zapisani w systemie" %}</div>
             </div>
         </div>
@@ -91,7 +91,7 @@
             </div>
             <div>
                 <div class="stat-label">{% trans "AKTYWNI PRACOWNICY" %}</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ dashboard_active_employees }}</div>
                 <div class="stat-meta">{% trans "Widoczni w grafiku" %}</div>
             </div>
         </div>
@@ -102,7 +102,7 @@
             </div>
             <div>
                 <div class="stat-label">{% trans "AKTYWNE USŁUGI" %}</div>
-                <div class="stat-value">0</div>
+                <div class="stat-value">{{ dashboard_active_services }}</div>
                 <div class="stat-meta">{% trans "Dostępne do rezerwacji" %}</div>
             </div>
         </div>
@@ -113,43 +113,84 @@
             </div>
             <div>
                 <div class="stat-label">{% trans "PRZYCHÓD (MIESIĄC)" %}</div>
-                <div class="stat-value">0,00 PLN</div>
+                <div class="stat-value">
+                    {{ dashboard_revenue_month|floatformat:2 }} PLN
+                </div>
                 <div class="stat-meta">{% trans "Łączny przychód tego miesiąca" %}</div>
             </div>
         </div>
     </div>
 
-    <div class="content-grid">
 
+       <div class="content-grid">
+
+        {# --- Nadchodzące wizyty --- #}
         <div class="dashboard-card" style="min-height: 300px;">
             <div class="card-header">
                 <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 <h2>{% trans "Nadchodzące wizyty (dzisiaj i jutro)" %}</h2>
             </div>
             <div class="card-body">
-                <div class="empty-state">
-                    {% trans "Brak nadchodzących wizyt do wyświetlenia." %}
-                </div>
-                </div>
+                {% if dashboard_upcoming_appointments %}
+                    <ul class="info-list">
+                        {% for a in dashboard_upcoming_appointments %}
+                            <li class="info-item">
+                                <div class="info-icon-dot"></div>
+                                <div>
+                                    <div class="info-title">
+                                        {{ a.start|date:"d.m (D) H:i" }} · {{ a.service.name }}
+                                    </div>
+                                    <div class="info-meta">
+                                        {{ a.client.get_full_name|default:"Klient" }}
+                                        · {{ a.employee.get_full_name|default:"Pracownik" }}
+                                        · {{ a.get_status_display }}
+                                    </div>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="empty-state">
+                        {% trans "Brak nadchodzących wizyt do wyświetlenia." %}
+                    </div>
+                {% endif %}
+            </div>
         </div>
 
+        {# --- Oczekujące akceptacje urlopów --- #}
         <div class="dashboard-card" style="min-height: 300px;">
             <div class="card-header warning">
                 <svg class="icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
                 <h2>{% trans "Oczekujące akceptacje" %}</h2>
             </div>
             <div class="card-body">
-                 <div class="empty-state">
-                    {% trans "Obecnie brak urlopów do rozpatrzenia." %}
-                </div>
+                {% if dashboard_pending_timeoffs %}
+                    <ul class="info-list">
+                        {% for t in dashboard_pending_timeoffs %}
+                            <li class="info-item">
+                                <div class="info-icon-dot warning"></div>
+                                <div>
+                                    <div class="info-title">
+                                        {{ t.employee.get_full_name|default:"Pracownik" }}
+                                    </div>
+                                    <div class="info-meta">
+                                        {{ t.date_from|date:"d.m.Y" }} – {{ t.date_to|date:"d.m.Y" }}
+                                        · {{ t.get_type_display }}
+                                        · {{ t.get_status_display }}
+                                    </div>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="empty-state">
+                        {% trans "Obecnie brak urlopów do rozpatrzenia." %}
+                    </div>
+                {% endif %}
             </div>
         </div>
 
     </div>
-
-
-
-
 </div>
 </div>
 {% endblock %}
