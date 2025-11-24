@@ -209,10 +209,15 @@ MEDIA_ROOT = BASE_DIR / "media"
 # =====================================================================
 
 REST_FRAMEWORK = {
+    # Renderery - WAŻNE: tylko JSON, bez HTML templates
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+    ],
+
     # Django Session Authentication (cookies)
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        # BasicAuthentication - wygodne do testów w Postmanie/Insomnia
+        # BasicAuthentication - zalenić na to (+ wyłączyć CSRF):
         # "rest_framework.authentication.BasicAuthentication",
     ],
 
@@ -221,17 +226,16 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
 
+    # Do testów w Postmanie zalenić na to:
+    # "DEFAULT_PERMISSION_CLASSES": [
+    #     "rest_framework.permissions.AllowAny",
+    # ],
+
     # Filtry
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
-    ],
-
-    # Renderery - JSON + Browsable API (w dev)
-    "DEFAULT_RENDERER_CLASSES": [
-        "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",  # do testów w przeglądarce
     ],
 
     # Paginacja
