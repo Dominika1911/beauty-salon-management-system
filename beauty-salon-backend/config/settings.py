@@ -1,10 +1,3 @@
-"""
-Django settings for config project.
-
-Projekt: Beauty Salon Management System
-Autor: Dominika Jedynak, nr albumu: 92721
-"""
-
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -112,7 +105,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",  # CSRF włączony
+   "django.middleware.csrf.CsrfViewMiddleware",  # CSRF włączony
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -222,14 +215,14 @@ REST_FRAMEWORK = {
     ],
 
     # Domyślnie wymagane logowanie
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
-    ],
+    # "DEFAULT_PERMISSION_CLASSES": [
+    #   "rest_framework.permissions.IsAuthenticated",
+    # ],
 
     # Do testów w Postmanie zalenić na to:
-    # "DEFAULT_PERMISSION_CLASSES": [
-    #     "rest_framework.permissions.AllowAny",
-    # ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.AllowAny",
+    ],
 
     # Filtry
     "DEFAULT_FILTER_BACKENDS": [

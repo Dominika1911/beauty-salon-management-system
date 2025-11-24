@@ -375,7 +375,7 @@ class ClientViewSet(viewsets.ModelViewSet):
 
     queryset = Client.objects.select_related("user").all()
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["marketing_consent", "preferred_contact", "deleted_at"]
+    filterset_fields = ["marketing_consent", "preferred_contact", "deleted_at", "email"]
     search_fields = [
         "first_name",
         "last_name",
