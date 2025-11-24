@@ -881,10 +881,66 @@ class PaymentSerializer(serializers.ModelSerializer):
         return None
 
 
+# ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
+
+# ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
+
 class PaymentCreateSerializer(serializers.ModelSerializer):
+    # ✅ Composite key: client_number + appointment_start
+    client_number = serializers.SlugRelatedField(
+        slug_field='number',
+        queryset=Client.objects.all(),
+        write_only=True,
+        error_messages={
+            'does_not_exist': 'Klient o podanym numerze nie istnieje.',
+            'required': 'Pole "client_number" jest wymagane.'
+        }
+    )
+
+    appointment_start = serializers.DateTimeField(
+        write_only=True,
+        help_text="Data i czas rozpoczęcia wizyty"
+    )
+
     class Meta:
         model = Payment
-        fields = ["appointment", "amount", "status", "method", "type", "reference"]
+        fields = [
+            "client_number",
+            "appointment_start",
+            "amount",
+            "status",
+            "method",
+            "type",
+            "reference"
+        ]
+
+    def validate(self, attrs):
+        # ✅ Bezpośredni odczyt danych
+        client = attrs.pop('client_number')
+        start = attrs.pop('appointment_start')
+
+        try:
+            appointment = Appointment.objects.get(
+                client=client,
+                start=start
+            )
+            attrs['appointment'] = appointment
+
+        except Appointment.DoesNotExist:
+            raise serializers.ValidationError({
+                "appointment_start": "Nie znaleziono wizyty dla klienta o tym czasie rozpoczęcia."
+            })
+        except Appointment.MultipleObjectsReturned:
+            raise serializers.ValidationError({
+                "appointment_start": "Znaleziono wiele wizyt - podaj bardziej precyzyjny czas."
+            })
+
+        if attrs.get('amount', 0) <= 0:
+            raise serializers.ValidationError({
+                "amount": "Kwota musi być większa od zera."
+            })
+
+        return attrs
 
     def validate_amount(self, value):
         if value <= 0:

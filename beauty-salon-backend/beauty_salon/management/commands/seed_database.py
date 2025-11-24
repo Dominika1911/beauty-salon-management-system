@@ -114,6 +114,7 @@ class Command(BaseCommand):
             "free_cancellation_hours": 24,
             "no_show_deposit_forfeit_percent": 100,
             "late_cancellation_deposit_forfeit_percent": 50,
+            "forfeit_deposit_on_cancellation": True,
         }
         settings_obj.opening_hours = {
             "Monday": {"open": "09:00", "close": "19:00"},

@@ -806,13 +806,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         new_status = serializer.validated_data.get('status')
 
         # ----------------------------------------------------
-        # ✅ LOGIKA: OBSŁUGA UTRATY ZALICZKI
+        # ✅ POPRAWIONA LOGIKA: OBSŁUGA UTRATY ZALICZKI
         # ----------------------------------------------------
 
         # Statusy, przy których następuje utrata zaliczki (kara)
         FORFEIT_STATUSES = [Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
 
-        if new_status in FORFEIT_STATUSES:
+        if new_status in FORFEIT_STATUSES and old_status not in FORFEIT_STATUSES:
             # Sprawdź politykę w SystemSettings
             settings = SystemSettings.load()
 
@@ -820,36 +820,68 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             should_forfeit = settings.deposit_policy.get('forfeit_deposit_on_cancellation', False)
 
             if should_forfeit:
-                # Znajdź aktywną zaliczkę powiązaną z tą wizytą
+                # ✅ POPRAWKA: Użyj filter().first() zamiast get()
+                # aby obsłużyć przypadek wielu zaliczek
                 try:
-                    # Szukamy płatności, która ma status 'DEPOSIT'
-                    deposit = Payment.objects.get(
+                    deposits = Payment.objects.filter(
                         appointment=appointment,
                         status=Payment.Status.DEPOSIT
                     )
 
-                    # Zmień status zaliczki na 'Utracona'
-                    # Uwaga: Ten status 'FORFEITED' musi być wcześniej dodany do Payment.Status w models.py!
-                    deposit.status = Payment.Status.FORFEITED # Używamy stringa, ponieważ nie mamy dostępu do stałej Payment.Status.FORFEITED w tym pliku bez ryzyka konfliktu, zakładając, że models.py został zmieniony.
-                    deposit.paid_at = timezone.now()
-                    deposit.save()
+                    deposit_count = deposits.count()
 
-                    # Logowanie zdarzenia dla audytu
+                    if deposit_count > 0:
+                        # Jeśli jest więcej niż jedna zaliczka, weź najnowszą
+                        deposit = deposits.order_by('-created_at').first()
+
+                        # Zmień status zaliczki na 'Utracona'
+                        deposit.status = Payment.Status.FORFEITED
+                        deposit.paid_at = timezone.now()
+                        deposit.save(update_fields=['status', 'paid_at'])
+
+                        # Logowanie zdarzenia dla audytu
+                        create_audit_log(
+                            user=request.user,
+                            type="payment.deposit_forfeited",
+                            message=(
+                                f"Zaliczka (ID={deposit.id}, kwota={deposit.amount}) "
+                                f"utracona z powodu: {appointment.get_status_display()} "
+                                f"wizyty ID={appointment.id}. "
+                                f"{'(Wybrano najnowszą z ' + str(deposit_count) + ' zaliczek)' if deposit_count > 1 else ''}"
+                            ),
+                            level=AuditLog.Level.WARNING,
+                            entity=deposit,
+                            request=request,
+                        )
+
+                        # Jeśli było więcej zaliczek, zaloguj ostrzeżenie
+                        if deposit_count > 1:
+                            create_audit_log(
+                                user=request.user,
+                                type="payment.multiple_deposits_warning",
+                                message=(
+                                    f"Wizyta ID={appointment.id} miała {deposit_count} zaliczek. "
+                                    f"Utracono tylko najnowszą (ID={deposit.id})."
+                                ),
+                                level=AuditLog.Level.WARNING,
+                                entity=appointment,
+                                request=request,
+                            )
+
+                except Exception as e:
+                    # Obsłuż inne błędy (np. błędy zapisu)
                     create_audit_log(
                         user=request.user,
-                        type="payment.deposit_forfeited",
-                        message=f"Zaliczka (ID={deposit.id}) utracona z powodu: {appointment.get_status_display()} wizyty ID={appointment.id}.",
-                        level=AuditLog.Level.WARNING,
-                        entity=deposit,
+                        type="payment.forfeit_error",
+                        message=f"Błąd utraty zaliczki dla wizyty {appointment.id}: {str(e)}",
+                        level=AuditLog.Level.ERROR,
+                        entity=appointment,
                         request=request,
                     )
+                    # Nie przerywaj operacji - wizyta i tak zostanie anulowana
 
-                except Payment.DoesNotExist:
-                    # To jest prawidłowe, jeśli wizyta nie miała zaliczki
-                    pass
-
-                    # ----------------------------------------------------
-        # KONIEC DODANEJ LOGIKI
+        # ----------------------------------------------------
+        # KONIEC POPRAWIONEJ LOGIKI
         # ----------------------------------------------------
 
         # Zapisz zmianę statusu wizyty
@@ -864,7 +896,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         return Response(AppointmentDetailSerializer(appointment).data)
-
 
 # ==================== NOTE & MEDIA VIEWS ====================
 
