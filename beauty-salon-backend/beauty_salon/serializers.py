@@ -648,6 +648,42 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
 
 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
+    """
+    ✅ POPRAWKA: Używamy SlugRelatedField dla stabilnych kluczy biznesowych.
+
+    Zamiast ID (które się zmienia po reset DB), używamy:
+    - client: "CLI-0001" (number)
+    - employee: "EMP-0001" (number)
+    - service: "Strzyżenie damskie" (name)
+    """
+
+    client = serializers.SlugRelatedField(
+        slug_field='number',  # CLI-0001, CLI-0002...
+        queryset=Client.objects.filter(deleted_at__isnull=True),
+        error_messages={
+            'does_not_exist': 'Klient o podanym numerze nie istnieje.',
+            'required': 'Pole "client" jest wymagane.'
+        }
+    )
+
+    employee = serializers.SlugRelatedField(
+        slug_field='number',  # EMP-0001, EMP-0002...
+        queryset=Employee.objects.filter(is_active=True),
+        error_messages={
+            'does_not_exist': 'Pracownik o podanym numerze nie istnieje.',
+            'required': 'Pole "employee" jest wymagane.'
+        }
+    )
+
+    service = serializers.SlugRelatedField(
+        slug_field='name',  # "Strzyżenie damskie", "Manicure"...
+        queryset=Service.objects.filter(is_published=True),
+        error_messages={
+            'does_not_exist': 'Usługa o podanej nazwie nie istnieje.',
+            'required': 'Pole "service" jest wymagane.'
+        }
+    )
+
     class Meta:
         model = Appointment
         fields = [

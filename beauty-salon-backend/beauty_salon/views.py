@@ -830,7 +830,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
                     # Zmień status zaliczki na 'Utracona'
                     # Uwaga: Ten status 'FORFEITED' musi być wcześniej dodany do Payment.Status w models.py!
-                    deposit.status = 'forfeited'  # Używamy stringa, ponieważ nie mamy dostępu do stałej Payment.Status.FORFEITED w tym pliku bez ryzyka konfliktu, zakładając, że models.py został zmieniony.
+                    deposit.status = Payment.Status.FORFEITED # Używamy stringa, ponieważ nie mamy dostępu do stałej Payment.Status.FORFEITED w tym pliku bez ryzyka konfliktu, zakładając, że models.py został zmieniony.
                     deposit.paid_at = timezone.now()
                     deposit.save()
 
