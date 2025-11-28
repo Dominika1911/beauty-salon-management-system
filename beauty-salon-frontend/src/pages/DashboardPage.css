@@ -1,0 +1,312 @@
+/* src/pages/DashboardPage.css */
+
+.dashboard {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.dashboard-header {
+  margin-bottom: 2rem;
+}
+
+.dashboard-header h1 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 2rem;
+}
+
+.user-welcome {
+  margin: 0;
+  color: #666;
+  font-size: 1rem;
+}
+
+/* ==================== STATS ROW ==================== */
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.3s, box-shadow 0.3s;
+  border: 2px solid transparent;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card.highlight {
+  border-color: #667eea;
+  background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+}
+
+.stat-card.success {
+  border-color: #28a745;
+  background: #28a74515;
+}
+
+.stat-card.warning {
+  border-color: #ffc107;
+  background: #ffc10715;
+}
+
+.stat-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-content h3 {
+  margin: 0 0 0.5rem 0;
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: bold;
+  color: #333;
+}
+
+/* ==================== APPOINTMENTS SECTION ==================== */
+
+.appointments-section {
+  margin-bottom: 2.5rem;
+}
+
+.appointments-section h2 {
+  margin: 0 0 1.5rem 0;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.appointments-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.appointment-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
+  transition: transform 0.3s, box-shadow 0.3s;
+  border-left: 4px solid #667eea;
+}
+
+.appointment-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.appointment-card.past {
+  opacity: 0.7;
+  border-left-color: #999;
+}
+
+.appointment-card.today {
+  border-left-color: #28a745;
+  background: #28a74508;
+}
+
+.appointment-card h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.appointment-card p {
+  margin: 0.5rem 0;
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.apt-date,
+.apt-time,
+.apt-client,
+.apt-employee {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ==================== STATUS BADGES ==================== */
+
+.status-badge {
+  display: inline-block;
+  padding: 0.375rem 0.875rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-top: 1rem;
+}
+
+.status-badge.pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-badge.confirmed {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.status-badge.in_progress {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-badge.completed {
+  background: #d1e7dd;
+  color: #0f5132;
+}
+
+.status-badge.cancelled {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-badge.no_show {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* ==================== APPOINTMENTS LIST (Manager) ==================== */
+
+.appointments-list {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.appointment-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 200px 200px 150px;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #f0f0f0;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.appointment-row:hover {
+  background: #f9f9f9;
+}
+
+.appointment-row:last-child {
+  border-bottom: none;
+}
+
+.apt-time-col {
+  font-weight: 600;
+  color: #667eea;
+  font-size: 0.9rem;
+}
+
+.apt-service-col {
+  font-weight: 600;
+  color: #333;
+}
+
+.apt-client-col,
+.apt-employee-col {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* ==================== NO DATA ==================== */
+
+.no-data {
+  text-align: center;
+  padding: 3rem;
+  color: #999;
+  font-style: italic;
+  background: white;
+  border-radius: 12px;
+}
+
+/* ==================== ERROR ==================== */
+
+.error-container {
+  text-align: center;
+  padding: 3rem;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.error-container h2 {
+  color: #ff4444;
+  margin-bottom: 1rem;
+}
+
+.error-container p {
+  color: #666;
+  margin-bottom: 1.5rem;
+}
+
+.error-container button {
+  padding: 0.75rem 1.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.3s;
+}
+
+.error-container button:hover {
+  background: #5568d3;
+}
+
+/* ==================== RESPONSIVE ==================== */
+
+@media (max-width: 768px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .appointments-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .appointments-list {
+    overflow-x: auto;
+  }
+
+  .appointment-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    padding: 1rem;
+  }
+
+  .apt-time-col,
+  .apt-service-col,
+  .apt-client-col,
+  .apt-employee-col {
+    font-size: 0.85rem;
+  }
+}

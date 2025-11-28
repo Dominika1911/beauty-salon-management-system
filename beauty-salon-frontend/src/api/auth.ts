@@ -1,17 +1,26 @@
 // src/api/auth.ts
-import { api } from './client';
 
-export interface LoginPayload {
-  email: string;
-  password: string;
-}
+import { api } from './axios';
+import type { User, LoginCredentials } from '../types';
 
-export async function getCsrfCookie() {
-  await api.get('/auth/csrf/');
-}
+export const authAPI = {
+  // Pobierz CSRF token (wywołaj PRZED logowaniem)
+  getCSRF: () => {
+    return api.get('/auth/csrf/');
+  },
 
-export async function login(payload: LoginPayload) {
-  await getCsrfCookie();
-  const res = await api.post('/auth/login/', payload);
-  return res.data;
-}
+  // Logowanie
+  login: (credentials: LoginCredentials) => {
+    return api.post<{ message: string; user: User }>('/auth/login/', credentials);
+  },
+
+  // Wylogowanie
+  logout: () => {
+    return api.post('/auth/logout/');
+  },
+
+  // Status auth (sprawdź czy zalogowany)
+  status: () => {
+    return api.get<{ authenticated: boolean; user: User | null }>('/auth/status/');
+  },
+};

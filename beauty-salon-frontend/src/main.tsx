@@ -1,13 +1,26 @@
+// src/main.tsx
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
-import App from './App';
-import './index.css';
+import { RouterProvider } from 'react-router-dom';
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+// Importujemy nasz główny router
+import { router } from './router'; 
+
+// Importujemy nasz kontekst autoryzacji
+import { AuthProvider } from './context/AuthContext'; 
+
+// Importujemy style globalne (jeśli używasz)
+import './index.css'; 
+
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    {/* 1. AuthProvider: Ustawia kontekst autoryzacji. Musi być na zewnątrz routera, 
+           aby komponenty takie jak ProtectedRoute mogły używać useAuth(). */}
+    <AuthProvider>
+      {/* 2. RouterProvider: Wstrzykuje konfigurację routingu. */}
+      <RouterProvider router={router} /> 
+    </AuthProvider>
   </React.StrictMode>,
 );

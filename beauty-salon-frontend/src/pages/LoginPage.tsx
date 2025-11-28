@@ -1,109 +1,127 @@
 // src/pages/LoginPage.tsx
-import type { FormEvent } from 'react';            // 👈 type-only import
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import type { AxiosError } from 'axios';           // 👈 tylko typ
-import { login } from '../api/auth';
 
-export default function LoginPage() {
-  const navigate = useNavigate();
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import './LoginPage.css';
+
+export const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+  const { login, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
-    try {
-      await login({ email, password });
+  // Jeśli już zalogowany, przekieruj na dashboard
+  useEffect(() => {
+    if (isAuthenticated) {
       navigate('/dashboard');
-    } catch (err: unknown) {                       // 👈 bez any
-      console.error(err);
-
-      const axiosError = err as AxiosError<{ detail?: string }>;
-      const detail =
-        axiosError.response?.data?.detail ??
-        'Nie udało się zalogować. Sprawdź email i hasło.';
-
-      setError(detail);
-    } finally {
-      setLoading(false);
     }
-  }
+  }, [isAuthenticated, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    const result = await login({ email, password });
+
+    if (result.success) {
+      navigate('/dashboard');
+    } else {
+      // ✅ Obsługa zabezpieczenia przed logowaniem adminów
+      if (result.error === 'superuser_login_not_allowed') {
+        setError('Konta administracyjne logują się przez /admin/');
+      } else if (result.error === 'Invalid credentials.') {
+        setError('Nieprawidłowy email lub hasło');
+      } else if (result.error === 'User account is disabled.') {
+        setError('Konto zostało dezaktywowane');
+      } else if (result.error?.includes('locked')) {
+        setError('Konto tymczasowo zablokowane');
+      } else {
+        setError(result.error || 'Błąd logowania');
+      }
+    }
+
+    setLoading(false);
+  };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        style={{
-          border: '1px solid #ddd',
-          borderRadius: 8,
-          padding: '2rem',
-          minWidth: 320,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-          background: 'white',
-        }}
-      >
-        <h1 style={{ marginBottom: '1rem' }}>Logowanie</h1>
-
-        {error && (
-          <div style={{ marginBottom: '1rem', color: 'red' }}>
-            {error}
+    <div className="login-page">
+      <div className="login-container">
+        <div className="login-card">
+          <div className="login-header">
+            <h1>💅 Beauty Salon</h1>
+            <p>System zarządzania salonem kosmetycznym</p>
           </div>
-        )}
 
-        <div style={{ marginBottom: '1rem' }}>
-          <label>
-            Email<br />
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem' }}
-              required
-            />
-          </label>
+          <form onSubmit={handleSubmit} className="login-form">
+            <div className="form-group">
+              <label htmlFor="email">Email:</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="klient1@example.com"
+                autoComplete="email"
+                disabled={loading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">Hasło:</label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                autoComplete="current-password"
+                disabled={loading}
+              />
+            </div>
+
+            {error && (
+              <div className="error-message">
+                <span className="error-icon">⚠️</span>
+                {error}
+              </div>
+            )}
+
+            <button type="submit" disabled={loading} className="login-btn">
+              {loading ? (
+                <>
+                  <span className="spinner-small"></span>
+                  Logowanie...
+                </>
+              ) : (
+                'Zaloguj się'
+              )}
+            </button>
+          </form>
+
+          <div className="test-accounts">
+            <p className="test-title">🧪 Konta testowe:</p>
+            <div className="test-account">
+              <strong>Klient:</strong>
+              <span>klient1@example.com / client123</span>
+            </div>
+            <div className="test-account">
+              <strong>Pracownik:</strong>
+              <span>anna.stylist@salon.demo / test1234</span>
+            </div>
+            <div className="test-account">
+              <strong>Manager:</strong>
+              <span>→ Tylko przez <a href="http://localhost:8000/admin/" target="_blank">/admin/</a></span>
+            </div>
+          </div>
         </div>
-
-        <div style={{ marginBottom: '1rem' }}>
-          <label>
-            Hasło<br />
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              style={{ width: '100%', padding: '0.5rem' }}
-              required
-            />
-          </label>
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            background: '#e91e63',
-            color: 'white',
-            border: 'none',
-            borderRadius: 4,
-            cursor: 'pointer',
-          }}
-        >
-          {loading ? 'Logowanie...' : 'Zaloguj'}
-        </button>
-      </form>
+      </div>
     </div>
   );
-}
+};
