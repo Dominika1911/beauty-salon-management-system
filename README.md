@@ -13,3 +13,11 @@ function dj-migracje {
 function dj-seed {
     dj seed_database --clear --clients 25
 }
+
+function dj-restart {
+    docker-compose -f docker-compose.full.yml restart backend
+}
+
+function r {
+    npm run dev
+}
