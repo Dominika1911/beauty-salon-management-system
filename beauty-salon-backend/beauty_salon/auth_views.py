@@ -66,6 +66,7 @@ class SessionLoginView(APIView):
         "error": "Invalid credentials."
     }
     """
+    # Puste authentication_classes pozwoli zalogować każdemu
     permission_classes = [permissions.AllowAny]
 
     # Na produkcji usuń csrf_exempt i obsługuj CSRF token!
@@ -109,14 +110,26 @@ class SessionLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Logowanie do sesji
+        #Blokada logowania adminów przez API
+        if user.is_staff or user.is_superuser:
+            return Response(
+                {
+                    'error': 'superuser_login_not_allowed',
+                    'detail': 'Superuser must log in through /admin/',
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Logowanie do sesji (tylko zwykli userzy)
         login(request, user)
 
-        # Zapisz IP logowania
+        # Zapisz IP logowania itd.
         user.last_login_ip = request.META.get('REMOTE_ADDR')
         user.failed_login_attempts = 0
         user.account_locked_until = None
-        user.save(update_fields=['last_login_ip', 'failed_login_attempts', 'account_locked_until'])
+        user.save(update_fields=['last_login_ip',
+                                 'failed_login_attempts',
+                                 'account_locked_until'])
 
         # Zwróć podstawowe info o użytkowniku
         return Response({
