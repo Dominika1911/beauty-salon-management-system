@@ -18,6 +18,28 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+      // Dodaj parserOptions, aby ESLint wiedział, jak parsować TypeScript
+      parserOptions: {
+          project: ['./tsconfig.app.json'],
+      },
     },
+
+    // ==========================================================
+    // SEKCJA Z RYGORYSTYCZNYMI REGUŁAMI Z COMMITA fe2b80a
+    // ==========================================================
+    rules: {
+        '@typescript-eslint/no-explicit-any': 'error',
+        '@typescript-eslint/explicit-function-return-type': 'error',
+        '@typescript-eslint/typedef': [
+            'error',
+            {
+                arrowParameter: true,
+                variableDeclaration: true,
+                propertyDeclaration: true,
+                parameter: true,
+            },
+        ],
+    },
+    // ==========================================================
   },
 ])
