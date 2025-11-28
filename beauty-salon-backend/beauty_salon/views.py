@@ -1031,7 +1031,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         "appointment", "appointment__client"
     ).all()
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
-    filterset_fields = ["status", "method", "type", "appointment", "appointment__client"]
+    filterset_fields = ["status", "method", "type", "appointment", "appointment__client", "amount"]
     ordering_fields = ["created_at", "paid_at", "amount"]
     ordering = ["-created_at"]
 
@@ -1263,13 +1263,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
 class SystemSettingsView(APIView):
     """
-    Ustawienia systemowe.
-
-    - GET: każdy zalogowany
-    - PATCH: tylko manager
+    Ustawienia systemowe (tylko manager).
     """
 
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsManager]
+
 
     def get(self, request):
         """Pobierz aktualne ustawienia systemowe."""
@@ -1280,11 +1278,6 @@ class SystemSettingsView(APIView):
     def patch(self, request):
         """Aktualizacja ustawień (tylko manager)."""
         user = request.user
-        if not (hasattr(user, "is_manager") and user.is_manager):
-            return Response(
-                {"detail": "Tylko manager może aktualizować ustawienia systemowe."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
 
         settings = SystemSettings.load()
         serializer = SystemSettingsSerializer(
@@ -1305,6 +1298,7 @@ class SystemSettingsView(APIView):
         )
 
         return Response(serializer.data)
+
 
 
 # ==================== STATS SNAPSHOT VIEWS ====================
