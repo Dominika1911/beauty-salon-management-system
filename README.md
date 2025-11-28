@@ -1,8 +1,21 @@
-## PowerShell functions (dev helper)
+pnpm devfunction dj-up {
+    dev-env
+    docker-compose -f docker-compose.full.yml up -d backend
+}
 
-```powershell
+function dj-down {
+    dev-env
+    docker-compose -f docker-compose.full.yml stop backend
+}
+
+function dj-logs {
+    dev-env
+    docker-compose -f docker-compose.full.yml logs -f backend
+}
+
 function dj {
-    docker-compose -f docker-compose.full.yml exec backend python manage.py @Args
+    dev-env
+    docker-compose -f docker-compose.full.yml exec backend python manage.py @args
 }
 
 function dj-migracje {
@@ -15,9 +28,10 @@ function dj-seed {
 }
 
 function dj-restart {
+    dev-env
     docker-compose -f docker-compose.full.yml restart backend
 }
 
 function r {
-    npm run dev
+    pnpm dev
 }
