@@ -19,3 +19,5 @@ django-stubs==5.2.7
 django-stubs-ext==5.2.7
 djangorestframework-stubs==3.16.5
 types-django-filter
+
+pyright

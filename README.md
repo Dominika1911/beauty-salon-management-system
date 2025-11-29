@@ -35,6 +35,11 @@ function dj-restart {
     docker-compose -f docker-compose.full.yml restart backend
 }
 
+# Uruchamia Mypy wewnątrz kontenera z plikiem konfiguracyjnym
+function dj-mypy {
+    docker-compose -f docker-compose.full.yml exec backend python -m mypy --config-file beauty-salon-backend/mypy.ini beauty_salon
+}
+
 ## Uruchamianie Frontendu (Vite/React)
 
 # Uruchamia frontend po instalacji zależności
@@ -45,4 +50,10 @@ function f {
 # Uruchamia pełną kontrolę typów (TSC) i lintowanie (ESLint)
 function f-lint {
     pnpm build ; pnpm lint
+}
+
+# Uruchamia Pyright wewnątrz kontenera (Pyright automatycznie szuka pyrightconfig.json)
+function dj-pyright {
+    # Używamy sh -c, aby upewnić się, że Pyright znajduje konfigurację w katalogu roboczym
+    docker-compose -f docker-compose.full.yml exec backend sh -c "pyright"
 }
