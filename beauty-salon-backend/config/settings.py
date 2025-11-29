@@ -2,6 +2,10 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+import django_stubs_ext
+django_stubs_ext.monkeypatch()
+
+
 # =====================================================================
 # ŚCIEŻKI I ENV
 # =====================================================================
