@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 // src/context/AuthContext.tsx (POPRAWIONA I KOMPLETNIE TYPOWANA WERSJA)
 
 import { createContext, useState, useCallback, useEffect } from 'react';

@@ -124,7 +124,7 @@ export const LoginPage: React.FC = (): ReactElement => {
             </div>
             <div className="test-account">
               <strong>Manager:</strong>
-              <span>→ Tylko przez <a href="http://localhost:8000/admin/" target="_blank">/admin/</a></span>
+              <span>→ Tylko przez <a href="http://localhost:8000/admin/" target="_blank" rel="noreferrer">/admin/</a></span>
             </div>
           </div>
         </div>
