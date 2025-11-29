@@ -1,0 +1,32 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/migrations",
+    ".venv",
+    "venv"
+  ],
+
+  "pythonVersion": "3.12",
+
+  "venvPath": ".",
+  "venv": ".venv",
+
+  "typeCheckingMode": "off",
+
+  "reportUnknownVariableType": "error",
+
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUntypedFunctionDecorator": "none",
+  "reportUntypedClassDecorator": "none",
+  "reportUntypedBaseClass": "none",
+  "reportUntypedNamedTuple": "none",
+
+  "reportMissingTypeStubs": "none",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}
