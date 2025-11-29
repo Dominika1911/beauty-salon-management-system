@@ -1,3 +1,5 @@
+// plik: eslint.config.js
+
 import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -19,21 +21,24 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
       parserOptions: {
-          project: ['./tsconfig.app.json'],
+          // POPRAWIONA LINIA: uwzględnia oba pliki konfiguracyjne TypeScript
+          project: ['./tsconfig.app.json', './tsconfig.node.json'],
       },
     },
 
     // ==========================================================
-    // SEKCJA Z RYGORYSTYCZNYMI REGUŁAMI Z TYPUJĄCYMI (JAK U KOLEGI)
+    // SEKCJA Z RYGORYSTYCZNYMI REGULAMI TYPUJACYMI
+    // Te reguły pozostawiamy, bo są to Twoje zamierzone ustawienia.
+    // Pamiętaj, że nadal będziesz musiał poprawić błędy typowania w plikach .tsx!
     // ==========================================================
     rules: {
-        // 1. ZABRONIENIE JAWNEGO UŻYCIA 'ANY'
+        // 1. ZABRONIENIE JAWNEGO UZYCIA 'ANY'
         '@typescript-eslint/no-explicit-any': 'error',
 
         // 2. WYMUSZANIE JAWNEGO TYPU ZWRACANEGO (dla funkcji)
         '@typescript-eslint/explicit-function-return-type': 'error',
 
-        // 3. WYMUSZANIE JAWNEGO TYPU DLA PÓL, ZMIENNYCH I ARGUMENTÓW
+        // 3. WYMUSZANIE JAWNEGO TYPU DLA POL, ZMIENNYCH I ARGUMENTOW
         '@typescript-eslint/typedef': [
             'error',
             {
@@ -43,6 +48,8 @@ export default defineConfig([
                 parameter: true,
             },
         ],
+        // Dodatkowo, aby uniknąć błędu z React Fast Refresh (jeśli go nie masz)
+        'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
     // ==========================================================
   },

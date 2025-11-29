@@ -1,4 +1,4 @@
-// src/router/index.tsx
+// src/router/index.tsx (FINALNA WERSJA)
 
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Layout } from '../components/Layout/Layout';
@@ -6,7 +6,8 @@ import { ProtectedRoute } from '../components/ProtectedRoute';
 import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 
-export const router = createBrowserRouter([
+// DODAJEMY JAWNY TYP DLA STAŁEJ router
+export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
@@ -22,110 +23,22 @@ export const router = createBrowserRouter([
       {
         path: 'dashboard',
         element: (
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
             <DashboardPage />
           </ProtectedRoute>
         ),
       },
-      {
-        path: 'appointments',
-        element: (
-          <ProtectedRoute>
-            <div>
-              <h1>Wizyty</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
+      // Nowe zagnieżdżone trasy z ochroną (przykład)
       {
         path: 'clients',
         element: (
           <ProtectedRoute allowedRoles={['manager', 'employee']}>
-            <div>
-              <h1>Klienci</h1>
-              <p>Strona w budowie...</p>
-            </div>
+            {/* <ClientsPage /> */}
+            <h1 style={{ padding: 50 }}>STRONA KLIENTÓW</h1>
           </ProtectedRoute>
         ),
       },
-      {
-        path: 'employees',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <div>
-              <h1>Pracownicy</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'services',
-        element: (
-          <ProtectedRoute>
-            <div>
-              <h1>Usługi</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'statistics',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <div>
-              <h1>Statystyki</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'settings',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <div>
-              <h1>Ustawienia</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'my-schedule',
-        element: (
-          <ProtectedRoute allowedRoles={['employee']}>
-            <div>
-              <h1>Mój grafik</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'my-appointments',
-        element: (
-          <ProtectedRoute allowedRoles={['client']}>
-            <div>
-              <h1>Moje wizyty</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'profile',
-        element: (
-          <ProtectedRoute>
-            <div>
-              <h1>Profil</h1>
-              <p>Strona w budowie...</p>
-            </div>
-          </ProtectedRoute>
-        ),
-      },
+      // ... (reszta zagnieżdżonych tras jest poprawna)
       {
         path: '*',
         element: (

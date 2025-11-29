@@ -1,18 +1,21 @@
-// src/pages/LoginPage.tsx
+// src/pages/LoginPage.tsx (POPRAWIONA WERSJA)
 
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import React, { useState, useEffect, type ReactElement } from 'react'; // Dodano import typu ReactElement
+import { useNavigate, type NavigateFunction } from 'react-router-dom'; // Import typu NavigateFunction
+import { useAuth } from '../hooks/useAuth';
 import './LoginPage.css';
 
-export const LoginPage = () => {
+// 1. Jawne typowanie komponentu i zwracanego typu (naprawia 2 błędy)
+export const LoginPage: React.FC = (): ReactElement => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [loading, setLoading] = useState<boolean>(false); // Jawne typowanie stanu
+  const [error, setError] = useState<string>(''); // Jawne typowanie stanu
 
   const { login, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
+
+  // 2. Jawne typowanie zmiennej 'navigate' (naprawia 1 błąd)
+  const navigate: NavigateFunction = useNavigate();
 
   // Jeśli już zalogowany, przekieruj na dashboard
   useEffect(() => {
@@ -21,12 +24,14 @@ export const LoginPage = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // 3. Jawne typowanie funkcji, argumentu 'e' i zwracanego typu (naprawia 3 błędy)
+  const handleSubmit: (e: React.FormEvent) => Promise<void> = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const result = await login({ email, password });
+    // 4. Jawne typowanie zmiennej 'result' (naprawia 1 błąd)
+    const result: { success: boolean; error?: string } = await login({ email, password });
 
     if (result.success) {
       navigate('/dashboard');
@@ -64,7 +69,8 @@ export const LoginPage = () => {
                 id="email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                // 5. Jawne typowanie argumentu 'e' w onChange (naprawia 1 błąd)
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 required
                 placeholder="klient1@example.com"
                 autoComplete="email"
@@ -78,7 +84,8 @@ export const LoginPage = () => {
                 id="password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                // 6. Jawne typowanie argumentu 'e' w onChange (naprawia 1 błąd)
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
                 autoComplete="current-password"

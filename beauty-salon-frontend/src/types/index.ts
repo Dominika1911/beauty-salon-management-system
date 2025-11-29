@@ -10,6 +10,7 @@ export interface User {
   employee_id?: number;
   client_id?: number;
 }
+export type UserRole = User['role'];
 
 export interface LoginCredentials {
   email: string;
@@ -80,3 +81,42 @@ export interface Employee {
   appointments_count: number;
   average_rating: string;
 }
+
+// --- INTERFEJSY DANYCH DASHBOARDU ---
+
+// Typy dla list wizyt, które używają Appointment
+export type DashboardAppointment = Appointment & {
+  employee_name: string;
+  client_name: string;
+};
+
+// 1. DASHBOARD KLIENTA
+export interface ClientDashboardData {
+  total_spent: string; // Używane w stat-card
+  client: Client; // Używane dla visits_count
+  upcoming_appointments: DashboardAppointment[]; // Używane w liście
+  last_visits: DashboardAppointment[]; // Używane w liście
+}
+
+// 2. DASHBOARD PRACOWNIKA
+export interface EmployeeDashboardData {
+  today_appointments_count: number;
+  upcoming_appointments_count: number;
+  today_appointments: DashboardAppointment[];
+  upcoming_appointments: DashboardAppointment[]; // Używane w liście
+}
+
+// 3. DASHBOARD MANAGERA
+export interface ManagerDashboardData {
+  today: {
+    total_appointments: number;
+    completed_appointments: number;
+    cancelled_appointments: number;
+    revenue: string;
+    new_clients: number;
+  };
+  upcoming_appointments: DashboardAppointment[]; // Używane w liście
+}
+
+// Typ unii dla głównego stanu w DashboardPage
+export type DashboardData = ClientDashboardData | EmployeeDashboardData | ManagerDashboardData;

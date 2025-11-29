@@ -1,20 +1,27 @@
-// src/components/Layout/Layout.tsx
+// src/components/Layout/Layout.tsx (POPRAWIONY I KOMPLETNIE TYPOWANY)
 
-import { Outlet, Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import React, { useCallback } from 'react';
+import { Outlet, Link, useNavigate, type NavigateFunction } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import './Layout.css';
 
-export const Layout = () => {
+// DODANO JAWNY TYP DLA KOMPONENTU I TYP ZWRACANY
+export const Layout: React.FC = (): React.ReactElement => {
   const { user, logout, isManager, isEmployee, isClient } = useAuth();
-  const navigate = useNavigate();
 
-  const handleLogout = async () => {
+  // DODANO JAWNY TYP DLA ZMIENNEJ navigate
+  const navigate: NavigateFunction = useNavigate();
+
+  // DODANO JAWNY TYP ZWRACANY (Promise<void>) I użyto useCallback
+  const handleLogout: () => Promise<void> = useCallback(async (): Promise<void> => {
     await logout();
     navigate('/login');
-  };
-
+}, [logout, navigate]);
   // Jeśli nie zalogowany, pokaż tylko content (dla /login)
+  // UWAGA: ProtectedRoute już chroni trasy, ale ten warunek jest OK dla samego Layoutu
   if (!user) {
+    // Layout powinien być renderowany tylko dla ścieżek dziecka.
+    // Jeśli tu trafi, oznacza to, że trasa nie jest chroniona (np. 404 bez Layoutu)
     return <Outlet />;
   }
 
