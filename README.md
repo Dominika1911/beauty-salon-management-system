@@ -1,20 +1,16 @@
-pnpm devfunction dj-up {
-    dev-env
+function dj-up {
     docker-compose -f docker-compose.full.yml up -d backend
 }
 
 function dj-down {
-    dev-env
     docker-compose -f docker-compose.full.yml stop backend
 }
 
 function dj-logs {
-    dev-env
     docker-compose -f docker-compose.full.yml logs -f backend
 }
 
 function dj {
-    dev-env
     docker-compose -f docker-compose.full.yml exec backend python manage.py @args
 }
 
@@ -28,10 +24,13 @@ function dj-seed {
 }
 
 function dj-restart {
-    dev-env
     docker-compose -f docker-compose.full.yml restart backend
 }
 
 function r {
     pnpm dev
+}
+
+function r-lint {
+    pnpm build ; pnpm lint
 }
