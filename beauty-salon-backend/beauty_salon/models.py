@@ -1,4 +1,3 @@
-# salon/models.py
 
 from decimal import Decimal
 from datetime import timedelta, datetime
@@ -9,7 +8,8 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.core.cache import cache
-
+from typing import Optional, Dict, Any, List, TYPE_CHECKING, cast
+from django.db.models import QuerySet, ManyToManyField
 from .managers import ActiveManager, AppointmentManager
 from .utils import ( # Zaktualizowane importy
     phone_validator,
@@ -40,11 +40,11 @@ class SoftDeletableModel(models.Model):
     class Meta:
         abstract = True
 
-    def soft_delete(self):
+    def soft_delete(self) -> None:
         self.deleted_at = timezone.now()
         self.save()
 
-    def restore(self):
+    def restore(self) -> None:
         self.deleted_at = None
         self.save()
 
@@ -53,8 +53,8 @@ class SoftDeletableModel(models.Model):
 # AUTHENTICATION & USER MANAGEMENT
 # ============================================================================
 
-class CustomUserManager(BaseUserManager):
-    def create_user(self, email, password=None, **extra_fields):
+class CustomUserManager(BaseUserManager['User']):
+    def create_user(self, email: str, password: Optional[str] = None, **extra_fields: Any) -> 'User':
         if not email:
             raise ValueError(_('Adres email musi być podany'))
         email = self.normalize_email(email)
@@ -63,7 +63,7 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, email, password=None, **extra_fields):
+    def create_superuser(self, email: str, password: Optional[str] = None, **extra_fields: Any) -> 'User':
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('role', 'manager')
@@ -106,22 +106,22 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
         verbose_name_plural = _('użytkownicy')
         db_table = 'auth_user'
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.email
 
     @property
-    def is_manager(self):
+    def is_manager(self) -> bool:
         return self.role == self.RoleChoices.MANAGER
 
     @property
-    def is_employee(self):
+    def is_employee(self) -> bool:
         return self.role == self.RoleChoices.EMPLOYEE
 
     @property
-    def is_client(self):
+    def is_client(self) -> bool:
         return self.role == self.RoleChoices.CLIENT
 
-    def get_full_name(self):
+    def get_full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
 
@@ -144,9 +144,9 @@ class Employee(SoftDeletableModel, TimestampedModel):
     phone = models.CharField(_('telefon'), max_length=15, validators=[phone_validator], blank=True)
     hired_at = models.DateField(_('data zatrudnienia'), default=timezone.now)
     is_active = models.BooleanField(_('aktywny'), default=True)
-    skills = models.ManyToManyField('Service', verbose_name=_('umiejętności (usługi)'), blank=True)
+    skills: ManyToManyField = models.ManyToManyField('Service',verbose_name=_('umiejętności (usługi)'),blank=True)
 
-    # ✅ DODANE POLA
+    #DODANE POLA
     appointments_count = models.PositiveIntegerField(_('liczba zrealizowanych wizyt'), default=0)
     average_rating = models.DecimalField(_('średnia ocena'), max_digits=3, decimal_places=2, default=Decimal('0.00'))
 
@@ -155,10 +155,10 @@ class Employee(SoftDeletableModel, TimestampedModel):
         verbose_name_plural = _('pracownicy')
         ordering = ['last_name', 'first_name']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.get_full_name()
 
-    def get_full_name(self):
+    def get_full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
 
@@ -196,7 +196,7 @@ class Client(SoftDeletableModel, TimestampedModel):
         _('preferowany kontakt'), max_length=10, choices=ContactPreference.choices, default=ContactPreference.EMAIL
     )
 
-    # ✅ DODANE POLE
+    # DODANE POLE
     internal_notes = models.TextField(_('notatki wewnętrzne'), blank=True)
 
     class Meta:
@@ -204,10 +204,10 @@ class Client(SoftDeletableModel, TimestampedModel):
         verbose_name_plural = _('klienci')
         ordering = ['last_name', 'first_name']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.get_full_name()} ({self.number or self.email or self.phone})"
 
-    def get_full_name(self):
+    def get_full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
 
@@ -232,7 +232,7 @@ class Service(SoftDeletableModel, TimestampedModel):
     # Promo (JSONField)
     promotion = models.JSONField(_('promocja'), default=dict, blank=True)
 
-    # ✅ DODANE POLA
+    # DODANE POLA
     image_url = models.URLField(_('URL obrazka'), blank=True)
     reservations_count = models.PositiveIntegerField(_('liczba rezerwacji'), default=0)
 
@@ -241,7 +241,7 @@ class Service(SoftDeletableModel, TimestampedModel):
         verbose_name_plural = _('usługi')
         ordering = ['name']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
     def get_price_with_promotion(self) -> Decimal:
@@ -276,7 +276,7 @@ class Schedule(TimestampedModel):
         verbose_name = _('grafik pracy')
         verbose_name_plural = _('grafiki pracy')
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Grafik dla {self.employee.get_full_name()}"
 
 
@@ -347,7 +347,7 @@ class Appointment(TimestampedModel):
     internal_notes = models.TextField(_('uwagi wewnętrzne'), blank=True)
     booking_channel = models.CharField(_('kanał rezerwacji'), max_length=50, blank=True)
 
-    # ✅ DODANE POLA
+    # DODANE POLA
     client_notes = models.TextField(_('uwagi klienta'), blank=True)
     cancelled_by = models.ForeignKey(
         User,
@@ -370,10 +370,10 @@ class Appointment(TimestampedModel):
         verbose_name_plural = _('wizyty')
         ordering = ['start']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Wizyta {self.id} - {self.service.name} ({self.start.strftime('%Y-%m-%d %H:%M')})"
 
-    def timespan(self):
+    def timespan(self) -> str:
         """Metoda pomocnicza dla admin - zwraca czas trwania"""
         if self.start and self.end:
             duration = self.end - self.start
@@ -433,7 +433,7 @@ class Payment(TimestampedModel):
         verbose_name_plural = _('płatności')
         ordering = ['-paid_at']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"Płatność {self.id} - {self.amount} PLN ({self.get_status_display()})"
 
 
@@ -475,7 +475,7 @@ class Invoice(TimestampedModel):
         verbose_name_plural = _('faktury')
         ordering = ['-issue_date']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.number
 
 
@@ -514,7 +514,7 @@ class MediaAsset(TimestampedModel):
         verbose_name = _('zasób multimedialny')
         verbose_name_plural = _('zasoby multimedialne')
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if self.file and not self.file_name:
             self.file_name = self.file.name
         if self.file and not self.file_size and hasattr(self.file, 'size'):
@@ -550,8 +550,7 @@ class ReportPDF(TimestampedModel):
         verbose_name_plural = _('raporty PDF')
         ordering = ['-created_at']
 
-    def save(self, *args, **kwargs):
-        # Synchronizuj aliasy
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if self.date_from and not self.data_od:
             self.data_od = self.date_from
         if self.date_to and not self.data_do:
@@ -604,10 +603,12 @@ class SystemSettings(TimestampedModel):
         verbose_name = _('ustawienia systemowe')
         verbose_name_plural = _('ustawienia systemowe')
 
+    _cached_settings: Optional['SystemSettings'] = None  # Dodano to jako atrybut klasy
+
     @classmethod
-    def load(cls):
+    def load(cls) -> 'SystemSettings':
         """Ładuje jedyny obiekt SystemSettings."""
-        if not hasattr(cls, '_cached_settings'):
+        if cls._cached_settings is None:
             cached_settings = cache.get('system_settings_cache')
             if cached_settings:
                 cls._cached_settings = cached_settings
@@ -617,11 +618,12 @@ class SystemSettings(TimestampedModel):
                 cache.set('system_settings_cache', obj)
         return cls._cached_settings
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Zapisuje i aktualizuje cache."""
         self.pk = 1
         super().save(*args, **kwargs)
         cache.set('system_settings_cache', self)
+        SystemSettings._cached_settings = self
 
 
 class AuditLog(TimestampedModel):
@@ -744,5 +746,5 @@ class Notification(TimestampedModel):
         verbose_name_plural = _('Powiadomienia')
         ordering = ['-scheduled_at']
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.client} → {self.get_type_display()} ({self.get_channel_display()})"

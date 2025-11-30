@@ -1,9 +1,13 @@
 from decimal import Decimal
 import secrets
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, cast
 
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AbstractBaseUser
 from rest_framework import serializers
+
 
 from .models import (
     Service,
@@ -63,8 +67,9 @@ class UserListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "account_status", "created_at"]
 
-    def get_account_status(self, obj):
-        if getattr(obj, "account_locked_until", None) and obj.account_locked_until > timezone.now():
+    def get_account_status(self, obj: AbstractBaseUser) -> str:
+        locked_until = getattr(obj, "account_locked_until", None)
+        if locked_until and locked_until > timezone.now():
             return "locked"
         if getattr(obj, "failed_login_attempts", 0) >= 3:
             return "warning"
@@ -116,7 +121,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "password", "role", "is_active", "is_staff"]
         read_only_fields = ["id"]
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> AbstractBaseUser:
+
         password = validated_data.pop("password", None)
         email = validated_data.pop("email")
 
@@ -143,7 +149,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, min_length=8)
 
-    def validate_new_password(self, value):
+    def validate_new_password(self, value: str) -> str:
         if len(value) < 8:
             raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
         return value
@@ -153,7 +159,7 @@ class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
 
-    def validate_old_password(self, value):
+    def validate_old_password(self, value: str) -> str:
         request = self.context.get("request")
         user = getattr(request, "user", None)
         if not user or not user.is_authenticated:
@@ -162,16 +168,17 @@ class PasswordChangeSerializer(serializers.Serializer):
             raise serializers.ValidationError("Niepoprawne stare hasło.")
         return value
 
-    def validate_new_password(self, value):
+    def validate_new_password(self, value: str) -> str:
         if len(value) < 8:
             raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
         return value
 
-    def save(self, **kwargs):
-        user = self.context["request"].user
+    def save(self, **kwargs: Any) -> AbstractBaseUser:
+        user = cast(AbstractBaseUser, self.context["request"].user)
         user.set_password(self.validated_data["new_password"])
-        user.failed_login_attempts = 0
-        user.account_locked_until = None
+        # Poniższe pola są z customowego Usera – mypy ich nie zna, więc ignorujemy
+        user.failed_login_attempts = 0  # type: ignore[attr-defined]
+        user.account_locked_until = None  # type: ignore[attr-defined]
         user.save(update_fields=["password", "failed_login_attempts", "account_locked_until"])
         return user
 
@@ -239,12 +246,12 @@ class ServiceCreateUpdateSerializer(serializers.ModelSerializer):
             "promotion",
         ]
 
-    def validate_price(self, value):
+    def validate_price(self, value: Decimal) -> Decimal:
         if value <= 0:
             raise serializers.ValidationError("Cena musi być większa od zera.")
         return value
 
-    def validate_duration(self, value):
+    def validate_duration(self, value: timedelta) -> timedelta:
         if value.total_seconds() <= 0:
             raise serializers.ValidationError("Czas trwania musi być dodatni.")
         return value
@@ -358,8 +365,9 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["number", "average_rating"]
 
-    def validate_user(self, value):
-        if not hasattr(value, "is_salon_employee") or not value.is_salon_employee():
+    def validate_user(self, value: AbstractBaseUser) -> AbstractBaseUser:
+        is_employee = getattr(value, "is_salon_employee", None)
+        if not callable(is_employee) or not is_employee():
             raise serializers.ValidationError("Wybrane konto nie ma roli pracownika.")
         return value
 
@@ -402,7 +410,7 @@ class ClientListSerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
-    def get_is_deleted(self, obj):
+    def get_is_deleted(self, obj: Client) -> bool:
         return getattr(obj, "deleted_at", None) is not None
 
 
@@ -444,7 +452,7 @@ class ClientDetailSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    def get_is_deleted(self, obj):
+    def get_is_deleted(self, obj: Client) -> bool:
         return getattr(obj, "deleted_at", None) is not None
 
 
@@ -464,9 +472,11 @@ class ClientCreateUpdateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["number"]
 
-    def validate_user(self, value):
-        if value and (not hasattr(value, "is_salon_client") or not value.is_salon_client()):
-            raise serializers.ValidationError("Wybrane konto nie ma roli klienta.")
+    def validate_user(self, value: AbstractBaseUser | None) -> AbstractBaseUser | None:
+        if value:
+            is_client = getattr(value, "is_salon_client", None)
+            if not callable(is_client) or not is_client():
+                raise serializers.ValidationError("Wybrane konto nie ma roli klienta.")
         return value
 
 
@@ -475,8 +485,8 @@ class ClientSoftDeleteSerializer(serializers.Serializer):
         queryset=Client.objects.filter(deleted_at__isnull=True)
     )
 
-    def save(self, **kwargs):
-        client = self.validated_data["client"]
+    def save(self, **kwargs: Any) -> Client:
+        client = cast(Client, self.validated_data["client"])
         client.soft_delete()
         return client
 
@@ -540,7 +550,7 @@ class TimeOffSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    def get_days(self, obj):
+    def get_days(self, obj: TimeOff) -> int | None:
         if obj.date_from and obj.date_to:
             return (obj.date_to - obj.date_from).days + 1
         return None
@@ -551,8 +561,8 @@ class TimeOffApproveSerializer(serializers.Serializer):
         queryset=TimeOff.objects.filter(status=TimeOff.Status.PENDING)
     )
 
-    def save(self, **kwargs):
-        time_off = self.validated_data["time_off"]
+    def save(self, **kwargs: Any) -> TimeOff:
+        time_off = cast(TimeOff, self.validated_data["time_off"])
         request = self.context.get("request")
         user = getattr(request, "user", None)
 
@@ -562,7 +572,7 @@ class TimeOffApproveSerializer(serializers.Serializer):
             )
 
         time_off.status = TimeOff.Status.APPROVED
-        time_off.approved_by = user if user and user.is_authenticated else None
+        time_off.approved_by = user if user and getattr(user, "is_authenticated", False) else None
         time_off.approved_at = timezone.now()
         time_off.save()
         return time_off
@@ -698,14 +708,14 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         ]
         extra_kwargs = {"end": {"required": False, "allow_null": True}}
 
-    def validate_start(self, value):
+    def validate_start(self, value: datetime) -> datetime:
         if value < timezone.now():
             raise serializers.ValidationError(
                 "Nie można umawiać wizyt w przeszłości."
             )
         return value
 
-    def validate(self, attrs):
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
         client = attrs.get("client")
         employee = attrs.get("employee")
         service = attrs.get("service")
@@ -766,7 +776,7 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> Appointment:
         return Appointment.objects.create(**validated_data)
 
 
@@ -775,7 +785,7 @@ class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = ["status", "cancellation_reason"]
 
-    def update(self, instance, validated_data):
+    def update(self, instance: Appointment, validated_data: dict[str, Any]) -> Appointment:
         new_status = validated_data.get("status", instance.status)
         request = self.context.get("request")
         user = getattr(request, "user", None)
@@ -814,12 +824,13 @@ class NoteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "author", "author_email", "created_at", "updated_at"]
 
-    def create(self, validated_data):
+    def create(self, validated_data: dict[str, Any]) -> Note:
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        if user and user.is_authenticated:
+        if user and getattr(user, "is_authenticated", False):
             validated_data["author"] = user
-        return super().create(validated_data)
+        note = cast(Note, super().create(validated_data))
+        return note
 
 
 class MediaAssetSerializer(serializers.ModelSerializer):
@@ -875,7 +886,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
-    def get_client_name(self, obj):
+    def get_client_name(self, obj: Payment) -> str | None:
         if obj.appointment and obj.appointment.client:
             return obj.appointment.client.get_full_name()
         return None
@@ -914,8 +925,8 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
             "reference"
         ]
 
-    def validate(self, attrs):
-        # ✅ Bezpośredni odczyt danych
+    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
+        # Bezpośredni odczyt danych
         client = attrs.pop('client_number')
         start = attrs.pop('appointment_start')
 
@@ -942,7 +953,7 @@ class PaymentCreateSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def validate_amount(self, value):
+    def validate_amount(self, value: Decimal) -> Decimal:
         if value <= 0:
             raise serializers.ValidationError("Kwota musi być większa od zera.")
         return value
@@ -953,8 +964,8 @@ class PaymentMarkAsPaidSerializer(serializers.Serializer):
         queryset=Payment.objects.filter(status=Payment.Status.PENDING)
     )
 
-    def save(self, **kwargs):
-        payment = self.validated_data["payment"]
+    def save(self, **kwargs: Any) -> Payment:
+        payment = cast(Payment, self.validated_data["payment"])
         if payment.status == Payment.Status.PAID:
             raise serializers.ValidationError("Płatność jest już oznaczona jako opłacona.")
 
