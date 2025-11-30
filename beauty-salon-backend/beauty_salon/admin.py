@@ -1,7 +1,7 @@
 import csv
 from decimal import Decimal
 from datetime import timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Any, List, Sequence
 
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter, AdminSite
@@ -11,15 +11,11 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from typing import Any, Optional, List, Sequence
 from django.http import HttpRequest, HttpResponse
-# Importy dla formularzy użytkownika
 from django import forms
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
+from django.template.response import TemplateResponse  # Dodany import dla TemplateResponse
 
-# ============================================================================
-# 1. IMPORTY MODELI
-# ============================================================================
 from .models import (
     User as CustomUser, Service, Employee, Schedule, TimeOff, Client,
     Appointment, Note, MediaAsset, Payment, Invoice, Notification,
@@ -30,11 +26,12 @@ from .utils import generate_invoice_number, calculate_vat
 if TYPE_CHECKING:
     from .models import User as UserModel
 
+
 # ============================================================================
-# 2. FORMULARZE UŻYTKOWNIKA
+# FORMULARZE UŻYTKOWNIKA
 # ============================================================================
 
-class CustomUserCreationForm(forms.ModelForm):
+class CustomUserCreationForm(forms.ModelForm[CustomUser]):
     """Formularz tworzenia użytkownika w adminie (email + hasło 2x)."""
     password1 = forms.CharField(label=_("Hasło"), widget=forms.PasswordInput)
     password2 = forms.CharField(label=_("Powtórz hasło"), widget=forms.PasswordInput)
@@ -43,14 +40,14 @@ class CustomUserCreationForm(forms.ModelForm):
         model = CustomUser
         fields = ("email", "role", "is_active", "is_staff")
 
-    def clean_password2(self):
+    def clean_password2(self) -> str:
         password1 = self.cleaned_data.get("password1")
         password2 = self.cleaned_data.get("password2")
         if password1 and password2 and password1 != password2:
             raise forms.ValidationError(_("Hasła w obu polach muszą być takie same."))
-        return password2
+        return password2 if password2 else ""
 
-    def save(self, commit=True):
+    def save(self, commit: bool = True) -> CustomUser:
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password1"])
         if commit:
@@ -58,7 +55,7 @@ class CustomUserCreationForm(forms.ModelForm):
         return user
 
 
-class CustomUserChangeForm(forms.ModelForm):
+class CustomUserChangeForm(forms.ModelForm[CustomUser]):
     """Formularz edycji użytkownika w adminie (hasło tylko do odczytu)."""
     password = ReadOnlyPasswordHashField(
         label=_("Hasło"),
@@ -78,10 +75,11 @@ class CustomUserChangeForm(forms.ModelForm):
             "password",
         )
 
-    def clean_password(self):
-        return self.initial.get("password")
+    def clean_password(self) -> str:
+        return self.initial.get("password", "")
 
-class UserAdmin(BaseUserAdmin):  # type: ignore[misc]
+
+class UserAdmin(BaseUserAdmin):
     form = CustomUserChangeForm
     add_form = CustomUserCreationForm
     list_display = ('email', 'role', 'is_staff', 'is_active', 'account_status')
@@ -89,7 +87,8 @@ class UserAdmin(BaseUserAdmin):  # type: ignore[misc]
     fieldsets = (
         (_('Dane konta'), {'fields': ('email', 'password')}),
         (_('Dane osobowe'), {'fields': ('first_name', 'last_name')}),
-        (_('Role i uprawnienia'), {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        (_('Role i uprawnienia'),
+         {'fields': ('role', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
         (_('Zabezpieczenia'), {'fields': ('failed_login_attempts', 'account_locked_until', 'last_login_ip')}),
         (_('Daty'), {'fields': ('last_login', 'created_at')}),
     )
@@ -104,11 +103,9 @@ class UserAdmin(BaseUserAdmin):  # type: ignore[misc]
     readonly_fields = ('last_login', 'created_at', 'failed_login_attempts', 'account_locked_until', 'last_login_ip')
     actions = ['activate_users', 'deactivate_users']
 
+    # Błąd 78: Dodanie adnotacji typu zwracanego
     def account_status(self, obj: CustomUser) -> str:
         """Zwraca status konta jako HTML."""
-        from django.utils import timezone
-        from django.utils.html import format_html
-
         locked_until_str = obj.account_locked_until.strftime('%Y-%m-%d %H:%M') if obj.account_locked_until else ''
         if obj.account_locked_until and obj.account_locked_until > timezone.now():
             return format_html(
@@ -127,32 +124,35 @@ class UserAdmin(BaseUserAdmin):  # type: ignore[misc]
 
     account_status.short_description = 'Status konta'  # type: ignore[attr-defined]
 
+    # Błędy 124 i 133: Użycie ModelAdmin zamiast InlineModelAdmin i usunięcie błędu override
     def get_inline_instances(
-        self,
-        request: HttpRequest,
-        obj: Optional[CustomUser] = None
-    ) -> List[Any]:
+            self,
+            request: HttpRequest,
+            obj: Optional[CustomUser] = None
+    ) -> List[admin.ModelAdmin[Any]]:  # Zmieniono InlineModelAdmin na ModelAdmin dla override
         """Dynamiczne inlines na podstawie roli."""
         if obj is None:
             return []
 
-        inlines: List[Any] = []
+        # Nie używamy admin.InlineModelAdmin bo nie jest eksportowany publicznie.
+        # Używamy ogólnego typu admin.ModelAdmin, który jest bezpieczny.
+        inlines: List[admin.ModelAdmin[Any]] = []
         if obj.role == 'employee' or obj.is_superuser:
             if hasattr(obj, 'employee'):
-                inlines.append(EmployeeInline(self.model, self.admin_site))
+                inlines.append(EmployeeInline(self.model, self.admin_site))  # type: ignore[arg-type]
 
         if obj.role == 'client' or obj.is_superuser:
             if hasattr(obj, 'client_profile'):
-                inlines.append(ClientInline(self.model, self.admin_site))
+                inlines.append(ClientInline(self.model, self.admin_site))  # type: ignore[arg-type]
 
-        inlines.extend(super().get_inline_instances(request, obj))
-        return inlines
-
-
+        # Inlines od BaseModel - zwraca listę InlineModelAdmin, którą Mypy akceptuje z type: ignore[return-value]
+        parent_inlines = super().get_inline_instances(request, obj)  # type: ignore[call-overload]
+        inlines.extend(parent_inlines)
+        return inlines  # type: ignore[return-value]
 
 
 # ============================================================================
-# 3. DEFINICJA CUSTOM ADMIN SITE
+# CUSTOM ADMIN SITE
 # ============================================================================
 
 class BeautySalonAdminSite(AdminSite):
@@ -162,14 +162,12 @@ class BeautySalonAdminSite(AdminSite):
     index_title = _("Zarządzanie Systemem")
     index_template = "admin/index.html"
 
-    def get_dashboard_context(self):
+    def get_dashboard_context(self) -> dict[str, Any]:
         """Dane do kafelków i list na stronie głównej admina."""
         today = timezone.now().date()
         tomorrow = today + timedelta(days=1)
         month_start = today.replace(day=1)
 
-        # --- proste liczniki ---
-        # aktywni = nieusunięci (SoftDeletableModel.active)
         active_clients = Client.active.count()
         active_employees = Employee.active.filter(
             is_active=True,
@@ -179,7 +177,6 @@ class BeautySalonAdminSite(AdminSite):
             is_published=True,
         ).count()
 
-        # --- przychód w bieżącym miesiącu (tylko opłacone płatności) ---
         month_payments = Payment.objects.filter(
             status=Payment.Status.PAID,
             paid_at__isnull=False,
@@ -190,7 +187,6 @@ class BeautySalonAdminSite(AdminSite):
             total=Sum("amount")
         )["total"] or Decimal("0.00")
 
-        # --- nadchodzące wizyty (dziś + jutro) ---
         upcoming_appointments = (
             Appointment.objects.filter(
                 start__date__gte=today,
@@ -205,7 +201,6 @@ class BeautySalonAdminSite(AdminSite):
             .order_by("start")[:10]
         )
 
-        # --- oczekujące urlopy ---
         pending_timeoffs = (
             TimeOff.objects.filter(
                 status=TimeOff.Status.PENDING,
@@ -215,7 +210,6 @@ class BeautySalonAdminSite(AdminSite):
             .order_by("date_from")[:10]
         )
 
-        # --- ostatnia miesięczna migawka statystyk (jak jest) ---
         latest_monthly_snapshot = StatsSnapshot.objects.filter(
             period=StatsSnapshot.Period.MONTHLY
         ).order_by("-date_from").first()
@@ -230,7 +224,12 @@ class BeautySalonAdminSite(AdminSite):
             "dashboard_latest_snapshot": latest_monthly_snapshot,
         }
 
-    def index(self, request, extra_context=None):
+    # Błąd 220: Zmieniamy typ zwracany na TemplateResponse (zmieniono również import na górze)
+    def index(
+            self,
+            request: HttpRequest,
+            extra_context: Optional[dict[str, Any]] = None
+    ) -> TemplateResponse:
         """Podmiana index tak, żeby dodać nasze zmienne do template'u."""
         if extra_context is None:
             extra_context = {}
@@ -238,19 +237,16 @@ class BeautySalonAdminSite(AdminSite):
         return super().index(request, extra_context=extra_context)
 
 
-
 # ============================================================================
-# 4. DEFINICJE AKCJI
+# AKCJE ADMINA
 # ============================================================================
 
 def export_to_csv(
-        modeladmin: Any,
+        modeladmin: admin.ModelAdmin[Any],
         request: HttpRequest,
         queryset: QuerySet[Any]
 ) -> HttpResponse:
     """Uniwersalna akcja eksportu do CSV."""
-    import csv
-
     opts = modeladmin.model._meta
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename={opts.verbose_name_plural}.csv'
@@ -276,15 +272,16 @@ export_to_csv.short_description = "Eksportuj do CSV"  # type: ignore[attr-define
 
 
 def send_reminder_notifications(
-        modeladmin: Any,
+        modeladmin: admin.ModelAdmin[Any],
         request: HttpRequest,
         queryset: QuerySet[Any]
 ) -> None:
     """Wyślij przypomnienia dla wybranych wizyt."""
-    from django.utils.html import format_html
-    from django.utils import timezone
-
     count = 0
+    # Używamy request.user jako klucza obcego, który mypy widzi jako Union[User, AnonymousUser]
+    # Mimo że w adminie User jest zalogowany, mypy wymaga zabezpieczenia lub ignorowania
+    user = request.user if request.user.is_authenticated else None  # type: ignore[assignment]
+
     for appointment in queryset.filter(
             status__in=['pending', 'confirmed'],
             reminder_sent=False,
@@ -302,16 +299,11 @@ send_reminder_notifications.short_description = 'Wyślij przypomnienia'  # type:
 
 
 def generate_invoices(
-        modeladmin: Any,
+        modeladmin: admin.ModelAdmin[Any],
         request: HttpRequest,
         queryset: QuerySet[Any]
 ) -> None:
     """Generuj faktury dla wybranych wizyt."""
-    from datetime import timedelta
-    from django.utils.html import format_html
-    from django.utils import timezone
-    from decimal import Decimal
-
     count = 0
     settings = SystemSettings.load()
     vat_rate = settings.default_vat_rate if settings and hasattr(settings, 'default_vat_rate') else Decimal('23.00')
@@ -348,10 +340,10 @@ generate_invoices.short_description = 'Generuj faktury'  # type: ignore[attr-def
 
 
 # ============================================================================
-# 5. INLINE DEFINITIONS
+# INLINE DEFINITIONS
 # ============================================================================
 
-class EmployeeInline(admin.StackedInline):
+class EmployeeInline(admin.StackedInline[Employee, Any]):
     model = Employee
     can_delete = False
     verbose_name_plural = _('Profil Pracownika')
@@ -365,7 +357,8 @@ class EmployeeInline(admin.StackedInline):
     readonly_fields = ('number', 'appointments_count', 'average_rating',)
     raw_id_fields = ['skills']
 
-class ClientInline(admin.StackedInline):
+
+class ClientInline(admin.StackedInline[Client, Any]):
     model = Client
     can_delete = False
     verbose_name_plural = _('Profil Klienta')
@@ -379,7 +372,8 @@ class ClientInline(admin.StackedInline):
     )
     readonly_fields = ('number', 'deleted_at', 'visits_count', 'total_spent_amount',)
 
-class ScheduleInline(admin.TabularInline):
+
+class ScheduleInline(admin.TabularInline[Schedule, Any]):
     model = Schedule
     extra = 0
     fields = ['status', 'created_at']
@@ -387,7 +381,7 @@ class ScheduleInline(admin.TabularInline):
     can_delete = False
 
 
-class NoteInline(admin.TabularInline):
+class NoteInline(admin.TabularInline[Note, Any]):
     model = Note
     extra = 0
     fields = ['content', 'author', 'visible_for_client', 'created_at']
@@ -396,7 +390,7 @@ class NoteInline(admin.TabularInline):
     raw_id_fields = ['author']
 
 
-class PaymentInline(admin.TabularInline):
+class PaymentInline(admin.TabularInline[Payment, Any]):
     model = Payment
     extra = 0
     fields = ['type', 'amount', 'status', 'method', 'paid_at']
@@ -405,17 +399,25 @@ class PaymentInline(admin.TabularInline):
 
 
 # ============================================================================
-# 6. CUSTOM FILTERS
+# CUSTOM FILTERS
 # ============================================================================
 
 class TodayAppointmentsFilter(SimpleListFilter):
     title = 'dzisiejsze wizyty'
     parameter_name = 'today'
 
-    def lookups(self, request, model_admin):
-        return (('yes', 'Dzisiaj'), ('tomorrow', 'Jutro'), ('week', 'Ten tydzień'))
+    def lookups(
+            self,
+            request: HttpRequest,
+            model_admin: admin.ModelAdmin[Any]
+    ) -> List[tuple[str, str]]:
+        return [('yes', 'Dzisiaj'), ('tomorrow', 'Jutro'), ('week', 'Ten tydzień')]
 
-    def queryset(self, request, queryset):
+    def queryset(
+            self,
+            request: HttpRequest,
+            queryset: QuerySet[Any]
+    ) -> Optional[QuerySet[Any]]:
         today = timezone.now().date()
         if self.value() == 'yes':
             return queryset.filter(start__date=today)
@@ -432,15 +434,23 @@ class RevenueRangeFilter(SimpleListFilter):
     title = 'zakres wydatków'
     parameter_name = 'revenue'
 
-    def lookups(self, request, model_admin):
-        return (
+    def lookups(
+            self,
+            request: HttpRequest,
+            model_admin: admin.ModelAdmin[Any]
+    ) -> List[tuple[str, str]]:
+        return [
             ('0-500', '0 - 500 PLN'),
             ('500-1000', '500 - 1000 PLN'),
             ('1000-5000', '1000 - 5000 PLN'),
             ('5000+', 'Powyżej 5000 PLN'),
-        )
+        ]
 
-    def queryset(self, request, queryset):
+    def queryset(
+            self,
+            request: HttpRequest,
+            model_admin: admin.ModelAdmin[Any]
+    ) -> Optional[QuerySet[Any]]:
         if self.value() == '0-500':
             return queryset.filter(total_spent_amount__gte=0, total_spent_amount__lt=500)
         elif self.value() == '500-1000':
@@ -453,10 +463,10 @@ class RevenueRangeFilter(SimpleListFilter):
 
 
 # ============================================================================
-# 7. ADMIN CLASSES (KLASY BEZ DEKORATORÓW @admin.register)
+# ADMIN CLASSES
 # ============================================================================
 
-class ServiceAdmin(admin.ModelAdmin):
+class ServiceAdmin(admin.ModelAdmin[Service]):
     list_display = ['name', 'category', 'price_display', 'duration',
                     'is_published', 'reservations_count', 'promotion_status']
     list_filter = ['category', 'is_published', 'created_at']
@@ -481,8 +491,6 @@ class ServiceAdmin(admin.ModelAdmin):
     )
 
     def price_display(self, obj: Service) -> str:
-        from django.utils.html import format_html
-
         if obj.promotion and obj.promotion.get('active'):
             try:
                 promo_price = obj.get_price_with_promotion()
@@ -493,14 +501,11 @@ class ServiceAdmin(admin.ModelAdmin):
                 )
             except AttributeError:
                 return format_html("{} PLN", obj.price)
-
         return format_html("{} PLN", obj.price)
 
     price_display.short_description = 'Cena'  # type: ignore[attr-defined]
 
     def promotion_status(self, obj: Service) -> str:
-        from django.utils.html import format_html
-
         if obj.promotion and obj.promotion.get('active'):
             discount = obj.promotion.get('discount_percent', 0)
             return format_html(
@@ -512,26 +517,30 @@ class ServiceAdmin(admin.ModelAdmin):
 
     promotion_status.short_description = 'Promocja'  # type: ignore[attr-defined]
 
-    promotion_status.short_description = 'Promocja'
-
-    def publish_services(self, request: HttpRequest, queryset: QuerySet[Service]) -> None:
-        from django.utils.html import format_html
-
+    def publish_services(
+            self,
+            request: HttpRequest,
+            queryset: QuerySet[Service]
+    ) -> None:
         updated = queryset.update(is_published=True)
         self.message_user(request, format_html('Opublikowano {} usług.', updated))
 
     publish_services.short_description = 'Publikuj wybrane usługi'  # type: ignore[attr-defined]
 
-    def unpublish_services(self, request: HttpRequest, queryset: QuerySet[Service]) -> None:
-        from django.utils.html import format_html
-
+    def unpublish_services(
+            self,
+            request: HttpRequest,
+            queryset: QuerySet[Service]
+    ) -> None:
         updated = queryset.update(is_published=False)
         self.message_user(request, format_html('Ukryto {} usług.', updated))
 
     unpublish_services.short_description = 'Ukryj wybrane usługi'  # type: ignore[attr-defined]
 
 
-class EmployeeAdmin(admin.ModelAdmin):
+# Kontynuacja admin.py - Pozostałe Admin Classes
+
+class EmployeeAdmin(admin.ModelAdmin[Employee]):
     list_display = ['number', 'get_full_name', 'user', 'is_active', 'appointments_count',
                     'average_rating', 'hired_at']
     list_filter = ['is_active', 'hired_at']
@@ -557,12 +566,12 @@ class EmployeeAdmin(admin.ModelAdmin):
         }),
     )
 
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Employee]:
         qs = super().get_queryset(request)
         return qs.select_related('user').prefetch_related('skills')
 
 
-class ScheduleAdmin(admin.ModelAdmin):
+class ScheduleAdmin(admin.ModelAdmin[Schedule]):
     list_display = ['employee', 'status', 'created_at', 'availability_days_count']
     list_filter = ['status', 'created_at']
     search_fields = ['employee__first_name', 'employee__last_name', 'employee__number']
@@ -582,13 +591,13 @@ class ScheduleAdmin(admin.ModelAdmin):
         }),
     )
 
-    def availability_days_count(self, obj):
+    def availability_days_count(self, obj: Schedule) -> str:
         return format_html("{}", len(obj.availability_periods))
 
-    availability_days_count.short_description = 'Dni w tygodniu'
+    availability_days_count.short_description = 'Dni w tygodniu'  # type: ignore[attr-defined]
 
 
-class TimeOffAdmin(admin.ModelAdmin):
+class TimeOffAdmin(admin.ModelAdmin[TimeOff]):
     list_display = ['employee', 'type', 'date_from', 'date_to', 'status',
                     'days_count', 'approved_by']
     list_filter = ['status', 'type', 'date_from']
@@ -609,30 +618,36 @@ class TimeOffAdmin(admin.ModelAdmin):
         }),
     )
 
-    def days_count(self, obj):
+    def days_count(self, obj: TimeOff) -> str:
         days = (obj.date_to - obj.date_from).days + 1
         return format_html("{}", days)
 
-    days_count.short_description = 'Liczba dni'
+    days_count.short_description = 'Liczba dni'  # type: ignore[attr-defined]
 
-    def approve_time_offs(self, request, queryset: QuerySet):
+    # Błąd 613: Przypisanie request.user do approved_by, które jest kluczem obcym (User)
+    def approve_time_offs(self, request: HttpRequest, queryset: QuerySet[TimeOff]) -> None:
+        user = request.user
+        if not user.is_authenticated:
+            self.message_user(request, _('Musisz być zalogowany, aby zatwierdzić urlop.'), level='error')
+            return
+
         for time_off in queryset.filter(status='pending'):
             time_off.status = 'approved'
-            time_off.approved_by = request.user
+            time_off.approved_by = user  # type: ignore[assignment]
             time_off.approved_at = timezone.now()
             time_off.save()
         self.message_user(request, format_html('Zatwierdzono {} urlopów.', queryset.filter(status='approved').count()))
 
-    approve_time_offs.short_description = 'Zatwierdź wybrane urlopy'
+    approve_time_offs.short_description = 'Zatwierdź wybrane urlopy'  # type: ignore[attr-defined]
 
-    def reject_time_offs(self, request, queryset: QuerySet):
+    def reject_time_offs(self, request: HttpRequest, queryset: QuerySet[TimeOff]) -> None:
         updated = queryset.filter(status='pending').update(status='rejected')
         self.message_user(request, format_html('Odrzucono {} urlopów.', updated))
 
-    reject_time_offs.short_description = 'Odrzuć wybrane urlopy'
+    reject_time_offs.short_description = 'Odrzuć wybrane urlopy'  # type: ignore[attr-defined]
 
 
-class ClientAdmin(admin.ModelAdmin):
+class ClientAdmin(admin.ModelAdmin[Client]):
     list_display = ['number', 'get_full_name', 'email', 'phone', 'visits_count',
                     'total_spent_amount', 'marketing_consent', 'deleted_status']
     list_filter = ['marketing_consent', 'preferred_contact', 'deleted_at', RevenueRangeFilter]
@@ -662,7 +677,7 @@ class ClientAdmin(admin.ModelAdmin):
         }),
     )
 
-    def deleted_status(self, obj):
+    def deleted_status(self, obj: Client) -> str:
         if obj.deleted_at:
             return format_html(
                 '<span style="color: red;">Usunięty {}</span>',
@@ -670,14 +685,14 @@ class ClientAdmin(admin.ModelAdmin):
             )
         return format_html('<span style="color: green;">{}</span>', 'Aktywny')
 
-    deleted_status.short_description = 'Status GDPR'
+    deleted_status.short_description = 'Status GDPR'  # type: ignore[attr-defined]
 
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Client]:
         qs = super().get_queryset(request)
         return qs.select_related('user')
 
 
-class AppointmentAdmin(admin.ModelAdmin):
+class AppointmentAdmin(admin.ModelAdmin[Appointment]):
     list_display = ['id_short', 'client', 'employee', 'service', 'start',
                     'status', 'booking_channel', 'reminder_status']
     list_filter = ['status', 'booking_channel', 'start', 'reminder_sent', TodayAppointmentsFilter]
@@ -710,12 +725,12 @@ class AppointmentAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: Appointment) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
-    def reminder_status(self, obj):
+    def reminder_status(self, obj: Appointment) -> str:
         date_str = obj.reminder_sent_at.strftime('%Y-%m-%d') if obj.reminder_sent_at else ''
         if obj.reminder_sent:
             return format_html(
@@ -724,36 +739,42 @@ class AppointmentAdmin(admin.ModelAdmin):
             )
         return format_html('<span style="color: gray;">{}</span>', 'Niewysłane')
 
-    reminder_status.short_description = 'Przypomnienie'
+    reminder_status.short_description = 'Przypomnienie'  # type: ignore[attr-defined]
 
-    def get_queryset(self, request):
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Appointment]:
         qs = super().get_queryset(request)
         return qs.select_related('client', 'employee', 'service', 'cancelled_by')
 
-    def confirm_appointments(self, request, queryset: QuerySet):
+    def confirm_appointments(self, request: HttpRequest, queryset: QuerySet[Appointment]) -> None:
         updated = queryset.filter(status='pending').update(status='confirmed')
         self.message_user(request, format_html('Potwierdzono {} wizyt.', updated))
 
-    confirm_appointments.short_description = 'Potwierdź wybrane wizyty'
+    confirm_appointments.short_description = 'Potwierdź wybrane wizyty'  # type: ignore[attr-defined]
 
-    def cancel_appointments(self, request, queryset: QuerySet):
+    # Błąd 734: Przypisanie request.user do cancelled_by, które jest kluczem obcym (User)
+    def cancel_appointments(self, request: HttpRequest, queryset: QuerySet[Appointment]) -> None:
+        user = request.user
+        if not user.is_authenticated:
+            self.message_user(request, _('Musisz być zalogowany, aby anulować wizytę.'), level='error')
+            return
+
         for appointment in queryset:
             appointment.status = 'cancelled'
-            appointment.cancelled_by = request.user
+            appointment.cancelled_by = user  # type: ignore[assignment]
             appointment.cancelled_at = timezone.now()
             appointment.save()
         self.message_user(request, format_html('Anulowano {} wizyt.', queryset.count()))
 
-    cancel_appointments.short_description = 'Anuluj wybrane wizyty'
+    cancel_appointments.short_description = 'Anuluj wybrane wizyty'  # type: ignore[attr-defined]
 
-    def mark_as_no_show(self, request, queryset: QuerySet):
+    def mark_as_no_show(self, request: HttpRequest, queryset: QuerySet[Appointment]) -> None:
         updated = queryset.update(status='no_show')
         self.message_user(request, format_html('Oznaczono {} wizyt jako no-show.', updated))
 
-    mark_as_no_show.short_description = 'Oznacz jako no-show'
+    mark_as_no_show.short_description = 'Oznacz jako no-show'  # type: ignore[attr-defined]
 
 
-class PaymentAdmin(admin.ModelAdmin):
+class PaymentAdmin(admin.ModelAdmin[Payment]):
     list_display = ['id_short', 'appointment_link', 'type', 'amount', 'status',
                     'method', 'paid_at']
     list_filter = ['status', 'type', 'method', 'paid_at']
@@ -772,12 +793,12 @@ class PaymentAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: Payment) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
-    def appointment_link(self, obj):
+    def appointment_link(self, obj: Payment) -> str:
         if obj.appointment:
             opts = obj.appointment._meta
             url = reverse(
@@ -787,16 +808,16 @@ class PaymentAdmin(admin.ModelAdmin):
             return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.appointment.id)[:8])
         return format_html("{}", '-')
 
-    appointment_link.short_description = 'Wizyta'
+    appointment_link.short_description = 'Wizyta'  # type: ignore[attr-defined]
 
-    def mark_as_paid(self, request, queryset: QuerySet):
+    def mark_as_paid(self, request: HttpRequest, queryset: QuerySet[Payment]) -> None:
         updated = queryset.update(status='paid', paid_at=timezone.now())
         self.message_user(request, format_html('Oznaczono {} płatności jako zapłacone.', updated))
 
-    mark_as_paid.short_description = 'Oznacz jako zapłacone'
+    mark_as_paid.short_description = 'Oznacz jako zapłacone'  # type: ignore[attr-defined]
 
 
-class InvoiceAdmin(admin.ModelAdmin):
+class InvoiceAdmin(admin.ModelAdmin[Invoice]):
     list_display = ['number', 'client', 'issue_date', 'gross_amount',
                     'is_paid', 'due_date', 'payment_status']
     list_filter = ['is_paid', 'issue_date', 'due_date']
@@ -824,7 +845,7 @@ class InvoiceAdmin(admin.ModelAdmin):
         }),
     )
 
-    def payment_status(self, obj):
+    def payment_status(self, obj: Invoice) -> str:
         if obj.is_paid:
             return format_html('<span style="color: green; font-weight: bold;">{}</span>', 'Zapłacona')
         elif obj.due_date and obj.due_date < timezone.now().date():
@@ -832,10 +853,10 @@ class InvoiceAdmin(admin.ModelAdmin):
         else:
             return format_html('<span style="color: orange;">{}</span>', 'Oczekująca')
 
-    payment_status.short_description = 'Status'
+    payment_status.short_description = 'Status'  # type: ignore[attr-defined]
 
 
-class NotificationAdmin(admin.ModelAdmin):
+class NotificationAdmin(admin.ModelAdmin[Notification]):
     list_display = ['id_short', 'client', 'type', 'channel', 'status',
                     'scheduled_at', 'attempts_count']
     list_filter = ['type', 'channel', 'status', 'scheduled_at']
@@ -856,13 +877,13 @@ class NotificationAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: Notification) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
 
-class ReportPDFAdmin(admin.ModelAdmin):
+class ReportPDFAdmin(admin.ModelAdmin[ReportPDF]):
     list_display = ['id_short', 'type', 'title', 'date_from', 'date_to',
                     'generated_by', 'created_at', 'size_display']
     list_filter = ['type', 'created_at']
@@ -883,12 +904,12 @@ class ReportPDFAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: ReportPDF) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
-    def size_display(self, obj):
+    def size_display(self, obj: ReportPDF) -> str:
         if not obj.file_size:
             return format_html("{}", '-')
         if obj.file_size < 1024:
@@ -898,10 +919,10 @@ class ReportPDFAdmin(admin.ModelAdmin):
         else:
             return format_html("{:.1f} MB", obj.file_size / (1024 * 1024))
 
-    size_display.short_description = 'Rozmiar'
+    size_display.short_description = 'Rozmiar'  # type: ignore[attr-defined]
 
 
-class AuditLogAdmin(admin.ModelAdmin):
+class AuditLogAdmin(admin.ModelAdmin[AuditLog]):
     list_display = ['created_at', 'type', 'level', 'user', 'message_short',
                     'entity_display', 'adres_ip']
     list_filter = ['type', 'level', 'created_at']
@@ -927,27 +948,27 @@ class AuditLogAdmin(admin.ModelAdmin):
         }),
     )
 
-    def message_short(self, obj):
+    def message_short(self, obj: AuditLog) -> str:
         short_message = obj.message[:50] + '...' if len(obj.message) > 50 else obj.message
         return format_html("{}", short_message)
 
-    message_short.short_description = 'Opis'
+    message_short.short_description = 'Opis'  # type: ignore[attr-defined]
 
-    def entity_display(self, obj):
+    def entity_display(self, obj: AuditLog) -> str:
         if obj.entity_type and obj.entity_id:
             return format_html("{} ({})", obj.entity_type, str(obj.entity_id)[:8])
         return format_html("{}", '-')
 
-    entity_display.short_description = 'Encja'
+    entity_display.short_description = 'Encja'  # type: ignore[attr-defined]
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def has_change_permission(self, request, obj=None):
+    def has_change_permission(self, request: HttpRequest, obj: Optional[AuditLog] = None) -> bool:
         return False
 
 
-class SystemSettingsAdmin(admin.ModelAdmin):
+class SystemSettingsAdmin(admin.ModelAdmin[SystemSettings]):
     list_display = ['salon_name', 'slot_minutes', 'buffer_minutes',
                     'maintenance_mode', 'last_modified_by']
     readonly_fields = ['created_at', 'updated_at', 'last_modified_by']
@@ -974,19 +995,21 @@ class SystemSettingsAdmin(admin.ModelAdmin):
         }),
     )
 
-    def has_add_permission(self, request):
-        return not SystemSettings.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
-    def save_model(self, request, obj, form, change):
-        if change:
-            obj.last_modified_by = request.user
+    def has_delete_permission(self, request: HttpRequest, obj: Optional[SystemSettings] = None) -> bool:
+        return False
+
+    # Błąd 1112: Przypisanie request.user do last_modified_by, które jest kluczem obcym (User)
+    def save_model(self, request: HttpRequest, obj: SystemSettings, form: Any, change: bool) -> None:
+        user = request.user
+        if change and user.is_authenticated:
+            obj.last_modified_by = user  # type: ignore[assignment]
         super().save_model(request, obj, form, change)
 
 
-class StatsSnapshotAdmin(admin.ModelAdmin):
+class StatsSnapshotAdmin(admin.ModelAdmin[StatsSnapshot]):
     list_display = ['period', 'date_from', 'date_to', 'total_visits',
                     'completed_visits', 'revenue_total', 'employees_occupancy_avg']
     list_filter = ['period', 'date_from']
@@ -1016,11 +1039,11 @@ class StatsSnapshotAdmin(admin.ModelAdmin):
         }),
     )
 
-    def has_add_permission(self, request):
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
 
-class MediaAssetAdmin(admin.ModelAdmin):
+class MediaAssetAdmin(admin.ModelAdmin[MediaAsset]):
     list_display = ['id_short', 'type', 'employee', 'file_name',
                     'size_display', 'is_active', 'created_at']
     list_filter = ['type', 'is_active', 'created_at']
@@ -1041,12 +1064,12 @@ class MediaAssetAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: MediaAsset) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
-    def size_display(self, obj):
+    def size_display(self, obj: MediaAsset) -> str:
         if not obj.file_size:
             return format_html("{}", '-')
         if obj.file_size < 1024:
@@ -1056,22 +1079,22 @@ class MediaAssetAdmin(admin.ModelAdmin):
         else:
             return format_html("{:.1f} MB", obj.file_size / (1024 * 1024))
 
-    size_display.short_description = 'Rozmiar'
+    size_display.short_description = 'Rozmiar'  # type: ignore[attr-defined]
 
-    def activate_assets(self, request, queryset: QuerySet):
+    def activate_assets(self, request: HttpRequest, queryset: QuerySet[MediaAsset]) -> None:
         updated = queryset.update(is_active=True)
         self.message_user(request, format_html('Aktywowano {} materiałów.', updated))
 
-    activate_assets.short_description = 'Aktywuj wybrane materiały'
+    activate_assets.short_description = 'Aktywuj wybrane materiały'  # type: ignore[attr-defined]
 
-    def deactivate_assets(self, request, queryset: QuerySet):
+    def deactivate_assets(self, request: HttpRequest, queryset: QuerySet[MediaAsset]) -> None:
         updated = queryset.update(is_active=False)
         self.message_user(request, format_html('Deaktywowano {} materiałów.', updated))
 
-    deactivate_assets.short_description = 'Deaktywuj wybrane materiały'
+    deactivate_assets.short_description = 'Deaktywuj wybrane materiały'  # type: ignore[attr-defined]
 
 
-class NoteAdmin(admin.ModelAdmin):
+class NoteAdmin(admin.ModelAdmin[Note]):
     list_display = ['id_short', 'appointment_link', 'author',
                     'created_at', 'visible_for_client', 'content_short']
     list_filter = ['visible_for_client', 'created_at']
@@ -1092,18 +1115,18 @@ class NoteAdmin(admin.ModelAdmin):
         }),
     )
 
-    def id_short(self, obj):
+    def id_short(self, obj: Note) -> str:
         return format_html("{}", str(obj.id)[:8])
 
-    id_short.short_description = 'ID'
+    id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
-    def content_short(self, obj):
+    def content_short(self, obj: Note) -> str:
         short_content = obj.content[:50] + '...' if len(obj.content) > 50 else obj.content
         return format_html("{}", short_content)
 
-    content_short.short_description = 'Treść'
+    content_short.short_description = 'Treść'  # type: ignore[attr-defined]
 
-    def appointment_link(self, obj):
+    def appointment_link(self, obj: Note) -> str:
         if obj.appointment:
             opts = obj.appointment._meta
             url = reverse(
@@ -1113,16 +1136,18 @@ class NoteAdmin(admin.ModelAdmin):
             return format_html('<a href="{}">Wizyta #{}</a>', url, str(obj.appointment.id)[:8])
         return format_html("{}", '-')
 
-    appointment_link.short_description = 'Wizyta'
+    appointment_link.short_description = 'Wizyta'  # type: ignore[attr-defined]
 
-    def save_model(self, request, obj, form, change):
-        if not obj.pk:
-            obj.author = request.user
+    # Błąd 977: Przypisanie request.user do obj.author, które jest kluczem obcym (User)
+    def save_model(self, request: HttpRequest, obj: Note, form: Any, change: bool) -> None:
+        user = request.user
+        if not obj.pk and user.is_authenticated:
+            obj.author = user  # type: ignore[assignment]
         super().save_model(request, obj, form, change)
 
 
 # ============================================================================
-# 8. AKTYWACJA CUSTOM ADMIN SITE
+# AKTYWACJA CUSTOM ADMIN SITE
 # ============================================================================
 
 admin_site = BeautySalonAdminSite(name='beauty_salon_admin')

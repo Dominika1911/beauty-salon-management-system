@@ -1,10 +1,3 @@
-"""
-Beauty Salon Management System - URL Configuration
-Autor: Dominika Jedynak, nr albumu: 92721
-
-Routing dla API salonu kosmetycznego.
-"""
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
