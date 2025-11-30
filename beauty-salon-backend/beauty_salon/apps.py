@@ -6,5 +6,5 @@ class BeautySalonConfig(AppConfig):
     name = 'beauty_salon'
     verbose_name = 'Beauty Salon Management System'
 
-    def ready(self):
+    def ready(self) -> None:
         import beauty_salon.signals
