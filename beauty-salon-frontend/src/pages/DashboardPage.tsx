@@ -1,3 +1,5 @@
+// src/pages/DashboardPage.tsx
+
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { useAuth } from '../hooks/useAuth';
@@ -16,17 +18,16 @@ interface ClientProps { data: ClientDashboardData; }
 interface EmployeeProps { data: EmployeeDashboardData; }
 interface ManagerProps { data: ManagerDashboardData; }
 
-
 // ==================== DASHBOARD KLIENTA ====================
 
-const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboardData }): ReactElement => (
+const ClientDashboard: React.FC<ClientProps> = ({ data }: ClientProps): ReactElement => (
   <div className="client-dashboard">
     <div className="stats-row">
       <div className="stat-card">
         <div className="stat-icon">💰</div>
         <div className="stat-content">
           <h3>Łączne wydatki</h3>
-          <p className="stat-value">{(data as ClientDashboardData).total_spent || '0.00'} PLN</p>
+          <p className="stat-value">{data.total_spent || '0.00'} PLN</p>
         </div>
       </div>
 
@@ -34,13 +35,13 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
         <div className="stat-icon">📅</div>
         <div className="stat-content">
           <h3>Liczba wizyt</h3>
-          <p className="stat-value">{(data as ClientDashboardData).client?.visits_count || 0}</p>
+          <p className="stat-value">{data.client?.visits_count || 0}</p>
         </div>
       </div>
     </div>
 
     <div className="appointments-section">
-      <h2>📆 Nadchodzące wizyty ({(data as ClientDashboardData).upcoming_appointments?.length || 0})</h2>
+      <h2>📆 Nadchodzące wizyty ({data.upcoming_appointments?.length || 0})</h2>
       <div className="appointments-grid">
         {data.upcoming_appointments && data.upcoming_appointments.length > 0 ? (
           data.upcoming_appointments.map((apt: DashboardAppointment) => (
@@ -52,10 +53,9 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
             </div>
           ))
         ) : (
-         <div className="no-data">
+          <div className="no-data">
             <p>Brak nadchodzących wizyt</p>
-        </div>
-
+          </div>
         )}
       </div>
     </div>
@@ -75,7 +75,6 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
           <div className="no-data">
             <p>Brak historii wizyt</p>
           </div>
-
         )}
       </div>
     </div>
@@ -84,14 +83,14 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
 
 // ==================== DASHBOARD PRACOWNIKA ====================
 
-const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDashboardData }): ReactElement => (
+const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): ReactElement => (
   <div className="employee-dashboard">
     <div className="stats-row">
       <div className="stat-card highlight">
         <div className="stat-icon">📅</div>
         <div className="stat-content">
           <h3>Wizyty dzisiaj</h3>
-          <p className="stat-value">{(data as EmployeeDashboardData).today_appointments_count || 0}</p>
+          <p className="stat-value">{data.today_appointments_count || 0}</p>
         </div>
       </div>
 
@@ -99,7 +98,7 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
         <div className="stat-icon">📆</div>
         <div className="stat-content">
           <h3>Nadchodzące</h3>
-          <p className="stat-value">{(data as EmployeeDashboardData).upcoming_appointments_count || 0}</p>
+          <p className="stat-value">{data.upcoming_appointments_count || 0}</p>
         </div>
       </div>
     </div>
@@ -120,9 +119,8 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
           ))
         ) : (
           <div className="no-data">
-             <p>Brak wizyt dzisiaj</p>
+            <p>Brak wizyt dzisiaj</p>
           </div>
-
         )}
       </div>
     </div>
@@ -142,7 +140,7 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
         ) : (
           <div className="no-data">
             <p>Brak nadchodzących wizyt</p>
-        </div>
+          </div>
         )}
       </div>
     </div>
@@ -151,17 +149,16 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
 
 // ==================== DASHBOARD MANAGERA ====================
 
-const ManagerDashboard: React.FC<ManagerProps> = ({ data }: { data: ManagerDashboardData }): ReactElement => (
+const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): ReactElement => (
   <div className="manager-dashboard">
     <div className="stats-row">
       <div className="stat-card">
         <div className="stat-icon">📅</div>
         <div className="stat-content">
           <h3>Wizyty dzisiaj</h3>
-          <p className="stat-value">{(data as ManagerDashboardData).today?.total_appointments || 0}</p>
+          <p className="stat-value">{data.today?.total_appointments || 0}</p>
         </div>
       </div>
-      {/* ... (pozostałe stat-cards menedżera) ... */}
     </div>
 
     <div className="appointments-section">
@@ -187,34 +184,31 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: { data: ManagerDashb
   </div>
 );
 
-
 // ==================== KOMPONENT GŁÓWNY (DashboardPage) ====================
 
-// FIX: Jawne typowanie zmiennej loadDashboard i typu zwracanego
 export const DashboardPage: React.FC = (): ReactElement => {
   const { user, isClient, isEmployee, isManager } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const loadDashboard: () => Promise<void> = useCallback(async (): Promise<void> => {
+    try {
+      setLoading(true);
+      setError(null);
 
-  const loadDashboard = useCallback(async (): Promise<void> => {
-  try {
-    setLoading(true);
-    setError(null);
-
-    const { data } = await dashboardAPI.get(); // ⬅ TU wracamy do get()
-    setDashboardData(data as DashboardData);
-  } catch (err) {
-    console.error('Błąd ładowania dashboardu', err);
-    setError('Nie udało się załadować danych dashboardu.');
-  } finally {
-    setLoading(false);
-  }
-}, []);
+      const { data } = await dashboardAPI.get();
+      setDashboardData(data as DashboardData);
+    } catch (err) {
+      console.error('Błąd ładowania dashboardu', err);
+      setError('Nie udało się załadować danych dashboardu.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    loadDashboard();
+    void loadDashboard();
   }, [loadDashboard]);
 
   if (loading) {
@@ -229,16 +223,16 @@ export const DashboardPage: React.FC = (): ReactElement => {
   if (error) {
     return (
       <div className="error-container">
-        <h2>❌ Błąd</h2>
+        <h2>⌠ Błąd</h2>
         <p>{error}</p>
         <button onClick={loadDashboard}>Spróbuj ponownie</button>
       </div>
     );
   }
 
-    const clientData: ClientDashboardData = dashboardData as ClientDashboardData;
-    const employeeData: EmployeeDashboardData = dashboardData as EmployeeDashboardData;
-    const managerData: ManagerDashboardData = dashboardData as ManagerDashboardData;
+  const clientData: ClientDashboardData = dashboardData as ClientDashboardData;
+  const employeeData: EmployeeDashboardData = dashboardData as EmployeeDashboardData;
+  const managerData: ManagerDashboardData = dashboardData as ManagerDashboardData;
 
   return (
     <div className="dashboard">

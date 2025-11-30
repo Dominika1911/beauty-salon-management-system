@@ -1,9 +1,9 @@
 // src/context/AuthContext.ts
 
 import { createContext } from 'react';
-import { AuthContextType } from '../types';
+import type { AuthContextType } from '../types';
 
 /**
  * Kontekst autentykacji - udostępnia stan użytkownika i metody logowania
  */
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext: React.Context<AuthContextType | undefined> = createContext<AuthContextType | undefined>(undefined);

@@ -1,29 +1,28 @@
-/* eslint-disable react-refresh/only-export-components */
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import React from 'react';
 import type { ReactElement } from 'react';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 
 // === KOMPONENTY OSŁONOWE I NAWIGACYJNE ===
 import { Layout } from '../components/Layout/Layout';
-import { ProtectedRoute } from '../components/ProtectedRoute'; // Zakładam, że w pliku 'ProtectedRoute.tsx' jest export const ProtectedRoute
+import { ProtectedRoute } from '../components/ProtectedRoute';
 import { LoginPage } from '../pages/LoginPage';
 
-// === KOMPONENTY STRON (Należy stworzyć placeholder, jeśli nie istnieją) ===
+// === KOMPONENTY STRON ===
 import { DashboardPage } from '../pages/DashboardPage';
-// Przykładowe placeholdery - musisz utworzyć ich pliki w src/pages/
-const ClientsPage = () => <h1>Klienci</h1>;
-const EmployeesPage = () => <h1>Pracownicy</h1>;
-const ServicesPage = () => <h1>Usługi</h1>;
-const AppointmentsPage = () => <h1>Wizyty</h1>;
-const MySchedulePage = () => <h1>Mój Grafik</h1>;
-const MyAppointmentsPage = () => <h1>Moje Wizyty</h1>;
-const ProfilePage = () => <h1>Profil</h1>;
-const StatisticsPage = () => <h1>Statystyki</h1>;
-const SettingsPage = () => <h1>Ustawienia</h1>;
 
+// Placeholder components
+const ClientsPage: React.FC = (): ReactElement => <h1>Klienci</h1>;
+const EmployeesPage: React.FC = (): ReactElement => <h1>Pracownicy</h1>;
+const ServicesPage: React.FC = (): ReactElement => <h1>Usługi</h1>;
+const AppointmentsPage: React.FC = (): ReactElement => <h1>Wizyty</h1>;
+const MySchedulePage: React.FC = (): ReactElement => <h1>Mój Grafik</h1>;
+const MyAppointmentsPage: React.FC = (): ReactElement => <h1>Moje Wizyty</h1>;
+const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
+const StatisticsPage: React.FC = (): ReactElement => <h1>Statystyki</h1>;
+const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
 
 // === DEKLARACJA GŁÓWNEGO ROUTERA ===
-export const router = createBrowserRouter([
-
+const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   // 1. TRASY PUBLICZNE
   {
     path: '/login',
@@ -33,9 +32,8 @@ export const router = createBrowserRouter([
   // 2. TRASY CHRONIONE (ZAGNIEŻDŻONE W LAYOUT)
   {
     path: '/',
-    element: <Layout />, // Layout jest rodzicem, który renderuje Outleta i nawigację
+    element: <Layout />,
     children: [
-
       // TRASA GŁÓWNA (/): Przekierowanie na Dashboard
       {
         index: true,
@@ -147,12 +145,12 @@ export const router = createBrowserRouter([
   {
     path: '/404',
     element: <h1>404 Strona nie znaleziona</h1>,
-  }
+  },
 ]);
 
 // Komponent do użycia w pliku main.tsx
 export const AppRouter: React.FC = (): ReactElement => {
-    return <RouterProvider router={router} />;
+  return <RouterProvider router={router} />;
 };
 
 export default AppRouter;

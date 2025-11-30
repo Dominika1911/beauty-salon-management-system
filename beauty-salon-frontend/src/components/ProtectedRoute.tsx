@@ -1,6 +1,7 @@
 // src/components/ProtectedRoute.tsx
 
-import React, { ReactNode } from 'react'; // DODANY IMPORT Reacta
+import React from 'react';
+import type { ReactNode, ReactElement } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
@@ -12,7 +13,7 @@ interface ProtectedRouteProps {
 /**
  * Komponent chroniący trasy przed nieautoryzowanym dostępem
  */
-export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps): React.ReactElement => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }: ProtectedRouteProps): ReactElement => {
   const { user, loading } = useAuth();
 
   // Czekaj na sprawdzenie statusu auth

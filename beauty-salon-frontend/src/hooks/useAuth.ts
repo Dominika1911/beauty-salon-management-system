@@ -7,8 +7,8 @@ import type { AuthContextType } from '../types';
  * @throws Error jeśli używany poza AuthProvider
  * @returns AuthContext z danymi użytkownika i metodami auth
  */
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
+export const useAuth: () => AuthContextType = (): AuthContextType => {
+  const context: AuthContextType | undefined = useContext(AuthContext);
 
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');

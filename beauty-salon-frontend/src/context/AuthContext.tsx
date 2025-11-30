@@ -1,10 +1,11 @@
 // src/context/AuthContext.tsx
 
 import React, { useState, useEffect } from 'react';
+import type { ReactElement } from 'react';
 import { authAPI } from '../api';
 import type { User, LoginCredentials, AuthContextType } from '../types';
 import type { AxiosError } from 'axios';
-import { AuthContext } from './AuthContext.ts';
+import { AuthContext } from './AuthContext';
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -13,7 +14,7 @@ interface AuthProviderProps {
 /**
  * Provider autentykacji - opakowuje aplikację i zarządza stanem logowania
  */
-export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElement => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProviderProps): ReactElement => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,12 +22,11 @@ export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElemen
   /**
    * Sprawdza status autentykacji przy starcie aplikacji
    */
-  const checkAuthStatus = async (): Promise<void> => {
+  const checkAuthStatus: () => Promise<void> = async (): Promise<void> => {
     try {
       const { data } = await authAPI.status();
       setUser(data.authenticated ? data.user : null);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('Auth check failed:', err);
       setUser(null);
     } finally {
@@ -42,7 +42,7 @@ export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElemen
   /**
    * Loguje użytkownika do systemu
    */
-  const login = async (
+  const login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }> = async (
     credentials: LoginCredentials,
   ): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -53,9 +53,9 @@ export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElemen
 
       return { success: true };
     } catch (err) {
-      const axiosError = err as AxiosError<{ error?: string; detail?: string }>;
+      const axiosError: AxiosError<{ error?: string; detail?: string }> = err as AxiosError<{ error?: string; detail?: string }>;
 
-      const errorMsg =
+      const errorMsg: string =
         axiosError.response?.data?.error ||
         axiosError.response?.data?.detail ||
         'Błąd logowania';
@@ -68,11 +68,10 @@ export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElemen
   /**
    * Wylogowuje użytkownika z systemu
    */
-  const logout = async (): Promise<void> => {
+  const logout: () => Promise<void> = async (): Promise<void> => {
     try {
       await authAPI.logout();
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('Logout failed:', err);
     } finally {
       // Wyloguj lokalnie nawet przy błędzie API
@@ -80,11 +79,11 @@ export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElemen
     }
   };
 
-  // 🔹 DODANE – flagi na podstawie user.role
-  const isAuthenticated = !!user;
-  const isManager = user?.role === 'manager';
-  const isEmployee = user?.role === 'employee';
-  const isClient = user?.role === 'client';
+  // Flagi na podstawie user.role
+  const isAuthenticated: boolean = !!user;
+  const isManager: boolean = user?.role === 'manager';
+  const isEmployee: boolean = user?.role === 'employee';
+  const isClient: boolean = user?.role === 'client';
 
   const value: AuthContextType = {
     user,
