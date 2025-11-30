@@ -1,20 +1,21 @@
-import type { FC, ReactElement, ReactNode } from 'react';
-import { Navigate, useLocation, type Location } from 'react-router-dom';
+// src/components/ProtectedRoute.tsx
+
+import React, { ReactNode } from 'react'; // DODANY IMPORT Reacta
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import type { UserRole } from '../types';
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  allowedRoles?: UserRole[];
+  allowedRoles?: ('manager' | 'employee' | 'client')[];
 }
 
-export const ProtectedRoute: FC<ProtectedRouteProps> = ({
-  children,
-  allowedRoles,
-}: ProtectedRouteProps): ReactElement | null => {
-  const { user, loading, isAuthenticated } = useAuth();
-  const location: Location = useLocation();
+/**
+ * Komponent chroniący trasy przed nieautoryzowanym dostępem
+ */
+export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps): React.ReactElement => {
+  const { user, loading } = useAuth();
 
+  // Czekaj na sprawdzenie statusu auth
   if (loading) {
     return (
       <div className="loading-container">
@@ -24,16 +25,18 @@ export const ProtectedRoute: FC<ProtectedRouteProps> = ({
     );
   }
 
-  if (!isAuthenticated || !user) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+  // Nie zalogowany - przekieruj na login
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
+  // Sprawdź role jeśli są określone
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return (
       <div className="access-denied">
-        <h2>🚫 Brak dostępu</h2>
+        <h2>Brak dostępu</h2>
         <p>Nie masz uprawnień do tej strony.</p>
-        <p>Twoja rola: {user.role_display}</p>
+        <p>Twoja rola: <strong>{user.role_display}</strong></p>
       </div>
     );
   }

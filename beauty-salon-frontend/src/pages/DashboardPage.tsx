@@ -1,5 +1,3 @@
-// src/pages/DashboardPage.tsx (POPRAWIONA WERSJA, BEZ PLACEHOLDERÓW)
-
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { useAuth } from '../hooks/useAuth';
@@ -54,7 +52,10 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
             </div>
           ))
         ) : (
-          <p className="no-data">Brak nadchodzących wizyt</p>
+         <div className="no-data">
+            <p>Brak nadchodzących wizyt</p>
+        </div>
+
         )}
       </div>
     </div>
@@ -71,7 +72,10 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: { data: ClientDashboar
             </div>
           ))
         ) : (
-          <p className="no-data">Brak historii wizyt</p>
+          <div className="no-data">
+            <p>Brak historii wizyt</p>
+          </div>
+
         )}
       </div>
     </div>
@@ -115,7 +119,10 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
             </div>
           ))
         ) : (
-          <p className="no-data">Brak wizyt dzisiaj</p>
+          <div className="no-data">
+             <p>Brak wizyt dzisiaj</p>
+          </div>
+
         )}
       </div>
     </div>
@@ -133,7 +140,9 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: { data: EmployeeDa
             </div>
           ))
         ) : (
-          <p className="no-data">Brak nadchodzących wizyt</p>
+          <div className="no-data">
+            <p>Brak nadchodzących wizyt</p>
+        </div>
         )}
       </div>
     </div>
@@ -188,26 +197,21 @@ export const DashboardPage: React.FC = (): ReactElement => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // FIX: Jawne typowanie zmiennej loadDashboard
-  const loadDashboard: () => Promise<void> = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      setError(null);
 
-      const { data: rawData } = await dashboardAPI.get();
-      // FIX: Jawne typowanie zmiennej data (usunięcie błędu typedef)
-      const data: DashboardData = rawData as DashboardData;
+  const loadDashboard = useCallback(async (): Promise<void> => {
+  try {
+    setLoading(true);
+    setError(null);
 
-      setDashboardData(data);
-    } catch (err: unknown) {
-      const errorResponse: { response?: { data?: { detail?: string } } } = err as { response?: { data?: { detail?: string } } };
-      console.error('Dashboard load failed:', err);
-      const errorMsg: string = errorResponse.response?.data?.detail || 'Błąd ładowania dashboardu';
-      setError(errorMsg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    const { data } = await dashboardAPI.get(); // ⬅ TU wracamy do get()
+    setDashboardData(data as DashboardData);
+  } catch (err) {
+    console.error('Błąd ładowania dashboardu', err);
+    setError('Nie udało się załadować danych dashboardu.');
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     loadDashboard();

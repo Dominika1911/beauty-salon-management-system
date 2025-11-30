@@ -1,11 +1,13 @@
-// src/App.tsx
-
 import React from 'react';
+import AppRouter from './router';
+import { AuthProvider } from './context/AuthContext.tsx';
 
-const App: React.FC = () => {
-    // Ten komponent jest tu, ponieważ jest wymagany przez main.tsx,
-    // ale jego rola jest czysto kontenerowa.
-    return <></>; 
-};
+function App(): React.ReactElement {
+  return (
+    <AuthProvider>
+      <AppRouter />
+    </AuthProvider>
+  );
+}
 
 export default App;

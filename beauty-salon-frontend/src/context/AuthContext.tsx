@@ -1,44 +1,50 @@
-/* eslint-disable react-refresh/only-export-components */
+// src/context/AuthContext.tsx
 
-// src/context/AuthContext.tsx (POPRAWIONA I KOMPLETNIE TYPOWANA WERSJA)
-
-import { createContext, useState, useCallback, useEffect } from 'react';
-import type { ReactNode, ReactElement } from 'react';
+import React, { useState, useEffect } from 'react';
 import { authAPI } from '../api';
 import type { User, LoginCredentials, AuthContextType } from '../types';
 import type { AxiosError } from 'axios';
+import { AuthContext } from './AuthContext.ts';
 
-// Kontekst poprawnie typowany
-export const AuthContext: React.Context<AuthContextType | undefined> = createContext<AuthContextType | undefined>(undefined);
+interface AuthProviderProps {
+  children: React.ReactNode;
+}
 
-// Komponent Provider, poprawnie typowany (FIX: Używamy React.FC i jawnego typu zwracanego)
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }: { children: ReactNode }): ReactElement => {
+/**
+ * Provider autentykacji - opakowuje aplikację i zarządza stanem logowania
+ */
+export const AuthProvider = ({ children }: AuthProviderProps): React.ReactElement => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // FIX: Dodano typ do zmiennej checkAuthStatus (naprawia L19: typedef)
-  const checkAuthStatus: () => Promise<void> = useCallback(async (): Promise<void> => {
+  /**
+   * Sprawdza status autentykacji przy starcie aplikacji
+   */
+  const checkAuthStatus = async (): Promise<void> => {
     try {
-      // FIX: Ignorowanie obietnicy jest celowe w useEffect, więc nie jest to błąd
       const { data } = await authAPI.status();
       setUser(data.authenticated ? data.user : null);
-    } catch (err: unknown) {
+    } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('Auth check failed:', err);
       setUser(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Sprawdź auth przy montowaniu komponentu
+  useEffect(() => {
+    void checkAuthStatus();
   }, []);
 
- useEffect(() => {
-    // UWAGA: Mimo iż linia poniżej generuje ostrzeżenie "Promise returned from checkAuthStatus is ignored",
-    // jest to standardowy wzorzec w React. Użycie anonimowej funkcji jest zbędne, jeśli obietnica nie jest śledzona.
-    checkAuthStatus();
-  }, [checkAuthStatus]);
-
-  // FIX: Dodano typ do zmiennej login (naprawia L36: typedef)
- const login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }> = async (credentials: LoginCredentials) => {
+  /**
+   * Loguje użytkownika do systemu
+   */
+  const login = async (
+    credentials: LoginCredentials,
+  ): Promise<{ success: boolean; error?: string }> => {
     try {
       setError(null);
 
@@ -46,12 +52,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }: { 
       setUser(data.user);
 
       return { success: true };
-    } catch (err: unknown) {
-      const errorResponse: AxiosError = err as AxiosError;
+    } catch (err) {
+      const axiosError = err as AxiosError<{ error?: string; detail?: string }>;
 
-      const errorMsg: string =
-        (errorResponse.response?.data as { error?: string; detail?: string })?.error ||
-        (errorResponse.response?.data as { error?: string; detail?: string })?.detail ||
+      const errorMsg =
+        axiosError.response?.data?.error ||
+        axiosError.response?.data?.detail ||
         'Błąd logowania';
 
       setError(errorMsg);
@@ -59,29 +65,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }: { 
     }
   };
 
-  // FIX: Dodano typ do zmiennej logout (naprawia L60: typedef)
-  const logout: () => Promise<void> = async (): Promise<void> => {
+  /**
+   * Wylogowuje użytkownika z systemu
+   */
+  const logout = async (): Promise<void> => {
     try {
       await authAPI.logout();
-      setUser(null);
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('Logout failed:', err);
+    } finally {
+      // Wyloguj lokalnie nawet przy błędzie API
       setUser(null);
     }
   };
 
-  // Jawne typowanie stałej value
+  // 🔹 DODANE – flagi na podstawie user.role
+  const isAuthenticated = !!user;
+  const isManager = user?.role === 'manager';
+  const isEmployee = user?.role === 'employee';
+  const isClient = user?.role === 'client';
+
   const value: AuthContextType = {
     user,
     loading,
     error,
     login,
     logout,
-    isAuthenticated: !!user,
-    isManager: user?.role === 'manager',
-    isEmployee: user?.role === 'employee',
-    isClient: user?.role === 'client',
+    checkAuthStatus,
+    isAuthenticated,
+    isManager,
+    isEmployee,
+    isClient,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 };

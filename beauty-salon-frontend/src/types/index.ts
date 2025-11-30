@@ -1,5 +1,3 @@
-// src/types/index.ts
-
 export interface User {
   id: number;
   email: string;
@@ -9,8 +7,9 @@ export interface User {
   is_staff: boolean;
   employee_id?: number;
   client_id?: number;
+  created_at?: string;
+  updated_at?: string;
 }
-export type UserRole = User['role'];
 
 export interface LoginCredentials {
   email: string;
@@ -23,11 +22,13 @@ export interface AuthContextType {
   error: string | null;
   login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  checkAuthStatus: () => Promise<void>;
   isAuthenticated: boolean;
   isManager: boolean;
   isEmployee: boolean;
   isClient: boolean;
 }
+
 
 export interface Appointment {
   id: number;
@@ -44,6 +45,27 @@ export interface Appointment {
   booking_channel: string;
   client_notes?: string;
   internal_notes?: string;
+  timespan?: string;
+  created_at: string;
+  updated_at: string;
+}
+export type DashboardAppointment = Appointment;
+
+
+export interface AppointmentCreateData {
+  client: string;
+  employee: string;
+  service: string;
+  start: string;
+  end?: string;
+  booking_channel?: string;
+  client_notes?: string;
+  internal_notes?: string;
+}
+
+export interface AppointmentStatusUpdateData {
+  status: string;
+  cancellation_reason?: string;
 }
 
 export interface Service {
@@ -55,6 +77,21 @@ export interface Service {
   duration: string;
   image_url: string;
   is_published: boolean;
+  promotion?: object;
+  reservations_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceCreateData {
+  name: string;
+  category: string;
+  description?: string;
+  price: string;
+  duration: string;
+  image_url?: string;
+  is_published?: boolean;
+  promotion?: object;
 }
 
 export interface Client {
@@ -67,6 +104,21 @@ export interface Client {
   phone: string;
   visits_count: number;
   total_spent_amount: string;
+  marketing_consent: boolean;
+  preferred_contact: string;
+  internal_notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientCreateData {
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  marketing_consent?: boolean;
+  preferred_contact?: string;
+  internal_notes?: string;
 }
 
 export interface Employee {
@@ -80,43 +132,59 @@ export interface Employee {
   is_active: boolean;
   appointments_count: number;
   average_rating: string;
+  created_at: string;
+  updated_at: string;
 }
 
-// --- INTERFEJSY DANYCH DASHBOARDU ---
+export interface EmployeeCreateData {
+  user: number;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  hired_at?: string;
+  is_active?: boolean;
+  skill_ids?: number[];
+}
 
-// Typy dla list wizyt, które używają Appointment
-export type DashboardAppointment = Appointment & {
-  employee_name: string;
-  client_name: string;
-};
+export interface DashboardTodayData {
+  date: string;
+  total_appointments: number;
+  completed_appointments: number;
+  cancelled_appointments: number;
+  new_clients: number;
+  revenue: string;
+}
 
-// 1. DASHBOARD KLIENTA
+export interface DashboardData {
+  role: 'client' | 'employee' | 'manager';
+  client?: Client;
+  employee?: Employee;
+  today?: DashboardTodayData;
+  latest_stats_snapshot?: unknown;
+  upcoming_appointments?: Appointment[];
+  today_appointments?: Appointment[];
+  last_visits?: Appointment[];
+  today_appointments_count?: number;
+  upcoming_appointments_count?: number;
+  total_spent?: string;
+  pending_time_off_requests?: unknown[];
+}
+
 export interface ClientDashboardData {
-  total_spent: string; // Używane w stat-card
-  client: Client; // Używane dla visits_count
-  upcoming_appointments: DashboardAppointment[]; // Używane w liście
-  last_visits: DashboardAppointment[]; // Używane w liście
+  total_spent?: string;
+  client?: Client;
+  upcoming_appointments?: DashboardAppointment[];
+  last_visits?: DashboardAppointment[];
 }
 
-// 2. DASHBOARD PRACOWNIKA
 export interface EmployeeDashboardData {
-  today_appointments_count: number;
-  upcoming_appointments_count: number;
-  today_appointments: DashboardAppointment[];
-  upcoming_appointments: DashboardAppointment[]; // Używane w liście
+  today_appointments_count?: number;
+  upcoming_appointments_count?: number;
+  today_appointments?: DashboardAppointment[];
+  upcoming_appointments?: DashboardAppointment[];
 }
 
-// 3. DASHBOARD MANAGERA
 export interface ManagerDashboardData {
-  today: {
-    total_appointments: number;
-    completed_appointments: number;
-    cancelled_appointments: number;
-    revenue: string;
-    new_clients: number;
-  };
-  upcoming_appointments: DashboardAppointment[]; // Używane w liście
+  today?: DashboardTodayData;
+  upcoming_appointments?: DashboardAppointment[];
 }
-
-// Typ unii dla głównego stanu w DashboardPage
-export type DashboardData = ClientDashboardData | EmployeeDashboardData | ManagerDashboardData;

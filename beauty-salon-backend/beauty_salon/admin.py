@@ -1,10 +1,3 @@
-"""
-Beauty Salon Management System - Django Admin
-Autor: Dominika Jedynak, nr albumu: 92721
-
-W pełni poprawiona wersja: Usunięto błędy AlreadyRegistered i admin.E108.
-"""
-
 import csv
 from decimal import Decimal
 from datetime import timedelta
@@ -14,12 +7,12 @@ from django.contrib import admin
 from django.contrib.admin import SimpleListFilter, AdminSite
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import Sum, Q, QuerySet
-from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-
+from typing import Any, Optional, List, Sequence
+from django.http import HttpRequest, HttpResponse
 # Importy dla formularzy użytkownika
 from django import forms
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
@@ -88,12 +81,10 @@ class CustomUserChangeForm(forms.ModelForm):
     def clean_password(self):
         return self.initial.get("password")
 
-
-class UserAdmin(BaseUserAdmin):
-    """Standardowy Admin dla CustomUser."""
+class UserAdmin(BaseUserAdmin):  # type: ignore[misc]
     form = CustomUserChangeForm
     add_form = CustomUserCreationForm
-    list_display = ('email', 'role', 'is_staff', 'is_active', 'account_status') # <-- Używa 'account_status'
+    list_display = ('email', 'role', 'is_staff', 'is_active', 'account_status')
     list_filter = ('role', 'is_staff', 'is_active')
     fieldsets = (
         (_('Dane konta'), {'fields': ('email', 'password')}),
@@ -112,10 +103,12 @@ class UserAdmin(BaseUserAdmin):
     ordering = ('email',)
     readonly_fields = ('last_login', 'created_at', 'failed_login_attempts', 'account_locked_until', 'last_login_ip')
     actions = ['activate_users', 'deactivate_users']
-    inlines = []
 
-    # ✅ DODANA METODA: Rozwiązuje błąd admin.E108
-    def account_status(self, obj: 'UserModel'):
+    def account_status(self, obj: CustomUser) -> str:
+        """Zwraca status konta jako HTML."""
+        from django.utils import timezone
+        from django.utils.html import format_html
+
         locked_until_str = obj.account_locked_until.strftime('%Y-%m-%d %H:%M') if obj.account_locked_until else ''
         if obj.account_locked_until and obj.account_locked_until > timezone.now():
             return format_html(
@@ -132,14 +125,18 @@ class UserAdmin(BaseUserAdmin):
         else:
             return format_html('<span style="color: gray;">{}</span>', 'Nieaktywne')
 
-    account_status.short_description = 'Status konta'
+    account_status.short_description = 'Status konta'  # type: ignore[attr-defined]
 
-    def get_inline_instances(self, request, obj: Optional['UserModel'] = None):
+    def get_inline_instances(
+        self,
+        request: HttpRequest,
+        obj: Optional[CustomUser] = None
+    ) -> List[Any]:
         """Dynamiczne inlines na podstawie roli."""
         if obj is None:
             return []
 
-        inlines = []
+        inlines: List[Any] = []
         if obj.role == 'employee' or obj.is_superuser:
             if hasattr(obj, 'employee'):
                 inlines.append(EmployeeInline(self.model, self.admin_site))
@@ -150,6 +147,8 @@ class UserAdmin(BaseUserAdmin):
 
         inlines.extend(super().get_inline_instances(request, obj))
         return inlines
+
+
 
 
 # ============================================================================
@@ -244,8 +243,14 @@ class BeautySalonAdminSite(AdminSite):
 # 4. DEFINICJE AKCJI
 # ============================================================================
 
-def export_to_csv(modeladmin, request, queryset: QuerySet):
+def export_to_csv(
+        modeladmin: Any,
+        request: HttpRequest,
+        queryset: QuerySet[Any]
+) -> HttpResponse:
     """Uniwersalna akcja eksportu do CSV."""
+    import csv
+
     opts = modeladmin.model._meta
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename={opts.verbose_name_plural}.csv'
@@ -267,11 +272,18 @@ def export_to_csv(modeladmin, request, queryset: QuerySet):
     return response
 
 
-export_to_csv.short_description = "Eksportuj do CSV"
+export_to_csv.short_description = "Eksportuj do CSV"  # type: ignore[attr-defined]
 
 
-def send_reminder_notifications(modeladmin, request, queryset: QuerySet):
+def send_reminder_notifications(
+        modeladmin: Any,
+        request: HttpRequest,
+        queryset: QuerySet[Any]
+) -> None:
     """Wyślij przypomnienia dla wybranych wizyt."""
+    from django.utils.html import format_html
+    from django.utils import timezone
+
     count = 0
     for appointment in queryset.filter(
             status__in=['pending', 'confirmed'],
@@ -286,11 +298,20 @@ def send_reminder_notifications(modeladmin, request, queryset: QuerySet):
     modeladmin.message_user(request, format_html('Wysłano przypomnienia dla {} wizyt.', count))
 
 
-send_reminder_notifications.short_description = 'Wyślij przypomnienia'
+send_reminder_notifications.short_description = 'Wyślij przypomnienia'  # type: ignore[attr-defined]
 
 
-def generate_invoices(modeladmin, request, queryset: QuerySet):
+def generate_invoices(
+        modeladmin: Any,
+        request: HttpRequest,
+        queryset: QuerySet[Any]
+) -> None:
     """Generuj faktury dla wybranych wizyt."""
+    from datetime import timedelta
+    from django.utils.html import format_html
+    from django.utils import timezone
+    from decimal import Decimal
+
     count = 0
     settings = SystemSettings.load()
     vat_rate = settings.default_vat_rate if settings and hasattr(settings, 'default_vat_rate') else Decimal('23.00')
@@ -323,7 +344,7 @@ def generate_invoices(modeladmin, request, queryset: QuerySet):
     modeladmin.message_user(request, format_html('Wygenerowano {} faktur.', count))
 
 
-generate_invoices.short_description = 'Generuj faktury'
+generate_invoices.short_description = 'Generuj faktury'  # type: ignore[attr-defined]
 
 
 # ============================================================================
@@ -459,7 +480,9 @@ class ServiceAdmin(admin.ModelAdmin):
         }),
     )
 
-    def price_display(self, obj):
+    def price_display(self, obj: Service) -> str:
+        from django.utils.html import format_html
+
         if obj.promotion and obj.promotion.get('active'):
             try:
                 promo_price = obj.get_price_with_promotion()
@@ -473,9 +496,11 @@ class ServiceAdmin(admin.ModelAdmin):
 
         return format_html("{} PLN", obj.price)
 
-    price_display.short_description = 'Cena'
+    price_display.short_description = 'Cena'  # type: ignore[attr-defined]
 
-    def promotion_status(self, obj):
+    def promotion_status(self, obj: Service) -> str:
+        from django.utils.html import format_html
+
         if obj.promotion and obj.promotion.get('active'):
             discount = obj.promotion.get('discount_percent', 0)
             return format_html(
@@ -485,19 +510,25 @@ class ServiceAdmin(admin.ModelAdmin):
             )
         return format_html("{}", '-')
 
+    promotion_status.short_description = 'Promocja'  # type: ignore[attr-defined]
+
     promotion_status.short_description = 'Promocja'
 
-    def publish_services(self, request, queryset: QuerySet):
+    def publish_services(self, request: HttpRequest, queryset: QuerySet[Service]) -> None:
+        from django.utils.html import format_html
+
         updated = queryset.update(is_published=True)
         self.message_user(request, format_html('Opublikowano {} usług.', updated))
 
-    publish_services.short_description = 'Publikuj wybrane usługi'
+    publish_services.short_description = 'Publikuj wybrane usługi'  # type: ignore[attr-defined]
 
-    def unpublish_services(self, request, queryset: QuerySet):
+    def unpublish_services(self, request: HttpRequest, queryset: QuerySet[Service]) -> None:
+        from django.utils.html import format_html
+
         updated = queryset.update(is_published=False)
         self.message_user(request, format_html('Ukryto {} usług.', updated))
 
-    unpublish_services.short_description = 'Ukryj wybrane usługi'
+    unpublish_services.short_description = 'Ukryj wybrane usługi'  # type: ignore[attr-defined]
 
 
 class EmployeeAdmin(admin.ModelAdmin):
