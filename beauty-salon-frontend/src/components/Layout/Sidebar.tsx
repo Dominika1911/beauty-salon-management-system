@@ -2,8 +2,8 @@
 
 import React, { type ReactElement } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/useAuth'; // Ścieżka do useAuth w context/
-import type { UserRole } from '../../../types'; // Używa typu UserRole (zapewnia bezpieczeństwo)
+import { useAuth } from '../../context/useAuth';
+import type { UserRole } from '../../../types';
 
 // Definicja linków nawigacyjnych
 interface NavLinkItem {
@@ -22,6 +22,9 @@ const navItems: NavLinkItem[] = [
     { to: 'appointments', label: 'Wizyty (Zarządzanie)', roles: ['manager', 'employee'] },
     { to: 'clients', label: 'Klienci', roles: ['manager', 'employee'] },
 
+    // 🚨 ZMIANA: Pracownicy widoczni dla Managera i Pracownika
+    { to: 'employees', label: 'Pracownicy', roles: ['manager', 'employee'] },
+
     // SPECIFICZNE DLA PRACOWNIKA
     { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
 
@@ -29,7 +32,6 @@ const navItems: NavLinkItem[] = [
     { to: 'my-appointments', label: 'Moje Rezerwacje', roles: ['client'] },
 
     // TYLKO MANAGER
-    { to: 'employees', label: 'Pracownicy', roles: ['manager'] },
     { to: 'statistics', label: 'Statystyki', roles: ['manager'] },
     { to: 'settings', label: 'Ustawienia Systemu', roles: ['manager'] },
 ];

@@ -1,9 +1,14 @@
-import { api } from './axios';
-import type { Employee, EmployeeCreateData, Appointment, Service } from '../types';
+// src/api/employees.ts
+
+import api from './axios';
+// 🚨 UPEWNIJ SIĘ, ŻE IMPORTUJESZ PaginatedResponse Z TWOJEGO PLIKU TYPÓW!
+import type { Employee, EmployeeCreateData, Appointment, Service, PaginatedResponse } from '../types'; 
 import type { AxiosResponse } from 'axios';
 
 interface EmployeesApi {
-  list: (params?: { is_active?: boolean; search?: string }) => Promise<AxiosResponse<Employee[]>>;
+  // 🚨 ZMIANA 1: Metoda list musi zwracać PaginatedResponse<Employee>
+  list: (params?: { is_active?: boolean; search?: string; page?: number; page_size?: number }) => Promise<AxiosResponse<PaginatedResponse<Employee>>>;
+  
   active: () => Promise<AxiosResponse<Employee[]>>;
   me: () => Promise<AxiosResponse<Employee>>;
   detail: (id: number) => Promise<AxiosResponse<Employee>>;
@@ -20,13 +25,15 @@ interface EmployeesApi {
 export const employeesAPI: EmployeesApi = {
   /**
    * Lista wszystkich pracowników
+   * Zwraca format paginacji DRF
    */
-  list: (params?: { is_active?: boolean; search?: string }): Promise<AxiosResponse<Employee[]>> => {
-    return api.get<Employee[]>('/employees/', { params });
+  // 🚨 ZMIANA 2: Używamy PaginatedResponse i uwzględniamy parametry paginacji
+  list: (params?: { is_active?: boolean; search?: string; page?: number; page_size?: number }): Promise<AxiosResponse<PaginatedResponse<Employee>>> => {
+    return api.get<PaginatedResponse<Employee>>('/employees/', { params });
   },
 
   /**
-   * Tylko aktywni pracownicy
+   * Tylko aktywni pracownicy (tutaj zakładamy, że to jest czysta lista, a nie paginacja)
    */
   active: (): Promise<AxiosResponse<Employee[]>> => {
     return api.get<Employee[]>('/employees/active/');
