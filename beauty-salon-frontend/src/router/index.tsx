@@ -9,9 +9,9 @@ import { LoginPage } from '../pages/LoginPage';
 
 // === KOMPONENTY STRON ===
 import { DashboardPage } from '../pages/DashboardPage';
+import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 
-// Placeholder components
-const ClientsPage: React.FC = (): ReactElement => <h1>Klienci</h1>;
+// Placeholdery (dopóki nie zrobisz pełnych stron)
 const EmployeesPage: React.FC = (): ReactElement => <h1>Pracownicy</h1>;
 const ServicesPage: React.FC = (): ReactElement => <h1>Usługi</h1>;
 const AppointmentsPage: React.FC = (): ReactElement => <h1>Wizyty</h1>;
@@ -21,26 +21,22 @@ const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
 const StatisticsPage: React.FC = (): ReactElement => <h1>Statystyki</h1>;
 const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
 
-// === DEKLARACJA GŁÓWNEGO ROUTERA ===
-const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
-  // 1. TRASY PUBLICZNE
+const router = createBrowserRouter([
+  // PUBLICZNE
   {
     path: '/login',
     element: <LoginPage />,
   },
 
-  // 2. TRASY CHRONIONE (ZAGNIEŻDŻONE W LAYOUT)
+  // CHRONIONE
   {
     path: '/',
     element: <Layout />,
     children: [
-      // TRASA GŁÓWNA (/): Przekierowanie na Dashboard
       {
         index: true,
         element: <Navigate to="dashboard" replace />,
       },
-
-      // DASHBOARD (Dostęp dla wszystkich zalogowanych)
       {
         path: 'dashboard',
         element: (
@@ -49,18 +45,14 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // KLIENCI (Manager, Pracownik)
       {
         path: 'clients',
         element: (
           <ProtectedRoute allowedRoles={['manager', 'employee']}>
-            <ClientsPage />
+            <ClientsManagementPage />
           </ProtectedRoute>
         ),
       },
-
-      // WIZYTY (Manager, Pracownik)
       {
         path: 'appointments',
         element: (
@@ -69,8 +61,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // GRAFIK PRACOWNIKA (Tylko Pracownik)
       {
         path: 'my-schedule',
         element: (
@@ -79,14 +69,10 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // USŁUGI (Wszyscy zalogowani)
       {
         path: 'services',
         element: <ServicesPage />,
       },
-
-      // MOJE WIZYTY (Tylko Klient)
       {
         path: 'my-appointments',
         element: (
@@ -95,8 +81,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // PRACOWNICY (Tylko Manager)
       {
         path: 'employees',
         element: (
@@ -105,8 +89,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // STATYSTYKI I USTAWIENIA (Tylko Manager)
       {
         path: 'statistics',
         element: (
@@ -127,8 +109,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         path: 'profile',
         element: <ProfilePage />,
       },
-
-      // TRASA 404 (wyświetlana wewnątrz Layoutu)
       {
         path: '*',
         element: (
@@ -140,15 +120,12 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
       },
     ],
   },
-
-  // Trasa 404 dla ścieżek bez Layoutu
   {
     path: '/404',
     element: <h1>404 Strona nie znaleziona</h1>,
   },
 ]);
 
-// Komponent do użycia w pliku main.tsx
 export const AppRouter: React.FC = (): ReactElement => {
   return <RouterProvider router={router} />;
 };

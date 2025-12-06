@@ -1,10 +1,14 @@
-// src/pages/Manager/ClientsManagementPage.tsx
-// To jest plik, który musi zostać utworzony.
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  type ReactElement,
+} from 'react';
+import { clientsAPI } from '../../api/clients';
+import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
+import type { Client, PaginatedResponse } from '../../types';
 
-import React, { useState, useEffect, useMemo, type ReactElement } from 'react';
-import { clientsAPI } from '../../api/clients'; // Używa zdefiniowanego API
-import { Table, type ColumnDefinition } from '../../components/UI/Table/Table'; // Używa uniwersalnej Tabeli
-import type { Client } from '../../types'; // Używa typu Client z index.ts
+import '../../components/UI/Table/Table.css';
 
 export const ClientsManagementPage: React.FC = (): ReactElement => {
   const [clients, setClients] = useState<Client[]>([]);
@@ -12,59 +16,139 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchClients = async () => {
+    const fetchAllClients = async (): Promise<void> => {
+      console.log('Pobieram klientów z API...');
+
       try {
         setLoading(true);
-        // Pobieranie listy klientów
-        const response = await clientsAPI.list();
+        setError(null);
 
-        // Zwracamy pole data, które zawiera listę klientów
-        setClients(response.data);
+        const allClients: Client[] = [];
+
+        let response: PaginatedResponse<Client> =
+          await clientsAPI.getClients();
+        console.log('Pierwsza odpowiedź z API:', response);
+
+        allClients.push(...response.results);
+        let nextUrl: string | null = response.next;
+
+        while (nextUrl) {
+          const nextResponse = await clientsAPI.getClients(nextUrl);
+          console.log('Kolejna strona z API:', nextResponse);
+          allClients.push(...nextResponse.results);
+          nextUrl = nextResponse.next;
+        }
+
+        console.log('Łącznie klientów:', allClients.length);
+        setClients(allClients);
       } catch (err) {
-        console.error("Błąd pobierania listy klientów:", err);
-        setError("Nie udało się załadować listy klientów.");
+        console.error('Błąd pobierania klientów:', err);
+        setError('Nie udało się pobrać listy klientów.');
       } finally {
         setLoading(false);
       }
     };
-    void fetchClients();
+
+    void fetchAllClients();
   }, []);
 
-  // Definicja kolumn dla tabeli
-  const columns: ColumnDefinition<Client>[] = useMemo(() => [
-    { header: 'ID', key: 'id', width: '5%' },
-    { header: 'Imię i Nazwisko', key: 'full_name' },
-    { header: 'Email', key: 'email' },
-    { header: 'Telefon', key: 'phone' },
-    { header: 'Wizyt', key: 'visits_count', width: '8%' },
-    { header: 'Wydano', key: 'total_spent_amount', render: (item) => `${item.total_spent_amount} PLN` },
-    {
-      header: 'Akcje',
-      key: 'actions',
-      width: '15%',
-      render: (item) => (
-        <button onClick={() => console.log('Edycja', item.id)}>Edytuj</button>
-      ),
-    },
-  ], []);
+  const columns: ColumnDefinition<Client>[] = useMemo(
+    () => [
+      {
+        header: 'ID',
+        key: 'id',
+        width: '5%',
+        render: (client) => client.id,
+      },
+      {
+        header: 'Numer',
+        key: 'number',
+        width: '10%',
+        render: (client) => client.number ?? '-',
+      },
+      {
+        header: 'Imię i nazwisko',
+        key: 'first_name',
+        render: (client) =>
+          `${client.first_name} ${client.last_name}`.trim(),
+      },
+      {
+        header: 'Email',
+        key: 'email',
+        render: (client) => client.email ?? '—',
+      },
+      {
+        header: 'Telefon',
+        key: 'phone',
+        render: (client) => client.phone ?? '—',
+      },
+      {
+        header: 'Wizyt',
+        key: 'visits_count',
+        width: '8%',
+        render: (client) => client.visits_count ?? 0,
+      },
+      {
+        header: 'Wydano [PLN]',
+        key: 'total_spent_amount',
+        width: '10%',
+        render: (client) =>
+          `${client.total_spent_amount ?? '0.00'} PLN`,
+      },
+      {
+        header: 'Preferowany kontakt',
+        key: 'preferred_contact',
+        width: '12%',
+        render: (client) => client.preferred_contact,
+      },
+      {
+        header: 'Akcje',
+        key: 'actions',
+        width: '15%',
+        render: (client) => (
+          <button
+            type="button"
+            onClick={() => console.log('Edycja klienta', client.id)}
+          >
+            Edytuj
+          </button>
+        ),
+      },
+    ],
+    [],
+  );
 
   if (loading) {
-    return <div>Ładowanie listy klientów...</div>;
+    return (
+      <div style={{ padding: 20 }}>
+        <h1>Klienci</h1>
+        <p>Ładowanie listy klientów…</p>
+      </div>
+    );
   }
 
   if (error) {
-    return <div style={{ color: 'red' }}>Błąd: {error}</div>;
+    return (
+      <div style={{ padding: 20 }}>
+        <h1>Klienci</h1>
+        <p style={{ color: 'red' }}>{error}</p>
+      </div>
+    );
   }
 
   return (
-    <div className="clients-management-page">
-      <h1>Zarządzanie Klientami</h1>
-      <p>Lista wszystkich zarejestrowanych klientów salonu. (Ilość: {clients.length})</p>
+    <div style={{ padding: 20 }}>
+      <h1>Klienci</h1>
+      <p>Lista wszystkich klientów. (Ilość: {clients.length})</p>
 
-      <div style={{ marginTop: '20px' }}>
-        <Table data={clients} columns={columns} />
+      <div style={{ marginTop: 20 }}>
+        <Table
+          data={clients}
+          columns={columns}
+          loading={loading}
+          emptyMessage="Brak klientów w bazie danych."
+        />
       </div>
-
     </div>
   );
 };
