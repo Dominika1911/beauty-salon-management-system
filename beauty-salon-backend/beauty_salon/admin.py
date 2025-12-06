@@ -14,7 +14,7 @@ from django.utils.translation import gettext_lazy as _
 from django.http import HttpRequest, HttpResponse
 from django import forms
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
-from django.template.response import TemplateResponse  # Dodany import dla TemplateResponse
+from django.template.response import TemplateResponse
 
 from .models import (
     User as CustomUser, Service, Employee, Schedule, TimeOff, Client,
@@ -25,6 +25,7 @@ from .utils import generate_invoice_number, calculate_vat
 
 if TYPE_CHECKING:
     from .models import User as UserModel
+    from django.contrib.admin.options import InlineModelAdmin
 
 
 # ============================================================================
@@ -76,7 +77,7 @@ class CustomUserChangeForm(forms.ModelForm[CustomUser]):
         )
 
     def clean_password(self) -> str:
-        return self.initial.get("password", "")
+        return str(self.initial.get("password", ""))
 
 
 class UserAdmin(BaseUserAdmin):
@@ -103,52 +104,55 @@ class UserAdmin(BaseUserAdmin):
     readonly_fields = ('last_login', 'created_at', 'failed_login_attempts', 'account_locked_until', 'last_login_ip')
     actions = ['activate_users', 'deactivate_users']
 
-    # Błąd 78: Dodanie adnotacji typu zwracanego
     def account_status(self, obj: CustomUser) -> str:
         """Zwraca status konta jako HTML."""
         locked_until_str = obj.account_locked_until.strftime('%Y-%m-%d %H:%M') if obj.account_locked_until else ''
         if obj.account_locked_until and obj.account_locked_until > timezone.now():
-            return format_html(
+            return str(format_html(
                 '<span style="color: red; font-weight: bold;">Zablokowane do {}</span>',
                 locked_until_str
-            )
+            ))
         elif obj.failed_login_attempts >= 3:
-            return format_html(
+            return str(format_html(
                 '<span style="color: orange;">{} nieudanych prób</span>',
                 obj.failed_login_attempts
-            )
+            ))
         elif obj.is_active:
-            return format_html('<span style="color: green;">{}</span>', 'Aktywne')
+            return str(format_html('<span style="color: green;">{}</span>', 'Aktywne'))
         else:
-            return format_html('<span style="color: gray;">{}</span>', 'Nieaktywne')
+            return str(format_html('<span style="color: gray;">{}</span>', 'Nieaktywne'))
 
     account_status.short_description = 'Status konta'  # type: ignore[attr-defined]
 
-    # Błędy 124 i 133: Użycie ModelAdmin zamiast InlineModelAdmin i usunięcie błędu override
-    def get_inline_instances(
-            self,
-            request: HttpRequest,
-            obj: Optional[CustomUser] = None
-    ) -> List[admin.ModelAdmin[Any]]:  # Zmieniono InlineModelAdmin na ModelAdmin dla override
-        """Dynamiczne inlines na podstawie roli."""
-        if obj is None:
-            return []
+    if TYPE_CHECKING:
+        def get_inline_instances(
+                self,
+                request: HttpRequest,
+                obj: Optional[CustomUser] = None
+        ) -> List["InlineModelAdmin[Any, Any]"]:
+            ...
+    else:
+        def get_inline_instances(
+                self,
+                request: HttpRequest,
+                obj: Optional[CustomUser] = None
+        ) -> List[Any]:
+            """Dynamiczne inlines na podstawie roli."""
+            if obj is None:
+                return []
 
-        # Nie używamy admin.InlineModelAdmin bo nie jest eksportowany publicznie.
-        # Używamy ogólnego typu admin.ModelAdmin, który jest bezpieczny.
-        inlines: List[admin.ModelAdmin[Any]] = []
-        if obj.role == 'employee' or obj.is_superuser:
-            if hasattr(obj, 'employee'):
-                inlines.append(EmployeeInline(self.model, self.admin_site))  # type: ignore[arg-type]
+            inlines: List[Any] = []
+            if obj.role == 'employee' or obj.is_superuser:
+                if hasattr(obj, 'employee'):
+                    inlines.append(EmployeeInline(self.model, self.admin_site))
 
-        if obj.role == 'client' or obj.is_superuser:
-            if hasattr(obj, 'client_profile'):
-                inlines.append(ClientInline(self.model, self.admin_site))  # type: ignore[arg-type]
+            if obj.role == 'client' or obj.is_superuser:
+                if hasattr(obj, 'client_profile'):
+                    inlines.append(ClientInline(self.model, self.admin_site))
 
-        # Inlines od BaseModel - zwraca listę InlineModelAdmin, którą Mypy akceptuje z type: ignore[return-value]
-        parent_inlines = super().get_inline_instances(request, obj)  # type: ignore[call-overload]
-        inlines.extend(parent_inlines)
-        return inlines  # type: ignore[return-value]
+            parent_inlines = super().get_inline_instances(request, obj)
+            inlines.extend(parent_inlines)
+            return inlines
 
 
 # ============================================================================
@@ -224,7 +228,6 @@ class BeautySalonAdminSite(AdminSite):
             "dashboard_latest_snapshot": latest_monthly_snapshot,
         }
 
-    # Błąd 220: Zmieniamy typ zwracany na TemplateResponse (zmieniono również import na górze)
     def index(
             self,
             request: HttpRequest,
@@ -278,9 +281,6 @@ def send_reminder_notifications(
 ) -> None:
     """Wyślij przypomnienia dla wybranych wizyt."""
     count = 0
-    # Używamy request.user jako klucza obcego, który mypy widzi jako Union[User, AnonymousUser]
-    # Mimo że w adminie User jest zalogowany, mypy wymaga zabezpieczenia lub ignorowania
-    user = request.user if request.user.is_authenticated else None  # type: ignore[assignment]
 
     for appointment in queryset.filter(
             status__in=['pending', 'confirmed'],
@@ -449,7 +449,7 @@ class RevenueRangeFilter(SimpleListFilter):
     def queryset(
             self,
             request: HttpRequest,
-            model_admin: admin.ModelAdmin[Any]
+            queryset: QuerySet[Any]
     ) -> Optional[QuerySet[Any]]:
         if self.value() == '0-500':
             return queryset.filter(total_spent_amount__gte=0, total_spent_amount__lt=500)
@@ -538,8 +538,6 @@ class ServiceAdmin(admin.ModelAdmin[Service]):
     unpublish_services.short_description = 'Ukryj wybrane usługi'  # type: ignore[attr-defined]
 
 
-# Kontynuacja admin.py - Pozostałe Admin Classes
-
 class EmployeeAdmin(admin.ModelAdmin[Employee]):
     list_display = ['number', 'get_full_name', 'user', 'is_active', 'appointments_count',
                     'average_rating', 'hired_at']
@@ -624,7 +622,6 @@ class TimeOffAdmin(admin.ModelAdmin[TimeOff]):
 
     days_count.short_description = 'Liczba dni'  # type: ignore[attr-defined]
 
-    # Błąd 613: Przypisanie request.user do approved_by, które jest kluczem obcym (User)
     def approve_time_offs(self, request: HttpRequest, queryset: QuerySet[TimeOff]) -> None:
         user = request.user
         if not user.is_authenticated:
@@ -633,7 +630,7 @@ class TimeOffAdmin(admin.ModelAdmin[TimeOff]):
 
         for time_off in queryset.filter(status='pending'):
             time_off.status = 'approved'
-            time_off.approved_by = user  # type: ignore[assignment]
+            time_off.approved_by = user
             time_off.approved_at = timezone.now()
             time_off.save()
         self.message_user(request, format_html('Zatwierdzono {} urlopów.', queryset.filter(status='approved').count()))
@@ -751,7 +748,6 @@ class AppointmentAdmin(admin.ModelAdmin[Appointment]):
 
     confirm_appointments.short_description = 'Potwierdź wybrane wizyty'  # type: ignore[attr-defined]
 
-    # Błąd 734: Przypisanie request.user do cancelled_by, które jest kluczem obcym (User)
     def cancel_appointments(self, request: HttpRequest, queryset: QuerySet[Appointment]) -> None:
         user = request.user
         if not user.is_authenticated:
@@ -760,7 +756,7 @@ class AppointmentAdmin(admin.ModelAdmin[Appointment]):
 
         for appointment in queryset:
             appointment.status = 'cancelled'
-            appointment.cancelled_by = user  # type: ignore[assignment]
+            appointment.cancelled_by = user
             appointment.cancelled_at = timezone.now()
             appointment.save()
         self.message_user(request, format_html('Anulowano {} wizyt.', queryset.count()))
@@ -1001,11 +997,10 @@ class SystemSettingsAdmin(admin.ModelAdmin[SystemSettings]):
     def has_delete_permission(self, request: HttpRequest, obj: Optional[SystemSettings] = None) -> bool:
         return False
 
-    # Błąd 1112: Przypisanie request.user do last_modified_by, które jest kluczem obcym (User)
     def save_model(self, request: HttpRequest, obj: SystemSettings, form: Any, change: bool) -> None:
         user = request.user
         if change and user.is_authenticated:
-            obj.last_modified_by = user  # type: ignore[assignment]
+            obj.last_modified_by = user
         super().save_model(request, obj, form, change)
 
 
@@ -1138,11 +1133,10 @@ class NoteAdmin(admin.ModelAdmin[Note]):
 
     appointment_link.short_description = 'Wizyta'  # type: ignore[attr-defined]
 
-    # Błąd 977: Przypisanie request.user do obj.author, które jest kluczem obcym (User)
     def save_model(self, request: HttpRequest, obj: Note, form: Any, change: bool) -> None:
         user = request.user
         if not obj.pk and user.is_authenticated:
-            obj.author = user  # type: ignore[assignment]
+            obj.author = user
         super().save_model(request, obj, form, change)
 
 
