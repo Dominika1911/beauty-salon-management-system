@@ -1,190 +1,136 @@
-/* src/components/Layout/Layout.css */
-
-.layout {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: #f5f5f5;
+/* ==================== GLOBAL LAYOUT (GRID) ==================== */
+.app-layout {
+    display: grid;
+    /* Dwie kolumny: 250px dla paska bocznego + reszta dla treści */
+    grid-template-columns: 250px 1fr;
+    min-height: 100vh;
+    background-color: #f7f7f7;
 }
 
-/* ==================== NAVBAR ==================== */
-
-.navbar {
-  background: white;
-  padding: 1rem 2rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 2rem;
-  position: sticky;
-  top: 0;
-  z-index: 100;
+/* Stan ładowania */
+.layout-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-size: 1.2rem;
+    color: #999;
+    gap: 10px;
+}
+.spinner-large {
+    width: 30px;
+    height: 30px;
+    border: 4px solid #f3f3f3;
+    /* Kolory zaczerpnięte z Twojego LoginPage.css */
+    border-top: 4px solid var(--beauty-primary, #E91E63);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
-.nav-brand h2 {
-  color: #667eea;
-  margin: 0;
-  font-size: 1.5rem;
+/* ==================== SIDEBAR STYLING ==================== */
+.sidebar {
+    background-color: #ffffff;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
 }
 
-.nav-links {
-  display: flex;
-  gap: 2rem;
-  flex: 1;
-  justify-content: center;
+.sidebar-header {
+    padding: 0 20px 20px 20px;
+    border-bottom: 1px solid #eee;
+    margin-bottom: 20px;
 }
 
-.nav-links a {
-  text-decoration: none;
-  color: #333;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-  border-radius: 5px;
-  transition: all 0.3s;
-  position: relative;
+.sidebar-header h2 {
+    color: var(--beauty-primary-darker, #880E4F);
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
 }
 
-.nav-links a:hover {
-  color: #667eea;
-  background: #f0f0f0;
+/* Nawigacja */
+.sidebar-nav {
+    flex-grow: 1;
+    padding: 0 10px;
 }
 
-.nav-links a.active {
-  color: #667eea;
-  background: #e6e9ff;
+.nav-link {
+    display: block;
+    padding: 12px 10px;
+    margin: 4px 0;
+    color: var(--beauty-text-primary, #2c3e50);
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.2s ease-in-out;
+    font-weight: 600;
 }
 
-/* ==================== USER INFO ==================== */
+.nav-link:hover {
+    background-color: var(--beauty-primary-light, #FCE4EC);
+    color: var(--beauty-primary-dark, #C2185B);
+    transform: translateX(3px);
+}
 
-.nav-user {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+.nav-link.active {
+    background-color: var(--beauty-primary, #E91E63);
+    color: white;
+    box-shadow: 0 2px 5px rgba(233, 30, 99, 0.3);
+}
+
+/* Footer (Informacje o użytkowniku) */
+.sidebar-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    text-align: center;
 }
 
 .user-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  font-size: 0.9rem;
-  color: #555;
+    margin-bottom: 15px;
+}
+
+.user-info strong {
+    display: block;
+    font-size: 1.1rem;
+    color: var(--beauty-text-primary);
 }
 
 .user-role {
-  font-size: 0.75rem;
-  color: #888;
-  font-weight: normal;
+    display: inline-block;
+    font-size: 0.8rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-top: 5px;
+    color: white;
+    font-weight: 700;
 }
 
+/* Style rolek - użycie zmiennych z LoginPage.css */
+.role-manager { background-color: var(--beauty-primary-darker, #880E4F); }
+.role-employee { background-color: var(--beauty-success-dark, #27ae60); }
+.role-client { background-color: var(--beauty-info, #3498db); }
+
 .logout-btn {
-  padding: 0.5rem 1rem;
-  background: #ff4444;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background 0.3s;
+    width: 100%;
+    padding: 10px;
+    background-color: var(--beauty-danger, #e74c3c);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.2s;
 }
 
 .logout-btn:hover {
-  background: #cc0000;
+    background-color: var(--beauty-danger-dark, #c0392b);
 }
 
-/* ==================== CONTENT ==================== */
-
-.content {
-  flex: 1;
-  padding: 2rem;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-/* ==================== FOOTER ==================== */
-
-.footer {
-  background: white;
-  padding: 1.5rem 2rem;
-  text-align: center;
-  color: #888;
-  border-top: 1px solid #e0e0e0;
-  margin-top: auto;
-}
-
-.footer p {
-  margin: 0;
-  font-size: 0.9rem;
-}
-
-/* ==================== LOADING ==================== */
-
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-  gap: 1rem;
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* ==================== ACCESS DENIED ==================== */
-
-.access-denied {
-  text-align: center;
-  padding: 3rem;
-  background: white;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  max-width: 500px;
-  margin: 5rem auto;
-}
-
-.access-denied h2 {
-  color: #ff4444;
-  margin-bottom: 1rem;
-}
-
-.access-denied p {
-  color: #666;
-  margin: 0.5rem 0;
-}
-
-/* ==================== RESPONSIVE ==================== */
-
-@media (max-width: 768px) {
-  .navbar {
-    flex-direction: column;
-    padding: 1rem;
-  }
-
-  .nav-links {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: center;
-  }
-
-  .nav-links a {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.9rem;
-  }
-
-  .content {
-    padding: 1rem;
-  }
+/* ==================== CONTENT AREA ==================== */
+.layout-content {
+    padding: 30px;
+    overflow-y: auto;
 }

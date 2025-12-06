@@ -68,7 +68,7 @@ class SessionLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if user.is_staff or user.is_superuser:
+        if user.is_superuser:
             return Response(
                 {
                     'error': 'superuser_login_not_allowed',

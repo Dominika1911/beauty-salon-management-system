@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
-import { authAPI } from '../api';
+import { authAPI } from '../api/auth';
 import type { User, LoginCredentials, AuthContextType } from '../types';
 import type { AxiosError } from 'axios';
 import { AuthContext } from './AuthContext';

@@ -1,4 +1,4 @@
-import { api } from './axios';
+import api from './axios';
 import type { User, LoginCredentials } from '../types';
 import type { AxiosResponse } from 'axios';
 
