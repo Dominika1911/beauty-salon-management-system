@@ -48,7 +48,7 @@ function dj-pyright {
 
 # Uruchamia Pyright wewnątrz kontenera (Pyright automatycznie szuka pyrightconfig.json)
 function dj-build {
-    docker-compose -f docker-compose.full.yml build backend
+    docker-compose -f docker-compose.full.ymf-l build backend
 }
 
 ## Uruchamianie Frontendu (Vite/React)

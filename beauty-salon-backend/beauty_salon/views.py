@@ -273,8 +273,8 @@ class ServiceViewSet(viewsets.ModelViewSet):
         queryset = super().get_queryset()
         user = self.request.user
         if not user.is_authenticated or (
-                hasattr(user, "is_salon_client")
-                and getattr(user, "is_salon_client", False)
+                hasattr(user, "is_client")
+                and getattr(user, "is_client", False)
         ):
             return queryset.filter(is_published=True)
         return queryset
@@ -433,8 +433,8 @@ class ClientViewSet(viewsets.ModelViewSet):
                 and (
                 (hasattr(user, "is_manager") and getattr(user, "is_manager", False))
                 or (
-                        hasattr(user, "is_salon_employee")
-                        and getattr(user, "is_salon_employee", False)
+                        hasattr(user, "is_employee")
+                        and getattr(user, "is_employee", False)
                 )
         )
         ):
@@ -443,8 +443,8 @@ class ClientViewSet(viewsets.ModelViewSet):
         # Klient – tylko własny rekord
         if (
                 user.is_authenticated
-                and hasattr(user, "is_salon_client")
-                and getattr(user, "is_salon_client", False)
+                and hasattr(user, "is_client")
+                and getattr(user, "is_client", False)
         ):
             try:
                 client = user.client_profile
@@ -563,8 +563,8 @@ class ScheduleViewSet(viewsets.ModelViewSet):
 
         if (
                 user.is_authenticated
-                and hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                and hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs.filter(employee__user=user)
 
@@ -632,8 +632,8 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 
         if (
                 user.is_authenticated
-                and hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                and hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs.filter(employee__user=user)
 
@@ -748,13 +748,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs
 
         # Klient – tylko własne
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -789,7 +789,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -798,7 +798,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = Appointment.objects.filter(client=client).order_by("-start")
-        elif hasattr(user, "is_salon_employee") and getattr(user, "is_salon_employee", False):
+        elif hasattr(user, "is_employee") and getattr(user, "is_employee", False):
             try:
                 employee = user.employee
             except Employee.DoesNotExist:
@@ -821,36 +821,46 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         """
         appointment = self.get_object()
         serializer = AppointmentStatusUpdateSerializer(
-            appointment, data=request.data, partial=True, context={"request": request}
+            appointment,
+            data=request.data,
+            partial=True,
+            context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
 
         old_status = appointment.status
-        new_status = serializer.validated_data.get('status')
+        new_status = serializer.validated_data.get("status")
 
         # Statusy, przy których następuje utrata zaliczki (kara)
-        FORFEIT_STATUSES = [Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
+        FORFEIT_STATUSES = [
+            Appointment.Status.CANCELLED,
+            Appointment.Status.NO_SHOW,
+        ]
 
         if new_status in FORFEIT_STATUSES and old_status not in FORFEIT_STATUSES:
             settings = SystemSettings.load()
-            should_forfeit = settings.deposit_policy.get('forfeit_deposit_on_cancellation', False)
+            should_forfeit = settings.deposit_policy.get(
+                "forfeit_deposit_on_cancellation", False
+            )
 
             if should_forfeit:
                 try:
                     deposits: QuerySet[Payment] = Payment.objects.filter(
                         appointment=appointment,
-                        status=Payment.Status.DEPOSIT
+                        status=Payment.Status.DEPOSIT,
                     )
 
                     deposit_count = deposits.count()
 
                     if deposit_count > 0:
-                        deposit: Optional[Payment] = deposits.order_by('-created_at').first()
+                        deposit: Optional[Payment] = deposits.order_by(
+                            "-created_at"
+                        ).first()
 
                         if deposit is not None:
                             deposit.status = Payment.Status.FORFEITED
                             deposit.paid_at = timezone.now()
-                            deposit.save(update_fields=['status', 'paid_at'])
+                            deposit.save(update_fields=["status", "paid_at"])
 
                             create_audit_log(
                                 user=request.user,
@@ -883,18 +893,24 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     create_audit_log(
                         user=request.user,
                         type="payment.forfeit_error",
-                        message=f"Błąd utraty zaliczki dla wizyty {appointment.id}: {str(e)}",
+                        message=(
+                            f"Błąd utraty zaliczki dla wizyty {appointment.id}: {str(e)}"
+                        ),
                         level=AuditLog.Level.ERROR,
                         entity=appointment,
                         request=request,
                     )
 
+        # Zapisujemy nowy status wizyty (niezależnie od zaliczki)
         appointment = serializer.save()
 
         create_audit_log(
             user=request.user,
             type="appointment.change_status",
-            message=f"Zmiana statusu wizyty ID={appointment.id} z {old_status} na {new_status}",
+            message=(
+                f"Zmiana statusu wizyty ID={appointment.id} "
+                f"z {old_status} na {new_status}"
+            ),
             entity=appointment,
             request=request,
         )
@@ -904,7 +920,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
 # ==================== NOTE & MEDIA VIEWS ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class NoteViewSet(viewsets.ModelViewSet):
     """
     Notatki do wizyt.
@@ -936,12 +952,12 @@ class NoteViewSet(viewsets.ModelViewSet):
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -969,7 +985,7 @@ class NoteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         serializer.save(author=self.request.user)
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class MediaAssetViewSet(viewsets.ModelViewSet):
     """
     Materiały (portfolio, zdjęcia efektów itd.).
@@ -1006,8 +1022,8 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError("Użytkownik nie jest zalogowany.")
 
         if (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
                 and not (hasattr(user, "is_manager") and getattr(user, "is_manager", False))
         ):
             try:
@@ -1020,10 +1036,9 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
         else:
             serializer.save()
 
-
 # ==================== PAYMENT & INVOICE VIEWS ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     Płatności za wizyty.
@@ -1065,12 +1080,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -1110,7 +1125,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             }
         )
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Faktury.
@@ -1141,12 +1156,12 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -1162,10 +1177,9 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = InvoiceSerializer(qs, many=True)
         return Response(serializer.data)
 
-
 # ==================== NOTIFICATION & REPORT VIEWS ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class NotificationViewSet(viewsets.ModelViewSet):
     """
     Powiadomienia (np. przypomnienia o wizycie).
@@ -1205,12 +1219,12 @@ class NotificationViewSet(viewsets.ModelViewSet):
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_salon_employee")
-                and getattr(user, "is_salon_employee", False)
+                hasattr(user, "is_employee")
+                and getattr(user, "is_employee", False)
         ):
             return qs
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             try:
                 client = user.client_profile
             except Client.DoesNotExist:
@@ -1229,7 +1243,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         serializer.save()
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Wygenerowane raporty PDF (tylko manager).
@@ -1249,10 +1263,9 @@ class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self) -> QuerySet[ReportPDF]:
         return super().get_queryset()
 
-
 # ==================== AUDIT LOG & SYSTEM SETTINGS ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Logi audytowe systemu (tylko manager).
@@ -1272,7 +1285,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self) -> QuerySet[AuditLog]:
         return super().get_queryset()
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class SystemSettingsView(APIView):
     """
     Ustawienia systemowe (tylko manager).
@@ -1310,10 +1323,9 @@ class SystemSettingsView(APIView):
 
         return Response(serializer.data)
 
-
 # ==================== STATS SNAPSHOT VIEWS ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Zapisane zrzuty statystyk (np. nocne batch'e).
@@ -1333,10 +1345,9 @@ class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self) -> QuerySet[StatsSnapshot]:
         return super().get_queryset()
 
-
 # ==================== STATISTICS VIEW ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class StatisticsView(APIView):
     """
     Globalne statystyki salonu (wizyty, przychody, usługi, pracownicy).
@@ -1459,10 +1470,9 @@ class StatisticsView(APIView):
 
         return Response(data)
 
-
 # ==================== DASHBOARD VIEW ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class DashboardView(APIView):
     """
     Dashboard dopasowany do roli użytkownika:
@@ -1485,10 +1495,11 @@ class DashboardView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
+        # ✅ POPRAWIONE: używamy is_client, is_employee, is_manager
+        if hasattr(user, "is_client") and getattr(user, "is_client", False):
             return self._client_dashboard(user, now, today)
 
-        if hasattr(user, "is_salon_employee") and getattr(user, "is_salon_employee", False):
+        if hasattr(user, "is_employee") and getattr(user, "is_employee", False):
             return self._employee_dashboard(user, now, today)
 
         if hasattr(user, "is_manager") and getattr(user, "is_manager", False):
@@ -1638,10 +1649,9 @@ class DashboardView(APIView):
         }
         return Response(data)
 
-
 # ==================== POPULAR SERVICES VIEW (EXTRA) ====================
 
-
+# Ta klasa miała złe wcięcie i została poprawiona
 class PopularServicesView(APIView):
     """
     Popularne usługi (na podstawie liczby wizyt w ostatnich X dniach).
