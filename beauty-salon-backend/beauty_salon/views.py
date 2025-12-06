@@ -1,12 +1,13 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from decimal import Decimal
-from typing import Any, Optional, Dict, List, Sequence, Union
+from typing import Any, Optional, Dict, List, TYPE_CHECKING
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum, QuerySet
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from rest_framework.request import Request  # Import dla adnotacji typów
+from rest_framework.request import Request
+from rest_framework.serializers import BaseSerializer
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, status, permissions, serializers, filters
@@ -29,9 +30,13 @@ from .permissions import (
     CanViewFinancials,
 )
 
-# Używamy typu User z CustomUser, ale musimy uwzględnić, że request.user to Union[User, AnonymousUser]
+# Używamy typu User z CustomUser
 User = get_user_model()
-UserModel = User  # Alias dla CustomUser
+
+if TYPE_CHECKING:
+    from .models import User as UserModel
+else:
+    UserModel = User
 
 # ============================================================================
 # IMPORTY MODELI
@@ -126,7 +131,7 @@ def create_audit_log(
         metadata: Optional[Dict[str, Any]] = None,
 ) -> AuditLog:
     """Prosty helper do tworzenia wpisów w AuditLog."""
-    user_fk = user if user and user.is_authenticated else None  # type: ignore[assignment]
+    user_fk = user if user and user.is_authenticated else None
 
     return AuditLog.objects.create(
         type=type,
@@ -158,7 +163,7 @@ class UserViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "email", "role"]
     ordering = ["-created_at"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
             return UserListSerializer
         if self.action == "create":
@@ -172,19 +177,18 @@ class UserViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "reset_password":
             return [IsManager()]
-        # wszystko inne – tylko manager
         return [IsManager()]
 
-    # Błąd 155
+    @action(detail=False, methods=["get"])
     def me(self, request: Request) -> Response:
         """Zwraca dane zalogowanego użytkownika."""
-        serializer = UserDetailSerializer(request.user)  # type: ignore[arg-type]
+        serializer = UserDetailSerializer(request.user)
         return Response(serializer.data)
 
-    # Błąd 164
+    @action(detail=True, methods=["post"])
     def reset_password(self, request: Request, pk: Optional[int] = None) -> Response:
         """Reset hasła wskazanego użytkownika (tylko manager)."""
-        user = self.get_object()  # type: ignore[attr-defined]
+        user = self.get_object()
         serializer = PasswordResetSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         new_password = serializer.validated_data["new_password"]
@@ -204,7 +208,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
         return Response({"detail": "Hasło zostało zresetowane."})
 
-    # Błąd 173
+    @action(detail=False, methods=["post"])
     def change_password(self, request: Request) -> Response:
         """Zmiana własnego hasła."""
         serializer = PasswordChangeSerializer(
@@ -218,11 +222,11 @@ class UserViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return Response({"detail": "User not authenticated."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        user.set_password(new_password)  # type: ignore[attr-defined]
-        user.failed_login_attempts = 0  # type: ignore[attr-defined]
-        user.account_locked_until = None  # type: ignore[attr-defined]
+        user.set_password(new_password)
+        user.failed_login_attempts = 0
+        user.account_locked_until = None
         user.save(
-            update_fields=["password", "failed_login_attempts", "account_locked_until"])  # type: ignore[attr-defined]
+            update_fields=["password", "failed_login_attempts", "account_locked_until"])
 
         create_audit_log(
             user=user,
@@ -253,7 +257,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     ordering_fields = ["category", "name", "price", "created_at", "reservations_count"]
     ordering = ["category", "name"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
             return ServiceListSerializer
         if self.action in ["create", "update", "partial_update"]:
@@ -267,16 +271,15 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self) -> QuerySet[Service]:
         queryset = super().get_queryset()
-        # Niezalogowani i Klienci widzą tylko opublikowane
         user = self.request.user
         if not user.is_authenticated or (
-                hasattr(user, "is_salon_client")  # type: ignore[attr-defined]
+                hasattr(user, "is_salon_client")
                 and getattr(user, "is_salon_client", False)
         ):
             return queryset.filter(is_published=True)
         return queryset
 
-    # Błąd 252
+    @action(detail=False, methods=["get"])
     def published(self, request: Request) -> Response:
         """Lista tylko opublikowanych usług."""
         qs = self.filter_queryset(
@@ -314,7 +317,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     ordering_fields = ["last_name", "number", "hired_at", "appointments_count"]
     ordering = ["last_name", "first_name"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
             return EmployeeListSerializer
         if self.action in ["create", "update", "partial_update"]:
@@ -328,14 +331,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
-    # Błąd 305
+    @action(detail=False, methods=["get"])
     def active(self, request: Request) -> Response:
         """Lista aktywnych pracowników."""
         qs = self.filter_queryset(self.get_queryset().filter(is_active=True))
         serializer = EmployeeListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 312
+    @action(detail=False, methods=["get"])
     def me(self, request: Request) -> Response:
         """Dane pracownika powiązanego z zalogowanym użytkownikiem."""
         user = request.user
@@ -345,7 +348,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            employee = user.employee  # type: ignore[attr-defined]
+            employee = user.employee
         except Employee.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z pracownikiem."},
@@ -354,17 +357,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         serializer = EmployeeDetailSerializer(employee)
         return Response(serializer.data)
 
-    # Błąd 320
+    @action(detail=True, methods=["get"])
     def services(self, request: Request, pk: Optional[int] = None) -> Response:
         """Usługi wykonywane przez pracownika."""
-        employee = self.get_object()  # type: ignore[attr-defined]
+        employee = self.get_object()
         serializer = ServiceListSerializer(employee.skills.all(), many=True)
         return Response(serializer.data)
 
-    # Błąd 327
+    @action(detail=True, methods=["get"])
     def upcoming_appointments(self, request: Request, pk: Optional[int] = None) -> Response:
         """Najbliższe wizyty danego pracownika."""
-        employee = self.get_object()  # type: ignore[attr-defined]
+        employee = self.get_object()
         now = timezone.now()
         qs = Appointment.objects.filter(
             employee=employee,
@@ -404,7 +407,7 @@ class ClientViewSet(viewsets.ModelViewSet):
     ]
     ordering = ["last_name", "first_name"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
             return ClientListSerializer
         if self.action in ["create", "update", "partial_update"]:
@@ -418,7 +421,6 @@ class ClientViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "soft_delete":
             return [IsManagerOrEmployee()]
-        # default: manager + pracownik
         return [IsManagerOrEmployee()]
 
     def get_queryset(self) -> QuerySet[Client]:
@@ -445,15 +447,14 @@ class ClientViewSet(viewsets.ModelViewSet):
                 and getattr(user, "is_salon_client", False)
         ):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(user=user)
 
-        # Inni – nic
         return qs.none()
 
-    # Błąd 404
+    @action(detail=False, methods=["get"])
     def me(self, request: Request) -> Response:
         """Profil klienta powiązanego z zalogowanym użytkownikiem."""
         user = request.user
@@ -463,7 +464,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            client = user.client_profile  # type: ignore[attr-defined]
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z klientem."},
@@ -472,14 +473,14 @@ class ClientViewSet(viewsets.ModelViewSet):
         serializer = ClientDetailSerializer(client)
         return Response(serializer.data)
 
-    # Błąd 412
+    @action(detail=False, methods=["get"])
     def soft_deleted(self, request: Request) -> Response:
         """Lista miękko usuniętych klientów (tylko personel)."""
         qs = Client.objects.filter(deleted_at__isnull=False)
         serializer = ClientListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 441
+    @action(detail=False, methods=["post"])
     def soft_delete(self, request: Request) -> Response:
         """Miękkie usunięcie klienta (tylko personel)."""
         serializer = ClientSoftDeleteSerializer(data=request.data)
@@ -499,15 +500,15 @@ class ClientViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # Błąd 460
+    @action(detail=True, methods=["get"])
     def appointments(self, request: Request, pk: Optional[int] = None) -> Response:
         """Lista wizyt konkretnego klienta."""
-        client = self.get_object()  # type: ignore[attr-defined]
+        client = self.get_object()
         qs = Appointment.objects.filter(client=client).order_by("-start")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 467
+    @action(detail=False, methods=["get"])
     def my_appointments(self, request: Request) -> Response:
         """Wizyty zalogowanego klienta."""
         user = request.user
@@ -517,7 +518,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            client = user.client_profile  # type: ignore[attr-defined]
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z klientem."},
@@ -565,11 +566,11 @@ class ScheduleViewSet(viewsets.ModelViewSet):
                 and hasattr(user, "is_salon_employee")
                 and getattr(user, "is_salon_employee", False)
         ):
-            return qs.filter(employee__user=user)  # type: ignore[attr-defined]
+            return qs.filter(employee__user=user)
 
         return qs.none()
 
-    # Błąd 495
+    @action(detail=False, methods=["get"])
     def my_schedule(self, request: Request) -> Response:
         """Grafiki zalogowanego pracownika."""
         user = request.user
@@ -579,7 +580,7 @@ class ScheduleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            employee = user.employee  # type: ignore[attr-defined]
+            employee = user.employee
         except Employee.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z pracownikiem."},
@@ -608,7 +609,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date_from", "created_at"]
     ordering = ["-date_from"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "approve":
             return TimeOffApproveSerializer
         return TimeOffSerializer
@@ -634,11 +635,11 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 and hasattr(user, "is_salon_employee")
                 and getattr(user, "is_salon_employee", False)
         ):
-            return qs.filter(employee__user=user)  # type: ignore[attr-defined]
+            return qs.filter(employee__user=user)
 
         return qs.none()
 
-    # Błąd 557
+    @action(detail=False, methods=["get"])
     def my_time_off(self, request: Request) -> Response:
         """Urlopy zalogowanego pracownika."""
         user = request.user
@@ -648,7 +649,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         try:
-            employee = user.employee  # type: ignore[attr-defined]
+            employee = user.employee
         except Employee.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z pracownikiem."},
@@ -659,7 +660,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         serializer = TimeOffSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 595
+    @action(detail=False, methods=["post"])
     def approve(self, request: Request) -> Response:
         """
         Zatwierdzanie wniosku urlopowego (manager).
@@ -701,7 +702,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "created_at"]
     ordering = ["-start"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
             return AppointmentListSerializer
         if self.action == "create":
@@ -755,14 +756,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         # Klient – tylko własne
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
 
         return qs.none()
 
-    # Błąd 688
+    @action(detail=False, methods=["get"])
     def today(self, request: Request) -> Response:
         """Wizyty dzisiaj (filtrowane po roli użytkownika)."""
         today = timezone.localdate()
@@ -770,7 +771,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 699
+    @action(detail=False, methods=["get"])
     def upcoming(self, request: Request) -> Response:
         """Przyszłe wizyty (domyślnie od teraz)."""
         now = timezone.now()
@@ -778,7 +779,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 708
+    @action(detail=False, methods=["get"])
     def my_appointments(self, request: Request) -> Response:
         """Wizyty zalogowanego użytkownika (klient/pracownik)."""
         user = request.user
@@ -790,7 +791,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return Response(
                     {"detail": "Konto nie jest powiązane z klientem."},
@@ -799,7 +800,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             qs = Appointment.objects.filter(client=client).order_by("-start")
         elif hasattr(user, "is_salon_employee") and getattr(user, "is_salon_employee", False):
             try:
-                employee = user.employee  # type: ignore[attr-defined]
+                employee = user.employee
             except Employee.DoesNotExist:
                 return Response(
                     {"detail": "Konto nie jest powiązane z pracownikiem."},
@@ -812,13 +813,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 750 (metoda)
+    @action(detail=True, methods=["post"])
     def change_status(self, request: Request, pk: Optional[int] = None) -> Response:
         """
         Zmiana statusu wizyty (np. anulowanie, no-show).
         Wprowadza logikę utraty zaliczki.
         """
-        appointment = self.get_object()  # type: ignore[attr-defined]
+        appointment = self.get_object()
         serializer = AppointmentStatusUpdateSerializer(
             appointment, data=request.data, partial=True, context={"request": request}
         )
@@ -827,25 +828,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         old_status = appointment.status
         new_status = serializer.validated_data.get('status')
 
-        # ----------------------------------------------------
-        # ✅ POPRAWIONA LOGIKA: OBSŁUGA UTRATY ZALICZKI
-        # ----------------------------------------------------
-
         # Statusy, przy których następuje utrata zaliczki (kara)
         FORFEIT_STATUSES = [Appointment.Status.CANCELLED, Appointment.Status.NO_SHOW]
 
         if new_status in FORFEIT_STATUSES and old_status not in FORFEIT_STATUSES:
-            # Sprawdź politykę w SystemSettings
             settings = SystemSettings.load()
-
-            # Flaga decydująca o przepadku zaliczki, jeśli jest w ustawieniach
             should_forfeit = settings.deposit_policy.get('forfeit_deposit_on_cancellation', False)
 
             if should_forfeit:
-                # ✅ POPRAWKA: Użyj filter().first() zamiast get()
-                # aby obsłużyć przypadek wielu zaliczek
                 try:
-                    deposits: QuerySet[Payment] = Payment.objects.filter(  # Jawna adnotacja typu
+                    deposits: QuerySet[Payment] = Payment.objects.filter(
                         appointment=appointment,
                         status=Payment.Status.DEPOSIT
                     )
@@ -853,17 +845,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     deposit_count = deposits.count()
 
                     if deposit_count > 0:
-                        # Jeśli jest więcej niż jedna zaliczka, weź najnowszą
-                        deposit: Optional[Payment] = deposits.order_by('-created_at').first()  # Jawna adnotacja typu
+                        deposit: Optional[Payment] = deposits.order_by('-created_at').first()
 
-                        # Błędy 838, 839, 840, 847, 863: Jawne sprawdzenie 'deposit is not None'
                         if deposit is not None:
-                            # Zmień status zaliczki na 'Utracona'
                             deposit.status = Payment.Status.FORFEITED
                             deposit.paid_at = timezone.now()
                             deposit.save(update_fields=['status', 'paid_at'])
 
-                            # Logowanie zdarzenia dla audytu
                             create_audit_log(
                                 user=request.user,
                                 type="payment.deposit_forfeited",
@@ -878,7 +866,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                                 request=request,
                             )
 
-                            # Jeśli było więcej zaliczek, zaloguj ostrzeżenie
                             if deposit_count > 1:
                                 create_audit_log(
                                     user=request.user,
@@ -893,7 +880,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                                 )
 
                 except Exception as e:
-                    # Obsłuż inne błędy (np. błędy zapisu)
                     create_audit_log(
                         user=request.user,
                         type="payment.forfeit_error",
@@ -902,13 +888,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                         entity=appointment,
                         request=request,
                     )
-                    # Nie przerywaj operacji - wizyta i tak zostanie anulowana
 
-        # ----------------------------------------------------
-        # KONIEC POPRAWIONEJ LOGIKI
-        # ----------------------------------------------------
-
-        # Zapisz zmianę statusu wizyty
         appointment = serializer.save()
 
         create_audit_log(
@@ -952,7 +932,6 @@ class NoteViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Manager/pracownik – wszystkie notatki
         if (
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
@@ -962,10 +941,9 @@ class NoteViewSet(viewsets.ModelViewSet):
         ):
             return qs
 
-        # Klient – tylko notatki widoczne przy jego wizytach
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(
@@ -975,7 +953,7 @@ class NoteViewSet(viewsets.ModelViewSet):
 
         return qs.none()
 
-    # Błąd 923
+    @action(detail=False, methods=["get"])
     def my_notes(self, request: Request) -> Response:
         """Notatki stworzone przez zalogowanego użytkownika (dla personelu)."""
         user = request.user
@@ -988,9 +966,8 @@ class NoteViewSet(viewsets.ModelViewSet):
         serializer = NoteSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 918
-    def perform_create(self, serializer: serializers.ModelSerializer) -> None:
-        serializer.save(author=self.request.user)  # type: ignore[assignment]
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
+        serializer.save(author=self.request.user)
 
 
 class MediaAssetViewSet(viewsets.ModelViewSet):
@@ -1019,8 +996,7 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
             return [IsManagerOrEmployee()]
         return [permissions.AllowAny()]
 
-    # Błąd 966
-    def perform_create(self, serializer: serializers.ModelSerializer) -> None:
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         """
         Jeśli dodaje pracownik – automatycznie przypisujemy jego profil Employee.
         Manager może wskazać dowolnego pracownika.
@@ -1034,9 +1010,8 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
                 and getattr(user, "is_salon_employee", False)
                 and not (hasattr(user, "is_manager") and getattr(user, "is_manager", False))
         ):
-            # pracownik – przypinamy jego profil
             try:
-                employee = user.employee  # type: ignore[attr-defined]
+                employee = user.employee
             except Employee.DoesNotExist:
                 raise serializers.ValidationError(
                     "Konto nie jest powiązane z pracownikiem."
@@ -1053,7 +1028,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     Płatności za wizyty.
 
-    - Personel: widzi wszystkie płatności, może je tworzyć i oznaczaÄ‡ jako zapłacone
+    - Personel: widzi wszystkie płatności, może je tworzyć i oznaczać jako zapłacone
     - Klient: widzi tylko swoje płatności
     """
 
@@ -1065,7 +1040,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at", "paid_at", "amount"]
     ordering = ["-created_at"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "create":
             return PaymentCreateSerializer
         if self.action == "mark_as_paid":
@@ -1086,7 +1061,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel – wszystkie
         if (
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
@@ -1096,24 +1070,23 @@ class PaymentViewSet(viewsets.ModelViewSet):
         ):
             return qs
 
-        # Klient – tylko własne
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(appointment__client=client)
 
         return qs.none()
 
-    # Błąd 996
+    @action(detail=False, methods=["get"])
     def my_payments(self, request: Request) -> Response:
         """Płatności zalogowanego klienta."""
         qs = self.get_queryset()
         serializer = PaymentSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 1009
+    @action(detail=False, methods=["post"])
     def mark_as_paid(self, request: Request) -> Response:
         """
         Oznacz wybraną płatność jako zapłaconą.
@@ -1164,7 +1137,6 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel – wszystkie faktury
         if (
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
@@ -1174,17 +1146,16 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         ):
             return qs
 
-        # Klient – tylko własne
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
 
         return qs.none()
 
-    # Błąd 1045
+    @action(detail=False, methods=["get"])
     def my_invoices(self, request: Request) -> Response:
         """Faktury zalogowanego klienta."""
         qs = self.get_queryset()
@@ -1211,7 +1182,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
     ordering_fields = ["scheduled_at", "created_at"]
     ordering = ["-scheduled_at"]
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "create":
             return NotificationCreateSerializer
         return NotificationSerializer
@@ -1230,7 +1201,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated:
             return qs.none()
 
-        # Personel – wszystkie powiadomienia
         if (
                 hasattr(user, "is_manager")
                 and getattr(user, "is_manager", False)
@@ -1240,25 +1210,23 @@ class NotificationViewSet(viewsets.ModelViewSet):
         ):
             return qs
 
-        # Klient – tylko własne
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             try:
-                client = user.client_profile  # type: ignore[attr-defined]
+                client = user.client_profile
             except Client.DoesNotExist:
                 return qs.none()
             return qs.filter(client=client)
 
         return qs.none()
 
-    # Błąd 1087
+    @action(detail=False, methods=["get"])
     def my_notifications(self, request: Request) -> Response:
         """Powiadomienia zalogowanego klienta."""
         qs = self.get_queryset()
         serializer = NotificationSerializer(qs, many=True)
         return Response(serializer.data)
 
-    # Błąd 1080
-    def perform_create(self, serializer: serializers.ModelSerializer) -> None:
+    def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         serializer.save()
 
 
@@ -1312,14 +1280,12 @@ class SystemSettingsView(APIView):
 
     permission_classes = [IsManager]
 
-    # Błąd 1126
     def get(self, request: Request) -> Response:
         """Pobierz aktualne ustawienia systemowe."""
         settings = SystemSettings.load()
         serializer = SystemSettingsSerializer(settings)
         return Response(serializer.data)
 
-    # Błąd 1129
     def patch(self, request: Request) -> Response:
         """Aktualizacja ustawień (tylko manager)."""
         user = request.user
@@ -1332,7 +1298,7 @@ class SystemSettingsView(APIView):
             context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save(last_modified_by=user)  # type: ignore[assignment]
+        serializer.save(last_modified_by=user)
 
         create_audit_log(
             user=user,
@@ -1380,7 +1346,6 @@ class StatisticsView(APIView):
 
     permission_classes = [IsManagerOrEmployee]
 
-    # Błąd 1223
     def get(self, request: Request) -> Response:
         days_param = request.query_params.get("days", "30")
         try:
@@ -1391,7 +1356,6 @@ class StatisticsView(APIView):
         now = timezone.now()
         since = now - timedelta(days=days)
 
-        # Podstawowe statystyki
         total_clients = Client.objects.filter(deleted_at__isnull=True).count()
         new_clients = (
             Client.objects.filter(
@@ -1418,7 +1382,6 @@ class StatisticsView(APIView):
                 or Decimal("0.00")
         )
 
-        # Statystyki usług
         services_qs = (
             Service.objects.filter(is_published=True)
             .annotate(
@@ -1452,7 +1415,6 @@ class StatisticsView(APIView):
             service_stats_data, many=True
         ).data
 
-        # Statystyki pracowników
         employees_qs = (
             Employee.objects.filter(is_active=True)
             .annotate(
@@ -1468,7 +1430,6 @@ class StatisticsView(APIView):
             {
                 "employee": employee,
                 "total_appointments": employee.total_appointments or 0,
-                # Proste pole – dokładne wyliczanie obłożenia wymagałoby slotów czasowych
                 "occupancy_percent": Decimal("0.00"),
             }
             for employee in employees_qs
@@ -1513,7 +1474,6 @@ class DashboardView(APIView):
 
     permission_classes = [permissions.IsAuthenticated]
 
-    # Błąd 1272
     def get(self, request: Request) -> Response:
         user = request.user
         now = timezone.now()
@@ -1525,32 +1485,24 @@ class DashboardView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # Klient
         if hasattr(user, "is_salon_client") and getattr(user, "is_salon_client", False):
             return self._client_dashboard(user, now, today)
 
-        # Pracownik
         if hasattr(user, "is_salon_employee") and getattr(user, "is_salon_employee", False):
             return self._employee_dashboard(user, now, today)
 
-        # Manager
         if hasattr(user, "is_manager") and getattr(user, "is_manager", False):
             return self._manager_dashboard(user, now, today)
 
-        # Fallback
         return Response(
             {"detail": "Brak przypisanej roli w systemie."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Błąd 1278
-    def _client_dashboard(self, user: UserModel, now: timezone.datetime, today: timezone.datetime) -> Response:
-        """
-        Dashboard klienta – używamy user.client (OneToOneField),
-        jak pisałeś – to jest prawidłowe podejście.
-        """
+    def _client_dashboard(self, user: Any, now: datetime, today: Any) -> Response:
+        """Dashboard klienta."""
         try:
-            client = user.client_profile  # type: ignore[attr-defined]
+            client = user.client_profile
         except Client.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z klientem."},
@@ -1593,13 +1545,10 @@ class DashboardView(APIView):
         }
         return Response(data)
 
-    # Błąd 1333
-    def _employee_dashboard(self, user: UserModel, now: timezone.datetime, today: timezone.datetime) -> Response:
-        """
-        Dashboard pracownika – również korzysta z user.employee (OneToOneField).
-        """
+    def _employee_dashboard(self, user: Any, now: datetime, today: Any) -> Response:
+        """Dashboard pracownika."""
         try:
-            employee = user.employee  # type: ignore[attr-defined]
+            employee = user.employee
         except Employee.DoesNotExist:
             return Response(
                 {"detail": "Konto nie jest powiązane z pracownikiem."},
@@ -1637,9 +1586,8 @@ class DashboardView(APIView):
         }
         return Response(data)
 
-    # Błąd 1391
-    def _manager_dashboard(self, user: UserModel, now: timezone.datetime, today: timezone.datetime) -> Response:
-        # Podstawowe dzienne statystyki
+    def _manager_dashboard(self, user: Any, now: datetime, today: Any) -> Response:
+        """Dashboard managera."""
         todays_appointments = Appointment.objects.filter(start__date=today)
         total_today = todays_appointments.count()
         completed_today = todays_appointments.filter(
@@ -1702,7 +1650,6 @@ class PopularServicesView(APIView):
 
     permission_classes = [permissions.AllowAny]
 
-    # Błąd 1465
     def get(self, request: Request) -> Response:
         days_param = request.query_params.get("days", "30")
         try:
@@ -1713,7 +1660,6 @@ class PopularServicesView(APIView):
         now = timezone.now()
         since = now - timedelta(days=days)
 
-        # Statystyki usług
         services_qs = (
             Service.objects.filter(is_published=True)
             .annotate(
