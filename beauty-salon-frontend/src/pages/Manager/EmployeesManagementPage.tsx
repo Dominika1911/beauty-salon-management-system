@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, type ReactElement } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, type ReactElement } from 'react';
 import { employeesAPI } from '../../api/employees';
 import { servicesAPI } from '../../api/services';
 import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
@@ -13,8 +13,7 @@ import { useAuth } from '../../hooks/useAuth';
 const EMPLOYEES_PAGE_SIZE = 20;
 
 export const EmployeesManagementPage: React.FC = (): ReactElement => {
-  // POBIERANIE DANYCH UŻYTKOWNIKA
-  const { user } = useAuth(); // Zmień na swój hook (useUser lub inny)
+  const { user } = useAuth();
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [availableServices, setAvailableServices] = useState<Service[]>([]);
@@ -22,6 +21,8 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
   const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  // STAN DLA EDYCJI
+  const [employeeToEdit, setEmployeeToEdit] = useState<Employee | undefined>(undefined);
 
   const {
     currentPage,
@@ -34,12 +35,9 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
     handleNextPage,
   } = usePagination(EMPLOYEES_PAGE_SIZE);
 
-  //  WARUNEK: Tylko Manager ma widzieć przycisk i modal
-  const isManager = user?.role === 'manager'; // Zmień 'manager' na właściwą wartość roli
+  const isManager = user?.role === 'manager';
 
-  // Funkcje pobierające dane (fetchEmployees, fetchServices, handleCreationSuccess - bez zmian)
   const fetchEmployees = async (page: number, size: number) => {
-    // ... (Logika pobierania listy pracowników) ...
     try {
       setLoading(true);
       setError(null);
@@ -71,6 +69,39 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
       }
   };
 
+  const handleCreationSuccess = () => {
+      // CZYŚCI STANY PO ZAPISIE
+      setEmployeeToEdit(undefined);
+      setCurrentPage(1);
+      void fetchEmployees(1, pageSize);
+      setIsModalOpen(false);
+  };
+
+  // FUNKCJA DEZAKTYWACJI (USUWANIA)
+  const handleDeactivate = useCallback(async (employeeId: number, currentStatus: boolean) => {
+
+      const newStatus = !currentStatus;
+      const confirmMessage = newStatus
+          ? "Czy na pewno chcesz aktywować konto tego pracownika?"
+          : "Czy na pewno chcesz dezaktywować konto tego pracownika? Nie będzie mógł się zalogować.";
+
+      if (!window.confirm(confirmMessage)) {
+          return;
+      }
+
+      try {
+          // Używamy metody update do zmiany statusu is_active
+          await employeesAPI.update(employeeId, { is_active: newStatus });
+          // Po sukcesie odświeżamy bieżącą stronę
+          void fetchEmployees(currentPage, pageSize);
+
+      } catch (err) {
+          console.error("Błąd podczas dezaktywacji pracownika:", err);
+          setError("Nie udało się zmienić statusu pracownika.");
+      }
+  }, [currentPage, pageSize]);
+
+
   useEffect(() => {
     void fetchEmployees(currentPage, pageSize);
   }, [currentPage]);
@@ -79,19 +110,7 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
     void fetchServices();
   }, []);
 
-const handleCreationSuccess = () => {
-    // Ustawiamy na stronę 1, bo lista mogła się zmienić
-    setCurrentPage(1);
-
-    // Po chwili pobieramy aktualną listę
-    void fetchEmployees(1, pageSize);
-
-    // Zamykamy modal
-    setIsModalOpen(false);
-};
-
-
-  // Definicja kolumn (bez zmian)
+  // AKTUALIZACJA KOLUMN O EDYCJĘ I DEZAKTYWACJĘ
   const columns: ColumnDefinition<Employee>[] = useMemo(() => [
     { header: 'ID', key: 'id', width: '5%' },
     {
@@ -104,7 +123,11 @@ const handleCreationSuccess = () => {
     {
       header: 'Status',
       key: 'is_active',
-      render: (item) => item.is_active ? 'Aktywny' : 'Nieaktywny',
+      render: (item) => (
+        <span style={{ color: item.is_active ? 'green' : 'red' }}>
+           {item.is_active ? 'Aktywny' : 'Nieaktywny'}
+        </span>
+      ),
       width: '8%'
     },
     { header: 'Wizyt', key: 'appointments_count', width: '8%' },
@@ -114,38 +137,44 @@ const handleCreationSuccess = () => {
       key: 'actions',
       width: '15%',
       render: (item) => (
-        <button onClick={() => console.log('Edycja', item.id)}>Edytuj</button>
+          <>
+            <button
+              onClick={() => {
+                  setEmployeeToEdit(item); // Ustaw pracownika do edycji
+                  setIsModalOpen(true);    // Otwórz modal
+              }}
+              style={{ marginRight: '5px' }}
+            >
+              Edytuj
+            </button>
+            {' | '}
+            <button
+                onClick={() => void handleDeactivate(item.id, item.is_active)}
+                style={{ color: item.is_active ? 'red' : 'green' }}
+            >
+              {item.is_active ? 'Dezaktywuj' : 'Aktywuj'}
+            </button>
+          </>
       ),
     },
-  ], []);
+  ], [handleDeactivate]); // Dodanie handleDeactivate jako zależności
 
-  if (loading && employees.length === 0) {
-    return (
-      <div style={{ padding: 20 }}>
-        <h1>Zarządzanie Pracownikami</h1>
-        <p>Ładowanie listy pracowników...</p>
-      </div>
-    );
-  }
+  // ... (reszta kodu bez zmian) ...
 
-  if (error) {
-    return (
-      <div style={{ padding: 20, color: 'red' }}>
-        <h1>Zarządzanie Pracownikami</h1>
-        <p>Błąd: {error}</p>
-      </div>
-    );
-  }
+  // ... (Kod JSX) ...
 
   return (
     <div className="employees-management-page" style={{ padding: 20 }}>
       <h1>Zarządzanie Pracownikami</h1>
 
-      {/*  WARUNKOWE RENDEROWANIE PRZYCISKU (TYLKO DLA MANAGERA) */}
+      {/* WARUNKOWE RENDEROWANIE PRZYCISKU (TYLKO DLA MANAGERA) */}
       {isManager && (
         <div style={{ marginBottom: 20, textAlign: 'right' }}>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+                setEmployeeToEdit(undefined); //W trybie tworzenia upewnij się, że stan edycji jest pusty
+                setIsModalOpen(true);
+            }}
             style={{ padding: '10px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
           >
              Dodaj Nowego Pracownika
@@ -189,13 +218,18 @@ const handleCreationSuccess = () => {
         </div>
       )}
 
-      {/*  WARUNKOWE RENDEROWANIE MODALA (TYLKO DLA MANAGERA) */}
+      {/* WARUNKOWE RENDEROWANIE MODALA (TYLKO DLA MANAGERA) */}
       {isManager && (
         <EmployeeFormModal
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          // W trybie edycji, zamykanie modala musi resetować stan edycji
+          onClose={() => {
+              setIsModalOpen(false);
+              setEmployeeToEdit(undefined);
+          }}
           onSuccess={handleCreationSuccess}
           availableServices={availableServices}
+          employeeToEdit={employeeToEdit} // PRZEKAZYWANIE OBIEKTU DO EDYCJI
         />
       )}
     </div>

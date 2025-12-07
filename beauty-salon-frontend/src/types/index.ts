@@ -42,3 +42,21 @@ export interface EmployeeCreateData {
     skill_ids: number[]; // Lista ID usług, które pracownik potrafi wykonywać
     hired_at?: string; // Data zatrudnienia
 }
+
+export interface Employee {
+  id: number;
+  number: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  hired_at: string;
+  is_active: boolean;
+  average_rating: string; // DecimalField jako string
+  appointments_count: number;
+  user_email?: string;
+  // Pełny typ Employee musi zawierać listę obiektów Service
+  skills: Service[];
+  skill_ids?: number[];
+  created_at: string;
+  updated_at: string;
+}
