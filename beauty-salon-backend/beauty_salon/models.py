@@ -130,7 +130,7 @@ class User(AbstractBaseUser, PermissionsMixin, TimestampedModel):
 # ============================================================================
 
 class Employee(SoftDeletableModel, TimestampedModel):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
     number = models.CharField(
         _('numer pracownika'),
         max_length=20,
@@ -299,7 +299,6 @@ class TimeOff(TimestampedModel):
     type = models.CharField(_('typ nieobecności'), max_length=20, choices=Type.choices, default=Type.VACATION)
     reason = models.TextField(_('powód/uwagi'), blank=True)
 
-    # ✅ DODANE POLA
     approved_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

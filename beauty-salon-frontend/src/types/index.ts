@@ -28,3 +28,17 @@ export interface Client {
   updated_at: string;
   deleted_at: string | null;
 }
+
+export interface EmployeeCreateData {
+    email: string;
+    password: string; // Wymagane dla nowego konta User
+    first_name: string;
+    last_name: string;
+    phone: string;
+    // Number (numer pracownika) i is_active są często zarządzane przez backend,
+    // ale dodamy je, jeśli mają być w formularzu:
+    number?: string;
+    is_active?: boolean;
+    skill_ids: number[]; // Lista ID usług, które pracownik potrafi wykonywać
+    hired_at?: string; // Data zatrudnienia
+}

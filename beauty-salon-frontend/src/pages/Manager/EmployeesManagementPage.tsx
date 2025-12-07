@@ -1,59 +1,95 @@
-// src/pages/Manager/EmployeesManagementPage.tsx (Uproszczona wersja z usePagination)
-
 import React, { useState, useEffect, useMemo, type ReactElement } from 'react';
 import { employeesAPI } from '../../api/employees';
+import { servicesAPI } from '../../api/services';
 import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
-import { usePagination } from '../../hooks/usePagination'; // 🚨 NOWY IMPORT HOOKA
-import type { Employee, PaginatedResponse } from '../../types';
+import { EmployeeFormModal } from '../../components/Manager/EmployeeFormModal';
+import { usePagination } from '../../hooks/usePagination';
+import type { Employee, PaginatedResponse, Service } from '../../types';
 
 import '../../components/UI/Table/Table.css';
 
-// Używamy tego samego rozmiaru strony co w oryginalnym kodzie
+import { useAuth } from '../../hooks/useAuth';
+
 const EMPLOYEES_PAGE_SIZE = 20;
 
 export const EmployeesManagementPage: React.FC = (): ReactElement => {
+  // POBIERANIE DANYCH UŻYTKOWNIKA
+  const { user } = useAuth(); // Zmień na swój hook (useUser lub inny)
+
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [availableServices, setAvailableServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 🚨 ZASTĄPIENIE CAŁEJ LOGIKI PAGINACJI JEDNYM HOOKIEM
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+
   const {
     currentPage,
     totalPages,
     totalCount,
     pageSize,
     setTotalCount,
+    setCurrentPage,
     handlePreviousPage,
     handleNextPage,
-  } = usePagination(EMPLOYEES_PAGE_SIZE); // Wywołanie hooka
+  } = usePagination(EMPLOYEES_PAGE_SIZE);
+
+  //  WARUNEK: Tylko Manager ma widzieć przycisk i modal
+  const isManager = user?.role === 'manager'; // Zmień 'manager' na właściwą wartość roli
+
+  // Funkcje pobierające dane (fetchEmployees, fetchServices, handleCreationSuccess - bez zmian)
+  const fetchEmployees = async (page: number, size: number) => {
+    // ... (Logika pobierania listy pracowników) ...
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await employeesAPI.list({
+        page: page,
+        page_size: size,
+      });
+
+      const data = response.data as PaginatedResponse<Employee>;
+
+      setEmployees(data.results);
+      setTotalCount(data.count);
+
+    } catch (err) {
+      console.error('Błąd pobierania listy pracowników:', err);
+      setError('Nie udało się załadować listy pracowników. Sprawdź backend i uprawnienia.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchServices = async () => {
+      try {
+          const response = await servicesAPI.list({ page_size: 100 });
+          setAvailableServices(response.data.results);
+      } catch (err) {
+          console.error("Błąd ładowania usług:", err);
+      }
+  };
 
   useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    void fetchEmployees(currentPage, pageSize);
+  }, [currentPage]);
 
-        const response = await employeesAPI.list({
-          page: currentPage,
-          page_size: pageSize,
-        });
+  useEffect(() => {
+    void fetchServices();
+  }, []);
 
-        const data = response.data as PaginatedResponse<Employee>; // Użycie rzutowania dla bezpieczeństwa
+const handleCreationSuccess = () => {
+    // Ustawiamy na stronę 1, bo lista mogła się zmienić
+    setCurrentPage(1);
 
-        setEmployees(data.results);
-        setTotalCount(data.count); // Aktualizuje hooka i totalPages
+    // Po chwili pobieramy aktualną listę
+    void fetchEmployees(1, pageSize);
 
-        console.log(`Załadowano ${data.results.length} pracowników (strona ${currentPage}/${totalPages})`);
-      } catch (err) {
-        console.error('Błąd pobierania listy pracowników:', err);
-        setError('Nie udało się załadować listy pracowników. Sprawdź backend i uprawnienia.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    // Zależność tylko od currentPage (logika jest w hooku)
-    void fetchEmployees();
-  }, [currentPage, pageSize, setTotalCount, totalPages]);
+    // Zamykamy modal
+    setIsModalOpen(false);
+};
+
 
   // Definicja kolumn (bez zmian)
   const columns: ColumnDefinition<Employee>[] = useMemo(() => [
@@ -61,7 +97,7 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
     {
       header: 'Imię i Nazwisko',
       key: 'first_name',
-      render: (item) => `${item.first_name ?? ''} ${item.last_name ?? ''}` // Zabezpieczenie przed null
+      render: (item) => `${item.first_name ?? ''} ${item.last_name ?? ''}`
     },
     { header: 'Numer', key: 'number', width: '10%' },
     { header: 'Telefon', key: 'phone' },
@@ -104,6 +140,19 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
   return (
     <div className="employees-management-page" style={{ padding: 20 }}>
       <h1>Zarządzanie Pracownikami</h1>
+
+      {/*  WARUNKOWE RENDEROWANIE PRZYCISKU (TYLKO DLA MANAGERA) */}
+      {isManager && (
+        <div style={{ marginBottom: 20, textAlign: 'right' }}>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            style={{ padding: '10px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+          >
+             Dodaj Nowego Pracownika
+          </button>
+        </div>
+      )}
+
       <p>Lista wszystkich pracowników salonu. (Łącznie: {totalCount})</p>
 
       <div style={{ marginTop: 20 }}>
@@ -115,7 +164,7 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
         />
       </div>
 
-      {/* Paginacja (używa wartości zwróconych z hooka) */}
+      {/* Paginacja */}
       {totalPages > 1 && (
         <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
           <button
@@ -138,6 +187,16 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
             Następna
           </button>
         </div>
+      )}
+
+      {/*  WARUNKOWE RENDEROWANIE MODALA (TYLKO DLA MANAGERA) */}
+      {isManager && (
+        <EmployeeFormModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onSuccess={handleCreationSuccess}
+          availableServices={availableServices}
+        />
       )}
     </div>
   );

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, type ReactElement } from 'react'; // Dodano import typu ReactElement
 import { useNavigate, type NavigateFunction } from 'react-router-dom'; // Import typu NavigateFunction
-import { useAuth } from '../context/useAuth.ts';
+import { useAuth } from '../hooks/useAuth';
 import './LoginPage.css';
 
 // 1. Jawne typowanie komponentu i zwracanego typu (naprawia 2 błędy)

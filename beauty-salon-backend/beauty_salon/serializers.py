@@ -2,7 +2,8 @@ from decimal import Decimal
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, cast
-
+from django.db import transaction
+from django.db.utils import IntegrityError
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
@@ -256,9 +257,7 @@ class ServiceCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Czas trwania musi być dodatni.")
         return value
 
-
-# ==================== EMPLOYEE SERIALIZERS (POPRAWIONE 'id' NA 'user') ====================
-
+# ==================== EMPLOYEE SERIALIZERS ====================
 
 class EmployeeSimpleSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(source="pk", read_only=True)
@@ -337,14 +336,21 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-
-
+# ==================== EMPLOYEE SERIALIZERS ====================
 class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source="pk", read_only=True)
+    # dane konta użytkownika
+    email = serializers.EmailField(write_only=True)
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        required=True,
+    )
+
+    # lista ID usług, mapowana na relację ManyToMany `skills`
     skill_ids = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=Service.objects.all(),
-        source="skills",
+        source="skills",   # w validated_data będzie klucz "skills" z obiektami Service
         write_only=True,
         required=False,
     )
@@ -353,23 +359,107 @@ class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
         model = Employee
         fields = [
             "id",
-            "user",
             "number",
             "first_name",
             "last_name",
             "phone",
             "hired_at",
-            "average_rating",
             "is_active",
-            "skill_ids",
+            "appointments_count",
+            "average_rating",
+            "skills",       # tylko do odczytu
+            "skill_ids",    # do zapisu (lista ID)
+            "email",
+            "password",
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["number", "average_rating"]
+        read_only_fields = [
+            "id",
+            "number",
+            "appointments_count",
+            "average_rating",
+            "skills",
+            "created_at",
+            "updated_at",
+        ]
 
-    def validate_user(self, value: AbstractBaseUser) -> AbstractBaseUser:
-        is_employee = getattr(value, "is_salon_employee", None)
-        if not callable(is_employee) or not is_employee():
-            raise serializers.ValidationError("Wybrane konto nie ma roli pracownika.")
-        return value
+    def create(self, validated_data: Dict[str, Any]) -> Employee:
+        email: str = validated_data.pop("email")
+        password: str = validated_data.pop("password")
+
+        # dzięki source="skills" mamy tu już listę obiektów Service
+        skills_raw = validated_data.pop("skills", [])
+        skills: list[Service] = cast(list[Service], skills_raw)
+
+        # sprawdzamy, czy mail nie jest już zajęty przez innego usera
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError(
+                {"email": "Użytkownik z takim adresem e-mail już istnieje."}
+            )
+
+        with transaction.atomic():
+            # tworzymy użytkownika (albo bierzemy istniejącego, gdyby w przyszłości było get_or_create)
+            user = User.objects.create_user(
+                email=email,
+                password=password,
+                role=User.RoleChoices.EMPLOYEE,
+                is_staff=True,
+            )
+
+            # jeśli Employee dla tego usera już istnieje (np. utworzony w sygnale) – tylko go uzupełniamy
+            employee, created = Employee.objects.get_or_create(
+                user=user,
+                defaults=validated_data,
+            )
+
+            if not created:
+                # aktualizacja pól pracownika, jeśli rekord już był
+                for attr, value in validated_data.items():
+                    setattr(employee, attr, value)
+                employee.save()
+
+            if skills:
+                employee.skills.set(skills)
+
+        return employee
+
+    def update(self, instance: Employee, validated_data: dict[str, Any]) -> Employee:
+        email: Optional[str] = validated_data.pop("email", None)
+        password: Optional[str] = validated_data.pop("password", None)
+
+        skills_raw = validated_data.pop("skills", None)
+        skills: Optional[list[Service]] = (
+            cast(list[Service], skills_raw) if skills_raw is not None else None
+        )
+
+        user = instance.user
+
+        # aktualizacja e-maila
+        if email is not None and email != user.email:
+            if User.objects.exclude(pk=user.pk).filter(email=email).exists():
+                raise serializers.ValidationError(
+                    {"email": "Użytkownik z takim adresem e-mail już istnieje."}
+                )
+            user.email = email
+
+        # aktualizacja hasła
+        if password:
+            user.set_password(password)
+
+        if email is not None or password:
+            user.save()
+
+        # pozostałe pola pracownika
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # usługi
+        if skills is not None:
+            instance.skills.set(skills)
+
+        return instance
 
 
 # ==================== CLIENT SERIALIZERS ====================
@@ -659,7 +749,7 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
     """
-    ✅ POPRAWKA: Używamy SlugRelatedField dla stabilnych kluczy biznesowych.
+    POPRAWKA: Używamy SlugRelatedField dla stabilnych kluczy biznesowych.
 
     Zamiast ID (które się zmienia po reset DB), używamy:
     - client: "CLI-0001" (number)
@@ -897,7 +987,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 # ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
 
 class PaymentCreateSerializer(serializers.ModelSerializer):
-    # ✅ Composite key: client_number + appointment_start
+    # Composite key: client_number + appointment_start
     client_number = serializers.SlugRelatedField(
         slug_field='number',
         queryset=Client.objects.all(),

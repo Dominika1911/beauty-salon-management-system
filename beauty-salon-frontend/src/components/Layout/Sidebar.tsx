@@ -2,7 +2,7 @@
 
 import React, { type ReactElement } from 'react';
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../context/useAuth';
+import { useAuth } from '../../hooks/useAuth';
 import type { UserRole } from '../../../types';
 
 // Definicja linków nawigacyjnych

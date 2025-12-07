@@ -2,7 +2,7 @@
 
 import React, { type ReactElement } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useAuth } from '../../context/useAuth'; // Ścieżka do useAuth w context/
+import { useAuth } from '../../hooks/useAuth'; // Ścieżka do useAuth w context/
 import { Sidebar } from './Sidebar';
 import './Layout.css';
 

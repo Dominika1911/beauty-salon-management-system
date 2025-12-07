@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
-import { useAuth } from '../context/useAuth.ts';
+import { useAuth } from '../hooks/useAuth';
 import { dashboardAPI } from '../api';
 import type {
   DashboardData,
