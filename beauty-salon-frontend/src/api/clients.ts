@@ -1,5 +1,6 @@
 import { api } from './axios';
-import type { Client, PaginatedResponse, ClientCreateData } from '../types';
+//  Poprawiony import: używamy ClientCreateUpdateData
+import type { Client, PaginatedResponse, ClientCreateUpdateData } from '../types';
 import type { AxiosResponse } from 'axios';
 
 // Parametry filtrowania i paginacji
@@ -13,8 +14,9 @@ interface ClientListParams {
 interface ClientsApi {
   list: (params?: ClientListParams) => Promise<AxiosResponse<PaginatedResponse<Client>>>;
   detail: (id: number) => Promise<AxiosResponse<Client>>;
-  create: (data: ClientCreateData) => Promise<AxiosResponse<Client>>;
-  update: (id: number, data: Partial<Client>) => Promise<AxiosResponse<Client>>;
+  //  Zaktualizowane typy wejściowe w create i update
+  create: (data: ClientCreateUpdateData) => Promise<AxiosResponse<Client>>;
+  update: (id: number, data: Partial<ClientCreateUpdateData>) => Promise<AxiosResponse<Client>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
 }
 
@@ -48,27 +50,30 @@ export const clientsAPI: ClientsApi = {
   /**
    * Utwórz klienta
    */
-  create: (data: ClientCreateData): Promise<AxiosResponse<Client>> => {
+  create: (data: ClientCreateUpdateData): Promise<AxiosResponse<Client>> => {
     return api.post<Client>(ENDPOINTS.base, data);
   },
 
   /**
    * Aktualizuj klienta
+   * Używamy PATCH, ponieważ aktualizujemy tylko część pól (Partial<T>)
    */
-  update: (id: number, data: Partial<Client>): Promise<AxiosResponse<Client>> => {
+  update: (id: number, data: Partial<ClientCreateUpdateData>): Promise<AxiosResponse<Client>> => {
     if (!id || id <= 0) {
       return Promise.reject(new Error('Invalid client ID'));
     }
+    // Zmieniamy na PATCH (bardziej odpowiednie dla częściowej aktualizacji)
     return api.patch<Client>(ENDPOINTS.detail(id), data);
   },
 
   /**
-   * Usuń klienta
+   * Usuń klienta (Soft Delete, ustawienie deleted_at w backendzie)
    */
   delete: (id: number): Promise<AxiosResponse<void>> => {
     if (!id || id <= 0) {
       return Promise.reject(new Error('Invalid client ID'));
     }
+    // Metoda DELETE jest używana dla Soft Delete w backendzie
     return api.delete<void>(ENDPOINTS.detail(id));
   },
 };
