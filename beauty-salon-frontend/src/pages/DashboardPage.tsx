@@ -27,7 +27,7 @@ const ClientDashboard: React.FC<ClientProps> = ({ data }: ClientProps): ReactEle
         <div className="stat-icon">💰</div>
         <div className="stat-content">
           <h3>Łączne wydatki</h3>
-          <p className="stat-value">{data.total_spent || '0.00'} PLN</p>
+          <p className="stat-value">{data.total_spent || data.stats?.total_spent || '0.00'} PLN</p>
         </div>
       </div>
 
@@ -90,7 +90,7 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): Re
         <div className="stat-icon">📅</div>
         <div className="stat-content">
           <h3>Wizyty dzisiaj</h3>
-          <p className="stat-value">{data.today_appointments_count || 0}</p>
+          <p className="stat-value">{data.stats?.today_appointments_count || data.stats?.today_appointments || 0}</p>
         </div>
       </div>
 
@@ -98,7 +98,7 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): Re
         <div className="stat-icon">📆</div>
         <div className="stat-content">
           <h3>Nadchodzące</h3>
-          <p className="stat-value">{data.upcoming_appointments_count || 0}</p>
+          <p className="stat-value">{data.stats?.upcoming_appointments_count || data.upcoming_appointments?.length || 0}</p>
         </div>
       </div>
     </div>
@@ -223,7 +223,7 @@ export const DashboardPage: React.FC = (): ReactElement => {
   if (error) {
     return (
       <div className="error-container">
-        <h2>⌠ Błąd</h2>
+        <h2>❌ Błąd</h2>
         <p>{error}</p>
         <button onClick={loadDashboard}>Spróbuj ponownie</button>
       </div>

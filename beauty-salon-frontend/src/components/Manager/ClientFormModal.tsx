@@ -1,16 +1,14 @@
 // src/components/Manager/ClientFormModal.tsx
 
 import React, { useState, useEffect, useCallback, type ReactElement } from 'react';
-import type { Client, ClientCreateUpdateData } from '../../../types';
+import type { Client, ClientCreateUpdateData } from '../../types';
 import { clientsAPI } from '../../api/clients';
 import { Modal } from '../UI/Modal';
 
-import '../Manager/EmployeeForm.css'; // Używamy tych samych stylów
+import '../Manager/EmployeeForm.css';
 
-// 🚨 Typ formularza: Używamy ClientCreateUpdateData
 type ClientFormData = ClientCreateUpdateData;
 
-// Ustalanie domyślnych danych
 const getInitialFormData = (client?: Client): ClientFormData => ({
     first_name: client?.first_name || '',
     last_name: client?.last_name || '',
@@ -25,7 +23,7 @@ interface ClientFormModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
-    clientToEdit?: Client; // Obiekt do edycji
+    clientToEdit?: Client;
 }
 
 export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSuccess, clientToEdit }): ReactElement => {
@@ -33,10 +31,9 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
     const [loading, setLoading] = useState<boolean>(false);
     const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-    const isEditing = !!clientToEdit;
-    const modalTitle = isEditing ? "Edytuj Klienta" : "Dodaj Nowego Klienta";
+    const isEditing: boolean = !!clientToEdit;
+    const modalTitle: string = isEditing ? "Edytuj Klienta" : "Dodaj Nowego Klienta";
 
-    // 🚨 Resetowanie formularza przy zmianie trybu / otwarciu
     useEffect(() => {
         if (isOpen) {
             setFormData(getInitialFormData(clientToEdit));
@@ -44,10 +41,10 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
         }
     }, [isOpen, clientToEdit]);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>): void => {
         const { name, value, type } = e.target;
 
-        setFormData(prev => ({
+        setFormData((prev: ClientFormData) => ({
             ...prev,
             [name]: type === 'checkbox'
                 ? (e.target as HTMLInputElement).checked
@@ -72,42 +69,34 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
             return false;
         }
 
-        // Możesz dodać walidację unikalności emaila, jeśli jest wymagana dla nowych klientów
-
         return true;
     }, [formData]);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
         if (!validateForm()) return;
 
         setLoading(true);
         setSubmissionError(null);
 
-        // Przygotowanie danych (usunięcie pustych pól)
         const dataToSend: Partial<ClientCreateUpdateData> = { ...formData };
         if (!dataToSend.email) dataToSend.email = null;
         if (!dataToSend.phone) dataToSend.phone = null;
         if (!dataToSend.internal_notes) delete dataToSend.internal_notes;
 
-
         try {
             if (isEditing) {
-                // 🚨 LOGIKA EDYCJI (UPDATE)
-                const clientId = clientToEdit!.id;
+                const clientId: number = clientToEdit!.id;
                 await clientsAPI.update(clientId, dataToSend);
-
             } else {
-                // LOGIKA TWORZENIA (CREATE)
                 await clientsAPI.create(dataToSend as ClientCreateUpdateData);
             }
 
             onSuccess();
             onClose();
 
-        } catch (error: any) {
-            console.error('Błąd z API:', error.response?.data);
-            // ... (tutaj powinna być Twoja logika parsowania błędów DRF)
+        } catch (error: unknown) {
+            console.error('Błąd z API:', (error as {response?: {data?: unknown}}).response?.data);
             setSubmissionError("Nie udało się zapisać klienta. Sprawdź, czy email/telefon nie są już używane.");
         } finally {
             setLoading(false);
@@ -116,16 +105,14 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
 
     return (
         <Modal title={modalTitle} isOpen={isOpen} onClose={onClose}>
-            <form onSubmit={handleSubmit} className="employee-form"> {/* Użyj tych samych stylów */}
+            <form onSubmit={handleSubmit} className="employee-form">
 
-                {/* DANE KLIENTA */}
                 <h4 className="form-section-title">Dane Podstawowe</h4>
                 <input type="text" name="first_name" placeholder="Imię" value={formData.first_name} onChange={handleChange} required />
                 <input type="text" name="last_name" placeholder="Nazwisko" value={formData.last_name} onChange={handleChange} required />
                 <input type="email" name="email" placeholder="Email" value={formData.email || ''} onChange={handleChange} />
                 <input type="tel" name="phone" placeholder="Telefon" value={formData.phone || ''} onChange={handleChange} />
 
-                {/* Preferencje i Notatki */}
                 <h4 className="form-section-title">Komunikacja i Notatki</h4>
                 <select name="preferred_contact" value={formData.preferred_contact} onChange={handleChange}>
                     <option value="email">Preferowany kontakt: Email</option>

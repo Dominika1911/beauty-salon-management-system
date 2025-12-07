@@ -1,5 +1,6 @@
 import { api } from './axios';
-import type { Service, ServiceCreateData, PaginatedResponse } from '../types';
+// 🚨 Zaktualizowany import: zakładamy, że w types.ts masz już ServiceCreateUpdateData
+import type { Service, PaginatedResponse, ServiceCreateUpdateData } from '../types';
 import type { AxiosResponse } from 'axios';
 
 // Parametry filtrowania i paginacji
@@ -15,8 +16,10 @@ interface ServicesApi {
   list: (params?: ServiceListParams) => Promise<AxiosResponse<PaginatedResponse<Service>>>;
   published: () => Promise<AxiosResponse<Service[]>>;
   detail: (id: number) => Promise<AxiosResponse<Service>>;
-  create: (data: ServiceCreateData) => Promise<AxiosResponse<Service>>;
-  update: (id: number, data: Partial<Service>) => Promise<AxiosResponse<Service>>;
+  // 🚨 Użycie ServiceCreateUpdateData
+  create: (data: ServiceCreateUpdateData) => Promise<AxiosResponse<Service>>;
+  // 🚨 Użycie ServiceCreateUpdateData i Partial dla PATCH
+  update: (id: number, data: Partial<ServiceCreateUpdateData>) => Promise<AxiosResponse<Service>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
 }
 
@@ -58,14 +61,15 @@ export const servicesAPI: ServicesApi = {
   /**
    * Utwórz usługę
    */
-  create: (data: ServiceCreateData): Promise<AxiosResponse<Service>> => {
+  create: (data: ServiceCreateUpdateData): Promise<AxiosResponse<Service>> => {
     return api.post<Service>(ENDPOINTS.base, data);
   },
 
   /**
    * Aktualizuj usługę
+   * Używamy PATCH do częściowej aktualizacji
    */
-  update: (id: number, data: Partial<Service>): Promise<AxiosResponse<Service>> => {
+  update: (id: number, data: Partial<ServiceCreateUpdateData>): Promise<AxiosResponse<Service>> => {
     if (!id || id <= 0) {
       return Promise.reject(new Error('Invalid service ID'));
     }
@@ -73,7 +77,7 @@ export const servicesAPI: ServicesApi = {
   },
 
   /**
-   * Usuń usługę
+   * Usuń usługę (Metoda DELETE)
    */
   delete: (id: number): Promise<AxiosResponse<void>> => {
     if (!id || id <= 0) {

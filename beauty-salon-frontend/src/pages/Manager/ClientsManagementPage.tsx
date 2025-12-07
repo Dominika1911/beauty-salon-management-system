@@ -8,7 +8,7 @@ import type { Client, PaginatedResponse } from '../../types';
 import '../../components/UI/Table/Table.css';
 import { useAuth } from '../../hooks/useAuth';
 
-const CLIENTS_PAGE_SIZE = 20;
+const CLIENTS_PAGE_SIZE: number = 20;
 
 export const ClientsManagementPage: React.FC = (): ReactElement => {
     const { user } = useAuth();
@@ -31,9 +31,9 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
         handleNextPage,
     } = usePagination(CLIENTS_PAGE_SIZE);
 
-    const isManager = user?.role === 'manager';
+    const isManager: boolean = user?.role === 'manager';
 
-    const fetchClients = async (page: number, size: number) => {
+    const fetchClients = async (page: number, size: number): Promise<void> => {
         try {
             setLoading(true);
             setError(null);
@@ -43,7 +43,7 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
                 page_size: size,
             });
 
-            const data = response.data as PaginatedResponse<Client>;
+            const data: PaginatedResponse<Client> = response.data as PaginatedResponse<Client>;
 
             setClients(data.results);
             setTotalCount(data.count);
@@ -56,7 +56,7 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
         }
     };
 
-    const handleCreationSuccess = () => {
+    const handleCreationSuccess = (): void => {
         //  CZYŚCI STANY PO ZAPISIE
         setClientToEdit(undefined);
         setCurrentPage(1);
@@ -65,7 +65,7 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
     };
 
     // FUNKCJA USUWANIA (SOFT DELETE)
-    const handleSoftDelete = useCallback(async (clientId: number) => {
+    const handleSoftDelete = useCallback(async (clientId: number): Promise<void> => {
 
         if (!window.confirm("UWAGA GDPR: Czy na pewno chcesz usunąć tego klienta? Spowoduje to Soft Delete w bazie danych.")) {
             return;
@@ -90,21 +90,22 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
     }, [currentPage]);
 
     // DEFINICJA KOLUMN Z EDYCJĄ I SOFT DELETE
+    // 🚨 POPRAWKA: Użyj 'first_name' jako key zamiast 'full_name'
     const columns: ColumnDefinition<Client>[] = useMemo(() => [
         { header: 'ID', key: 'id', width: '5%' },
         {
             header: 'Klient',
-            key: 'full_name',
-            render: (item) => `${item.first_name} ${item.last_name}`
+            key: 'first_name', // ✅ Użyj istniejącego klucza
+            render: (item: Client) => `${item.first_name} ${item.last_name}`
         },
-        { header: 'Email', key: 'email', render: (item) => item.email ?? '-' },
-        { header: 'Telefon', key: 'phone', render: (item) => item.phone ?? '-' },
+        { header: 'Email', key: 'email', render: (item: Client) => item.email ?? '-' },
+        { header: 'Telefon', key: 'phone', render: (item: Client) => item.phone ?? '-' },
         { header: 'Wizyt', key: 'visits_count', width: '8%' },
         { header: 'Wydano', key: 'total_spent_amount', width: '10%' },
         {
             header: 'Status',
             key: 'deleted_at',
-            render: (item) => (
+            render: (item: Client) => (
                 <span style={{ color: item.deleted_at ? 'red' : 'green' }}>
                     {item.deleted_at ? 'Usunięty (GDPR)' : 'Aktywny'}
                 </span>
@@ -115,7 +116,7 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
             header: 'Akcje',
             key: 'actions',
             width: '15%',
-            render: (item) => (
+            render: (item: Client) => (
                 <>
                     <button
                       onClick={() => {

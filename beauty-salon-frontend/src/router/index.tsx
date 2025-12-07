@@ -7,15 +7,15 @@ import { Layout } from '../components/Layout/Layout';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { LoginPage } from '../pages/LoginPage';
 
-// === KOMPONENTY STRON (IMPORTUJEMY PRAWDZIWE STRONY) ===
+// === KOMPONENTY STRON ===
 import { DashboardPage } from '../pages/DashboardPage';
 import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
+// Import pełnej strony zarządzania usługami
+import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
 
 
-
-
-const ServicesPage: React.FC = (): ReactElement => <h1>Usługi</h1>;
+// Tymczasowe/Placeholdery
 const AppointmentsPage: React.FC = (): ReactElement => <h1>Wizyty</h1>;
 const MySchedulePage: React.FC = (): ReactElement => <h1>Mój Grafik</h1>;
 const MyAppointmentsPage: React.FC = (): ReactElement => <h1>Moje Wizyty</h1>;
@@ -74,7 +74,12 @@ const router = createBrowserRouter([
       },
       {
         path: 'services',
-        element: <ServicesPage />,
+        element: (
+          // 🚨 ZMIANA: Dodano 'employee' i 'client' do ról
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
+            <ServicesManagementPage />
+          </ProtectedRoute>
+        ),
       },
       {
         path: 'my-appointments',
@@ -87,7 +92,6 @@ const router = createBrowserRouter([
       {
         path: 'employees',
         element: (
-          // ZMIANA: Dodano 'employee' do ról i użyto prawdziwej strony
           <ProtectedRoute allowedRoles={['manager', 'employee']}>
             <EmployeesManagementPage />
           </ProtectedRoute>

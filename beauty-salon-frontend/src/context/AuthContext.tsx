@@ -88,6 +88,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProv
   const value: AuthContextType = {
     user,
     loading,
+    isLoading: loading, // ✅ Dodano alias
     error,
     login,
     logout,

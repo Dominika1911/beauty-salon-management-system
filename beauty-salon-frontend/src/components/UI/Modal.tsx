@@ -1,7 +1,7 @@
 // src/components/UI/Modal.tsx
 
 import React, { type ReactElement } from 'react';
-import './Modal.css'; // 🚨 IMPORTUJEMY NOWE STYLE
+import './Modal.css';
 
 interface ModalProps {
     isOpen: boolean;
@@ -15,22 +15,35 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }
         return null;
     }
 
-    // Użycie backdrop, aby zamknąć modal po kliknięciu poza formularzem
     return (
         <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-
+            <div
+                className="modal-content"
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                style={{
+                    maxHeight: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}
+            >
                 <div className="modal-header">
                     <h2 className="modal-title">{title}</h2>
                     <button
                         onClick={onClose}
                         className="modal-close-btn"
+                        type="button"
                     >
                         &times;
                     </button>
                 </div>
 
-                {children}
+                <div style={{
+                    overflowY: 'auto',
+                    flex: 1,
+                    padding: '0 5px'
+                }}>
+                    {children}
+                </div>
             </div>
         </div>
     );

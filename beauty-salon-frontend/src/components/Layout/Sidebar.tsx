@@ -3,7 +3,7 @@
 import React, { type ReactElement } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import type { UserRole } from '../../../types';
+import type { UserRole } from '../../types';
 
 // Definicja linków nawigacyjnych
 interface NavLinkItem {
@@ -25,7 +25,7 @@ const navItems: NavLinkItem[] = [
     // 🚨 ZMIANA: Pracownicy widoczni dla Managera i Pracownika
     { to: 'employees', label: 'Pracownicy', roles: ['manager', 'employee'] },
 
-    // SPECIFICZNE DLA PRACOWNIKA
+    // SPECIFYCZNE DLA PRACOWNIKA
     { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
 
     // SPECIFICZNE DLA KLIENTA
@@ -50,7 +50,7 @@ export const Sidebar: React.FC = (): ReactElement => {
         );
     };
 
-    const handleLogout = () => {
+    const handleLogout = (): void => {
         void logout(); // Wywołanie asynchronicznej funkcji logout
     };
 

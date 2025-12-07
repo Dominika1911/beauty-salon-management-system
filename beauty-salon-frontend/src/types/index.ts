@@ -1,3 +1,7 @@
+// ============================================================================
+// CORE & PAGINATION
+// ============================================================================
+
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;
@@ -5,58 +9,261 @@ export interface PaginatedResponse<T> {
   results: T[];
 }
 
-// Zgodnie z modelem Client z Django
-export interface Client {
-  id: number;                   // automatyczny PK
-  user: number | null;          // FK do User (id) albo null
-  number: string | null;        // numer klienta
+// ============================================================================
+// USER & AUTH
+// ============================================================================
+
+export type UserRole = 'manager' | 'employee' | 'client';
+
+export interface User {
+  id: number;
+  email: string;
   first_name: string;
   last_name: string;
-  email: string | null;         // może być null
-  phone: string | null;         // może być null
+  role: UserRole;
+  role_display?: string; // Display name dla roli
+  is_active: boolean;
+  is_staff: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
-  visits_count: number;         // PositiveIntegerField
-  total_spent_amount: string;   // DRF zwykle zwraca Decimal jako string
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
 
+export interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  loading: boolean; // Alias dla isLoading
+  error: string | null;
+  isManager: boolean;
+  isEmployee: boolean;
+  isClient: boolean;
+  login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  refreshUser?: () => Promise<void>;
+  checkAuthStatus?: () => Promise<void>;
+}
+
+// ============================================================================
+// CLIENT
+// ============================================================================
+
+export interface Client {
+  id: number;
+  user: number | null;
+  number: string | null;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  visits_count: number;
+  total_spent_amount: string;
   marketing_consent: boolean;
   preferred_contact: 'email' | 'sms' | 'phone' | 'none';
-
   internal_notes: string;
-
-  // z TimestampedModel / SoftDeletableModel
-  created_at: string;           // ISO datetime
+  created_at: string;
   updated_at: string;
   deleted_at: string | null;
 }
 
-export interface EmployeeCreateData {
-    email: string;
-    password: string; // Wymagane dla nowego konta User
-    first_name: string;
-    last_name: string;
-    phone: string;
-    // Number (numer pracownika) i is_active są często zarządzane przez backend,
-    // ale dodamy je, jeśli mają być w formularzu:
-    number?: string;
-    is_active?: boolean;
-    skill_ids: number[]; // Lista ID usług, które pracownik potrafi wykonywać
-    hired_at?: string; // Data zatrudnienia
+export interface ClientCreateUpdateData {
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  marketing_consent?: boolean;
+  preferred_contact?: 'email' | 'sms' | 'phone' | 'none';
+  internal_notes?: string;
 }
+
+// ============================================================================
+// SERVICE
+// ============================================================================
+
+export interface Service {
+  id: number;
+  name: string;
+  description: string;
+  price: string;
+  duration: string;
+  category: string;
+  is_published: boolean;
+  promotion: Record<string, any> | string; // Może być obiekt lub JSON string
+  image_url: string;
+  reservations_count: number;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface ServiceCreateUpdateData {
+  name: string;
+  description?: string;
+  price: number;
+  duration: string;
+  category?: string;
+  is_published?: boolean;
+  promotion?: Record<string, any> | string; // Może być obiekt lub JSON string
+  image_url?: string;
+}
+
+// ============================================================================
+// EMPLOYEE
+// ============================================================================
 
 export interface Employee {
   id: number;
+  user: number;
   number: string;
   first_name: string;
   last_name: string;
   phone: string;
   hired_at: string;
   is_active: boolean;
-  average_rating: string; // DecimalField jako string
-  appointments_count: number;
-  user_email?: string;
-  // Pełny typ Employee musi zawierać listę obiektów Service
   skills: Service[];
-  skill_ids?: number[];
+  appointments_count: number;
+  average_rating: string;
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
+  user_email?: string;
+  skill_ids?: number[];
+}
+
+export interface EmployeeCreateData {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  number?: string;
+  is_active?: boolean;
+  skill_ids: number[];
+  hired_at?: string;
+}
+
+// ============================================================================
+// APPOINTMENT
+// ============================================================================
+
+export type AppointmentStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
+
+export interface Appointment {
+  id: number;
+  client: number | null;
+  employee: number;
+  service: number;
+  start: string;
+  end: string;
+  status: AppointmentStatus;
+  internal_notes: string;
+  booking_channel: string;
+  client_notes: string;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+  cancellation_reason: string;
+  reminder_sent: boolean;
+  reminder_sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+
+  // Expanded fields (opcjonalnie zwracane przez backend)
+  client_data?: Client;
+  employee_data?: Employee;
+  service_data?: Service;
+}
+
+export interface AppointmentCreateData {
+  client?: number | null;
+  employee: number;
+  service: number;
+  start: string;
+  end: string;
+  status?: AppointmentStatus;
+  internal_notes?: string;
+  booking_channel?: string;
+  client_notes?: string;
+}
+
+export interface AppointmentStatusUpdateData {
+  status: AppointmentStatus;
+  cancellation_reason?: string;
+}
+
+// ============================================================================
+// DASHBOARD
+// ============================================================================
+
+export interface DashboardAppointment {
+  id: number;
+  client_name: string;
+  service_name: string;
+  employee_name?: string;
+  start: string;
+  end: string;
+  status: AppointmentStatus;
+  status_display?: string; // Human-readable status
+}
+
+export interface DashboardData {
+  role: UserRole;
+  user: User;
+  stats?: Record<string, any>;
+  upcoming_appointments?: DashboardAppointment[];
+  recent_appointments?: DashboardAppointment[];
+}
+
+export interface ClientDashboardData extends DashboardData {
+  role: 'client';
+  stats: {
+    total_appointments: number;
+    upcoming_appointments: number;
+    completed_appointments: number;
+    total_spent?: string; // Opcjonalne
+  };
+  total_spent?: string; // Dodatkowe pole na poziomie głównym
+  client?: {
+    visits_count: number;
+  };
+  last_visits?: DashboardAppointment[];
+}
+
+export interface EmployeeDashboardData extends DashboardData {
+  role: 'employee';
+  stats: {
+    today_appointments?: number;
+    today_appointments_count?: number; // Alias
+    week_appointments?: number;
+    upcoming_appointments_count?: number;
+    completed_this_month?: number;
+    average_rating?: string;
+  };
+  today_appointments?: DashboardAppointment[];
+}
+
+export interface ManagerDashboardData extends DashboardData {
+  role: 'manager';
+  stats: {
+    total_appointments: number;
+    pending_appointments: number;
+    completed_today: number;
+    revenue_today: string;
+    revenue_this_month: string;
+    total_clients: number;
+    total_employees: number;
+    active_employees: number;
+  };
+  today?: {
+    total_appointments: number;
+  };
 }

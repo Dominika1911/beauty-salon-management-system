@@ -7,10 +7,9 @@ import { usePagination } from '../../hooks/usePagination';
 import type { Employee, PaginatedResponse, Service } from '../../types';
 
 import '../../components/UI/Table/Table.css';
-
 import { useAuth } from '../../hooks/useAuth';
 
-const EMPLOYEES_PAGE_SIZE = 20;
+const EMPLOYEES_PAGE_SIZE: number = 20;
 
 export const EmployeesManagementPage: React.FC = (): ReactElement => {
   const { user } = useAuth();
@@ -21,7 +20,6 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
   const [error, setError] = useState<string | null>(null);
 
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  // STAN DLA EDYCJI
   const [employeeToEdit, setEmployeeToEdit] = useState<Employee | undefined>(undefined);
 
   const {
@@ -35,9 +33,9 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
     handleNextPage,
   } = usePagination(EMPLOYEES_PAGE_SIZE);
 
-  const isManager = user?.role === 'manager';
+  const isManager: boolean = user?.role === 'manager';
 
-  const fetchEmployees = async (page: number, size: number) => {
+  const fetchEmployees = useCallback(async (page: number, size: number): Promise<void> => {
     try {
       setLoading(true);
       setError(null);
@@ -47,7 +45,7 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
         page_size: size,
       });
 
-      const data = response.data as PaginatedResponse<Employee>;
+      const data: PaginatedResponse<Employee> = response.data as PaginatedResponse<Employee>;
 
       setEmployees(data.results);
       setTotalCount(data.count);
@@ -58,30 +56,27 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [setTotalCount]);
 
-  const fetchServices = async () => {
+  const fetchServices = useCallback(async (): Promise<void> => {
       try {
           const response = await servicesAPI.list({ page_size: 100 });
           setAvailableServices(response.data.results);
       } catch (err) {
           console.error("Błąd ładowania usług:", err);
       }
-  };
+  }, []);
 
-  const handleCreationSuccess = () => {
-      // CZYŚCI STANY PO ZAPISIE
+  const handleCreationSuccess = useCallback((): void => {
       setEmployeeToEdit(undefined);
       setCurrentPage(1);
       void fetchEmployees(1, pageSize);
       setIsModalOpen(false);
-  };
+  }, [fetchEmployees, pageSize, setCurrentPage]);
 
-  // FUNKCJA DEZAKTYWACJI (USUWANIA)
-  const handleDeactivate = useCallback(async (employeeId: number, currentStatus: boolean) => {
-
-      const newStatus = !currentStatus;
-      const confirmMessage = newStatus
+  const handleDeactivate = useCallback(async (employeeId: number, currentStatus: boolean): Promise<void> => {
+      const newStatus: boolean = !currentStatus;
+      const confirmMessage: string = newStatus
           ? "Czy na pewno chcesz aktywować konto tego pracownika?"
           : "Czy na pewno chcesz dezaktywować konto tego pracownika? Nie będzie mógł się zalogować.";
 
@@ -90,40 +85,35 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
       }
 
       try {
-          // Używamy metody update do zmiany statusu is_active
           await employeesAPI.update(employeeId, { is_active: newStatus });
-          // Po sukcesie odświeżamy bieżącą stronę
           void fetchEmployees(currentPage, pageSize);
-
       } catch (err) {
           console.error("Błąd podczas dezaktywacji pracownika:", err);
           setError("Nie udało się zmienić statusu pracownika.");
       }
-  }, [currentPage, pageSize]);
-
+  }, [currentPage, pageSize, fetchEmployees]);
 
   useEffect(() => {
     void fetchEmployees(currentPage, pageSize);
-  }, [currentPage]);
+  }, [currentPage, pageSize, fetchEmployees]);
 
   useEffect(() => {
     void fetchServices();
-  }, []);
+  }, [fetchServices]);
 
-  // AKTUALIZACJA KOLUMN O EDYCJĘ I DEZAKTYWACJĘ
   const columns: ColumnDefinition<Employee>[] = useMemo(() => [
     { header: 'ID', key: 'id', width: '5%' },
     {
       header: 'Imię i Nazwisko',
       key: 'first_name',
-      render: (item) => `${item.first_name ?? ''} ${item.last_name ?? ''}`
+      render: (item: Employee) => `${item.first_name ?? ''} ${item.last_name ?? ''}`
     },
     { header: 'Numer', key: 'number', width: '10%' },
     { header: 'Telefon', key: 'phone' },
     {
       header: 'Status',
       key: 'is_active',
-      render: (item) => (
+      render: (item: Employee) => (
         <span style={{ color: item.is_active ? 'green' : 'red' }}>
            {item.is_active ? 'Aktywny' : 'Nieaktywny'}
         </span>
@@ -136,12 +126,12 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
       header: 'Akcje',
       key: 'actions',
       width: '15%',
-      render: (item) => (
+      render: (item: Employee) => (
           <>
             <button
               onClick={() => {
-                  setEmployeeToEdit(item); // Ustaw pracownika do edycji
-                  setIsModalOpen(true);    // Otwórz modal
+                  setEmployeeToEdit(item);
+                  setIsModalOpen(true);
               }}
               style={{ marginRight: '5px' }}
             >
@@ -157,22 +147,39 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
           </>
       ),
     },
-  ], [handleDeactivate]); // Dodanie handleDeactivate jako zależności
+  ], [handleDeactivate]);
 
-  // ... (reszta kodu bez zmian) ...
-
-  // ... (Kod JSX) ...
+  if (loading && employees.length === 0) {
+    return (
+      <div style={{ padding: 20 }}>
+        <h1>Zarządzanie Pracownikami</h1>
+        <p>Ładowanie listy pracowników...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="employees-management-page" style={{ padding: 20 }}>
       <h1>Zarządzanie Pracownikami</h1>
 
-      {/* WARUNKOWE RENDEROWANIE PRZYCISKU (TYLKO DLA MANAGERA) */}
+      {error && (
+        <div style={{
+          padding: '10px',
+          marginBottom: '20px',
+          backgroundColor: '#ffebee',
+          color: '#c62828',
+          borderRadius: '4px',
+          border: '1px solid #ef5350'
+        }}>
+          <strong>Błąd:</strong> {error}
+        </div>
+      )}
+
       {isManager && (
         <div style={{ marginBottom: 20, textAlign: 'right' }}>
           <button
             onClick={() => {
-                setEmployeeToEdit(undefined); //W trybie tworzenia upewnij się, że stan edycji jest pusty
+                setEmployeeToEdit(undefined);
                 setIsModalOpen(true);
             }}
             style={{ padding: '10px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
@@ -193,7 +200,6 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
         />
       </div>
 
-      {/* Paginacja */}
       {totalPages > 1 && (
         <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
           <button
@@ -218,18 +224,16 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
         </div>
       )}
 
-      {/* WARUNKOWE RENDEROWANIE MODALA (TYLKO DLA MANAGERA) */}
       {isManager && (
         <EmployeeFormModal
           isOpen={isModalOpen}
-          // W trybie edycji, zamykanie modala musi resetować stan edycji
           onClose={() => {
               setIsModalOpen(false);
               setEmployeeToEdit(undefined);
           }}
           onSuccess={handleCreationSuccess}
           availableServices={availableServices}
-          employeeToEdit={employeeToEdit} // PRZEKAZYWANIE OBIEKTU DO EDYCJI
+          employeeToEdit={employeeToEdit}
         />
       )}
     </div>

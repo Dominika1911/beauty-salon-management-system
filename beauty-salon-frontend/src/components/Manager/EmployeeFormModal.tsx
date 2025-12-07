@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, type ReactElement } from 'react';
-import type { EmployeeCreateData, Service, Employee } from '../../../types';
+import type { EmployeeCreateData, Service, Employee } from '../../types';
 import { employeesAPI } from '../../api/employees';
 import { Modal } from '../UI/Modal';
 
@@ -20,7 +20,7 @@ interface EmployeeFormData {
     skill_ids: number[];
 }
 
-// UZUPEŁNIONY INTERFEJS PROPÓW
+// UZUPEŁNIONY INTERFEJS PROPSÓW
 interface EmployeeFormModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -40,7 +40,7 @@ const getInitialFormData = (employee?: Employee): EmployeeFormData => ({
     // Nowe pola dla edycji
     is_active: employee?.is_active ?? true,
     hired_at: employee?.hired_at ? employee.hired_at.substring(0, 10) : new Date().toISOString().substring(0, 10),
-    skill_ids: employee?.skills.map(s => s.id) || [],
+    skill_ids: employee?.skills.map((s: Service) => s.id) || [],
 });
 
 export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, onClose, onSuccess, availableServices, employeeToEdit }): ReactElement => {
@@ -61,21 +61,21 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, on
     }, [isOpen, employeeToEdit]);
 
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>): void => {
         const { name, value, type } = e.target;
-        setFormData(prev => ({
+        setFormData((prev: EmployeeFormData) => ({
             ...prev,
             // Obsługa checkboxów i wartości
             [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
         }));
     };
 
-    const handleSkillsChange = (serviceId: number, isChecked: boolean) => {
-        setFormData(prev => ({
+    const handleSkillsChange = (serviceId: number, isChecked: boolean): void => {
+        setFormData((prev: EmployeeFormData) => ({
             ...prev,
             skill_ids: isChecked
                 ? [...prev.skill_ids, serviceId]
-                : prev.skill_ids.filter(id => id !== serviceId),
+                : prev.skill_ids.filter((id: number) => id !== serviceId),
         }));
     };
 
@@ -121,7 +121,7 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, on
     }, [formData, isEditing]);
 
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
         if (!validateForm()) return;
 
@@ -141,7 +141,7 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, on
         try {
             if (isEditing) {
                 // 🚨 LOGIKA EDYCJI (UPDATE)
-                const employeeId = employeeToEdit!.id;
+                const employeeId: number = employeeToEdit!.id;
 
                 // Wysłanie tylko tych pól, które są wymagane przez model Employee w PATCH
                 const updateData = {
@@ -164,27 +164,28 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, on
             onSuccess();
             onClose();
 
-        } catch (error: any) {
-            console.error('Błąd z API:', error.response?.data);
+        } catch (error: unknown) {
+            const err = error as { response?: { data?: Record<string, unknown> } };
+            console.error('Błąd z API:', err.response?.data);
 
             let errorMessage = 'Wystąpił nieznany błąd podczas zapisywania pracownika.';
 
             // ... (logika parsowania błędów DRF, jak w oryginalnym pliku) ...
-            const errorData = error.response?.data;
+            const errorData = err.response?.data;
             if (typeof errorData === 'object' && errorData !== null) {
-                const keys = Object.keys(errorData);
+                const keys: string[] = Object.keys(errorData);
                 if (keys.length > 0) {
-                    const firstKey = keys[0];
-                    let errorMsg = errorData[firstKey];
+                    const firstKey: string = keys[0];
+                    let errorMsg: unknown = errorData[firstKey];
                     if (Array.isArray(errorMsg)) { errorMsg = errorMsg[0]; }
 
                     if (firstKey !== 'detail' && firstKey !== 'non_field_errors') {
                          errorMessage = `Błąd w polu "${firstKey.toUpperCase()}": ${errorMsg}`;
                     } else {
-                         errorMessage = errorMsg;
+                         errorMessage = String(errorMsg);
                     }
                 } else if (errorData.detail) {
-                    errorMessage = errorData.detail;
+                    errorMessage = String(errorData.detail);
                 }
             }
             // ----------------------------------------------------
@@ -238,12 +239,12 @@ export const EmployeeFormModal: React.FC<EmployeeFormModalProps> = ({ isOpen, on
                 {/* UMIEJĘTNOŚCI (Skills) */}
                 <h4 className="form-section-title">Usługi, które wykonuje</h4>
                 <div className="skills-container">
-                    {availableServices.map(service => (
+                    {availableServices.map((service: Service) => (
                         <label key={service.id} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <input
                                 type="checkbox"
                                 checked={formData.skill_ids.includes(service.id)}
-                                onChange={(e) => handleSkillsChange(service.id, e.target.checked)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleSkillsChange(service.id, e.target.checked)}
                             />
                             {service.name}
                         </label>
