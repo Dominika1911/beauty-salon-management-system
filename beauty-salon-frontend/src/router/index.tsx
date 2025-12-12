@@ -12,6 +12,8 @@ import { DashboardPage } from '../pages/DashboardPage';
 import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
+import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
+
 // 🚨 DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
 import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
 // 🚨 DODANO: Strona dla Pracownika (wcześniej placeholder)
@@ -67,6 +69,15 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+        {
+        path: 'appointments-calendar',
+        element: (
+            <ProtectedRoute allowedRoles={['manager', 'employee']}>
+                 <AppointmentsCalendarPage />
+            </ProtectedRoute>
+        ),
+      },
+
       // 🚨 ZMIENIONO: Użycie pełnej strony Pracownika dla Mój Grafik
       {
         path: 'my-schedule',

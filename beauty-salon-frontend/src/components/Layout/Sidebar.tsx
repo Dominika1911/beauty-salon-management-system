@@ -15,6 +15,7 @@ const navItems: NavLinkItem[] = [
   { to: 'services', label: 'Katalog Usług', roles: [] },
 
   { to: 'appointments', label: 'Wizyty (Zarządzanie)', roles: ['manager', 'employee'] },
+    { to: 'appointments-calendar', label: 'Wizyty (Kalendarz)', roles: ['manager', 'employee'] },
   { to: 'clients', label: 'Klienci', roles: ['manager', 'employee'] },
   { to: 'employees', label: 'Pracownicy', roles: ['manager', 'employee'] },
 
