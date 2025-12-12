@@ -132,6 +132,10 @@ export interface Employee {
   deleted_at: string | null;
   user_email?: string;
   skill_ids?: number[];
+
+  // ✅ DODANE: zgodne z backendem (Schedule + TimeOff)
+  schedule?: Schedule | null;
+  time_offs?: TimeOff[];
 }
 
 export interface EmployeeCreateData {
@@ -268,20 +272,60 @@ export interface ManagerDashboardData extends DashboardData {
   };
 }
 
+// ============================================================================
+// TIME OFF
+// ============================================================================
+
+export type TimeOffStatus = 'pending' | 'approved' | 'rejected';
+export type TimeOffType = 'vacation' | 'sick_leave' | 'other';
+
 export interface TimeOff {
-    id: number;
-    employee: number; // ID pracownika
-    start_time: string; // Pełna data i godzina rozpoczęcia (ISO 8601)
-    end_time: string;   // Pełna data i godzina zakończenia
-    reason: string;
-    is_approved: boolean; // Czy manager zatwierdził nieobecność
-    created_at: string;
+  id: number;
+  employee: number;     // ID pracownika
+  date_from: string;    // YYYY-MM-DD
+  date_to: string;      // YYYY-MM-DD
+  status: TimeOffStatus;
+  type: TimeOffType;
+  reason: string;
+
+  approved_by?: number | null;
+  approved_at?: string | null;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface TimeOffCreateUpdateData {
-    employee: number;
-    start_time: string;
-    end_time: string;
-    reason: string;
-    // statusy mogą być np. 'pending' | 'approved' | 'rejected' w backendzie
+  employee: number;
+  date_from: string;
+  date_to: string;
+  type?: TimeOffType;
+  reason?: string;
+  status?: TimeOffStatus; // raczej manager
+}
+
+// ============================================================================
+// SCHEDULE
+// ============================================================================
+
+export type Weekday =
+  | 'Poniedziałek'
+  | 'Wtorek'
+  | 'Środa'
+  | 'Czwartek'
+  | 'Piątek'
+  | 'Sobota'
+  | 'Niedziela';
+
+export interface ScheduleEntry {
+  id?: number;
+  weekday: Weekday;
+  start_time: string; // HH:MM:SS
+  end_time: string;   // HH:MM:SS
+}
+
+export interface Schedule {
+  status: 'active' | 'inactive';
+  availability_periods: ScheduleEntry[];
+  breaks: any[];
 }

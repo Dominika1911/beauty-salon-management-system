@@ -44,13 +44,16 @@ from .views import (
     PopularServicesView,
 )
 
-# ✅ Importy widoków auth
+# Importy widoków auth
 from .auth_views import (
     csrf,
     SessionLoginView,
     SessionLogoutView,
     AuthStatusView,
 )
+
+from .views import EmployeeScheduleUpdateView
+
 
 # =====================================================================
 # ROUTER DLA VIEWSETS
@@ -98,11 +101,13 @@ router.register(r'stats-snapshots', StatsSnapshotViewSet, basename='statssnapsho
 # =====================================================================
 
 urlpatterns = [
-    # ✅ AUTHENTICATION ENDPOINTS
+    # AUTHENTICATION ENDPOINTS
     path('auth/csrf/', csrf, name='csrf'),
     path('auth/login/', SessionLoginView.as_view(), name='login'),
     path('auth/logout/', SessionLogoutView.as_view(), name='logout'),
     path('auth/status/', AuthStatusView.as_view(), name='auth-status'),
+    path("employees/<int:employee_id>/schedule/",EmployeeScheduleUpdateView.as_view(),name="employee-schedule-update",),
+
 
     # SYSTEM SETTINGS (nie jest ViewSet)
     path('settings/', SystemSettingsView.as_view(), name='system-settings'),

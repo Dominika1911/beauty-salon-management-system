@@ -1,16 +1,19 @@
+// Fragment z main.tsx
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import { AppRouter } from './router';
+import { AuthProvider } from './context/AuthContext.tsx';
+import { NotificationProvider } from './components/UI/Notification'; // 🚨 DODANO
+
 import './index.css';
 
-const rootElement: HTMLElement | null = document.getElementById('root');
-
-if (!rootElement) {
-  throw new Error('Root element not found');
-}
-
-ReactDOM.createRoot(rootElement).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <NotificationProvider> {/* 🚨 PODŁĄCZENIE PROVIDERA */}
+      <AuthProvider>
+        <AppRouter />
+      </AuthProvider>
+    </NotificationProvider>
   </React.StrictMode>
 );

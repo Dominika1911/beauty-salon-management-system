@@ -14,7 +14,7 @@ from rest_framework import viewsets, status, permissions, serializers, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from django.shortcuts import get_object_or_404
 # ============================================================================
 # IMPORTY PERMISSIONS Z OSOBNEGO PLIKU
 # ============================================================================
@@ -88,6 +88,7 @@ from .serializers import (
     ClientSoftDeleteSerializer,
     # SCHEDULE & TIME OFF
     ScheduleSerializer,
+    ScheduleUpdateSerializer,
     TimeOffSerializer,
     TimeOffApproveSerializer,
     # APPOINTMENTS
@@ -591,6 +592,61 @@ class ScheduleViewSet(viewsets.ModelViewSet):
         serializer = ScheduleSerializer(qs, many=True)
         return Response(serializer.data)
 
+class EmployeeScheduleUpdateView(APIView):
+    permission_classes = [CanManageSchedule]
+
+    def get(self, request, employee_id: int):
+        """
+        Pobierz grafik pracownika
+        """
+        employee = get_object_or_404(Employee, pk=employee_id)
+
+        schedule = Schedule.objects.filter(employee=employee).first()
+
+        if not schedule:
+            # Zwróć pusty grafik zamiast 404
+            return Response(
+                {
+                    "id": None,
+                    "employee": employee_id,
+                    "availability_periods": [],
+                    "breaks": [],
+                    "status": "active",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        serializer = ScheduleSerializer(schedule)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, employee_id: int):
+        """
+        Zapisz / zaktualizuj grafik pracownika
+        """
+        employee = get_object_or_404(Employee, pk=employee_id)
+
+        schedule, _ = Schedule.objects.get_or_create(
+            employee=employee,
+            defaults={
+                "availability_periods": [],
+                "breaks": [],
+                "status": "active",
+            },
+        )
+
+        serializer = ScheduleUpdateSerializer(
+            schedule,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(
+            ScheduleSerializer(schedule).data,
+            status=status.HTTP_200_OK,
+        )
+
 
 # ==================== TIME OFF VIEWS ====================
 
@@ -920,7 +976,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
 # ==================== NOTE & MEDIA VIEWS ====================
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class NoteViewSet(viewsets.ModelViewSet):
     """
     Notatki do wizyt.
@@ -985,7 +1040,7 @@ class NoteViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         serializer.save(author=self.request.user)
 
-# Ta klasa miała złe wcięcie i została poprawiona
+
 class MediaAssetViewSet(viewsets.ModelViewSet):
     """
     Materiały (portfolio, zdjęcia efektów itd.).
@@ -1038,7 +1093,6 @@ class MediaAssetViewSet(viewsets.ModelViewSet):
 
 # ==================== PAYMENT & INVOICE VIEWS ====================
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     Płatności za wizyty.
@@ -1125,7 +1179,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
             }
         )
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Faktury.
@@ -1178,8 +1231,6 @@ class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(serializer.data)
 
 # ==================== NOTIFICATION & REPORT VIEWS ====================
-
-# Ta klasa miała złe wcięcie i została poprawiona
 class NotificationViewSet(viewsets.ModelViewSet):
     """
     Powiadomienia (np. przypomnienia o wizycie).
@@ -1243,7 +1294,6 @@ class NotificationViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer: BaseSerializer[Any]) -> None:
         serializer.save()
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Wygenerowane raporty PDF (tylko manager).
@@ -1265,7 +1315,6 @@ class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
 
 # ==================== AUDIT LOG & SYSTEM SETTINGS ====================
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Logi audytowe systemu (tylko manager).
@@ -1285,7 +1334,6 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self) -> QuerySet[AuditLog]:
         return super().get_queryset()
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class SystemSettingsView(APIView):
     """
     Ustawienia systemowe (tylko manager).
@@ -1325,7 +1373,6 @@ class SystemSettingsView(APIView):
 
 # ==================== STATS SNAPSHOT VIEWS ====================
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Zapisane zrzuty statystyk (np. nocne batch'e).
@@ -1347,7 +1394,6 @@ class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
 
 # ==================== STATISTICS VIEW ====================
 
-# Ta klasa miała złe wcięcie i została poprawiona
 class StatisticsView(APIView):
     """
     Globalne statystyki salonu (wizyty, przychody, usługi, pracownicy).
@@ -1471,8 +1517,6 @@ class StatisticsView(APIView):
         return Response(data)
 
 # ==================== DASHBOARD VIEW ====================
-
-# Ta klasa miała złe wcięcie i została poprawiona
 class DashboardView(APIView):
     """
     Dashboard dopasowany do roli użytkownika:
@@ -1495,7 +1539,7 @@ class DashboardView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # ✅ POPRAWIONE: używamy is_client, is_employee, is_manager
+        #używamy is_client, is_employee, is_manager
         if hasattr(user, "is_client") and getattr(user, "is_client", False):
             return self._client_dashboard(user, now, today)
 
@@ -1650,8 +1694,6 @@ class DashboardView(APIView):
         return Response(data)
 
 # ==================== POPULAR SERVICES VIEW (EXTRA) ====================
-
-# Ta klasa miała złe wcięcie i została poprawiona
 class PopularServicesView(APIView):
     """
     Popularne usługi (na podstawie liczby wizyt w ostatnich X dniach).

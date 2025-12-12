@@ -1,92 +1,81 @@
 // src/components/Layout/Sidebar.tsx
-
-import React, { type ReactElement } from 'react';
+import React, { type ReactElement, useMemo } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import type { UserRole } from '../../types';
 
-// Definicja linków nawigacyjnych
 interface NavLinkItem {
-    to: string;
-    label: string;
-    // Pusta tablica oznacza, że jest widoczny dla wszystkich zalogowanych.
-    roles: UserRole[];
+  to: string;     // ścieżka bez wiodącego "/"
+  label: string;
+  roles: UserRole[]; // [] = dostępne dla wszystkich zalogowanych
 }
 
 const navItems: NavLinkItem[] = [
-    // Widoczne dla wszystkich zalogowanych
-    { to: 'dashboard', label: 'Dashboard', roles: [] },
-    { to: 'services', label: 'Katalog Usług', roles: [] },
+  { to: 'dashboard', label: 'Dashboard', roles: [] },
+  { to: 'services', label: 'Katalog Usług', roles: [] },
 
-    // ZARZĄDZANIE (Manager, Pracownik)
-    { to: 'appointments', label: 'Wizyty (Zarządzanie)', roles: ['manager', 'employee'] },
-    { to: 'clients', label: 'Klienci', roles: ['manager', 'employee'] },
+  { to: 'appointments', label: 'Wizyty (Zarządzanie)', roles: ['manager', 'employee'] },
+  { to: 'clients', label: 'Klienci', roles: ['manager', 'employee'] },
+  { to: 'employees', label: 'Pracownicy', roles: ['manager', 'employee'] },
 
-    // 🚨 ZMIANA: Pracownicy widoczni dla Managera i Pracownika
-    { to: 'employees', label: 'Pracownicy', roles: ['manager', 'employee'] },
+  { to: 'schedule', label: 'Grafiki Pracowników', roles: ['manager'] },
 
-    // SPECIFYCZNE DLA PRACOWNIKA
-    { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
+  { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
+  { to: 'my-appointments', label: 'Moje Rezerwacje', roles: ['client'] },
 
-    // SPECIFICZNE DLA KLIENTA
-    { to: 'my-appointments', label: 'Moje Rezerwacje', roles: ['client'] },
-
-    // TYLKO MANAGER
-    { to: 'statistics', label: 'Statystyki', roles: ['manager'] },
-    { to: 'settings', label: 'Ustawienia Systemu', roles: ['manager'] },
+  { to: 'statistics', label: 'Statystyki', roles: ['manager'] },
+  { to: 'settings', label: 'Ustawienia Systemu', roles: ['manager'] },
 ];
 
 export const Sidebar: React.FC = (): ReactElement => {
-    const { user, isManager, isEmployee, isClient, logout } = useAuth();
+  const { user, logout } = useAuth();
 
-    // Funkcja filtrująca linki według uprawnień
-    const isLinkVisible = (roles: NavLinkItem['roles']): boolean => {
-        if (roles.length === 0) return true; // Dla wszystkich zalogowanych
+  // Jedno źródło prawdy: rola z user
+  const role = user?.role;
 
-        return (
-            (isManager && roles.includes('manager')) ||
-            (isEmployee && roles.includes('employee')) ||
-            (isClient && roles.includes('client'))
-        );
-    };
+  const visibleNavItems = useMemo(() => {
+    return navItems.filter((item) => {
+      if (item.roles.length === 0) return true; // dla wszystkich zalogowanych
+      if (!role) return false; // gdy user jeszcze się ładuje
+      return item.roles.includes(role);
+    });
+  }, [role]);
 
-    const handleLogout = (): void => {
-        void logout(); // Wywołanie asynchronicznej funkcji logout
-    };
+  const handleLogout = (): void => {
+    void logout();
+  };
 
-    return (
-        <aside className="sidebar">
-            <div className="sidebar-header">
-                <h2>💅 Salon System</h2>
-            </div>
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <h2>💅 Beauty Salon Management System</h2>
+      </div>
 
-            <nav className="sidebar-nav">
-                {navItems
-                    .filter(item => isLinkVisible(item.roles))
-                    .map((item) => (
-                        <NavLink
-                            key={item.to}
-                            to={`/${item.to}`}
-                            className={({ isActive }) =>
-                                isActive ? 'nav-link active' : 'nav-link'
-                            }
-                        >
-                            {item.label}
-                        </NavLink>
-                    ))
-                }
-            </nav>
+      <nav className="sidebar-nav">
+        {visibleNavItems.map((item) => (
+          <NavLink
+            key={item.to}
+            to={`/${item.to}`}
+            className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+          >
+            {item.label}
+          </NavLink>
+        ))}
+      </nav>
 
-            <div className="sidebar-footer">
-                <div className="user-info">
-                    <p>Zalogowano jako:</p>
-                    <strong>{user?.email}</strong>
-                    <span className={`user-role role-${user?.role}`}>{user?.role}</span>
-                </div>
-                <button onClick={handleLogout} className="logout-btn">
-                    Wyloguj
-                </button>
-            </div>
-        </aside>
-    );
+      <div className="sidebar-footer">
+        <div className="user-info">
+          <p>Zalogowano jako:</p>
+          <strong>{user?.email ?? '—'}</strong>
+          <span className={`user-role role-${user?.role ?? 'unknown'}`}>
+            {user?.role ?? 'unknown'}
+          </span>
+        </div>
+
+        <button onClick={handleLogout} className="logout-btn">
+          Wyloguj
+        </button>
+      </div>
+    </aside>
+  );
 };

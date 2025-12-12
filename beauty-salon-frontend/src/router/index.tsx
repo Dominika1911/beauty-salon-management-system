@@ -11,14 +11,16 @@ import { LoginPage } from '../pages/LoginPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
-// Import pełnej strony zarządzania usługami
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
+// 🚨 DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
+import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
+// 🚨 DODANO: Strona dla Pracownika (wcześniej placeholder)
+import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 
 // Tymczasowe/Placeholdery
 const AppointmentsPage: React.FC = (): ReactElement => <h1>Wizyty</h1>;
-const MySchedulePage: React.FC = (): ReactElement => <h1>Mój Grafik</h1>;
-const MyAppointmentsPage: React.FC = (): ReactElement => <h1>Moje Wizyty</h1>;
+const MyAppointmentsPage: React.FC = (): ReactElement => <h1>Moje Rezerwacje</h1>;
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
 const StatisticsPage: React.FC = (): ReactElement => <h1>Statystyki</h1>;
 const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
@@ -64,6 +66,7 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+      // 🚨 ZMIENIONO: Użycie pełnej strony Pracownika dla Mój Grafik
       {
         path: 'my-schedule',
         element: (
@@ -75,9 +78,17 @@ const router = createBrowserRouter([
       {
         path: 'services',
         element: (
-          // 🚨 ZMIANA: Dodano 'employee' i 'client' do ról
           <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
             <ServicesManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      // 🚨 DODANO: Nowa ścieżka dla Managera do zarządzania grafikami wszystkich
+      {
+        path: 'schedule',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ScheduleManagementPage />
           </ProtectedRoute>
         ),
       },

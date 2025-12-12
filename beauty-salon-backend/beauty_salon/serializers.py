@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from rest_framework import serializers
+from django.core.validators import RegexValidator
 
 
 from .models import (
@@ -580,6 +581,40 @@ class ClientSoftDeleteSerializer(serializers.Serializer):
         client.soft_delete()
         return client
 
+# ============================================================================
+# NOWY: Serializer dla pojedynczego obiektu JSON w availability_periods
+# ============================================================================
+
+class AvailabilityPeriodSerializer(serializers.Serializer):
+    """
+    Serializator do walidacji formatu obiektów JSON
+    (Używamy CharField, aby unikać TypeError przy odczycie/serializacji odpowiedzi)
+    """
+    time_regex = RegexValidator(
+        regex=r'^\d{2}:\d{2}(:\d{2})?$',  # HH:MM lub HH:MM:SS
+        message="Czas musi być w formacie HH:MM lub HH:MM:SS."
+    )
+
+    weekday = serializers.CharField(max_length=20)
+
+    # Użycie CharField z walidatorem Regex to najbezpieczniejsza opcja dla JSONField
+    start_time = serializers.CharField(
+        max_length=8,
+        validators=[time_regex],
+        error_messages={'invalid': 'Wymagany format czasu to HH:MM:SS.'}
+    )
+    end_time = serializers.CharField(
+        max_length=8,
+        validators=[time_regex],
+        error_messages={'invalid': 'Wymagany format czasu to HH:MM:SS.'}
+    )
+
+    def validate(self, data: dict) -> dict:
+        """Dodatkowa walidacja czasu."""
+        # Walidacja, czy czas startu nie jest po czasie końca
+        if data['start_time'] >= data['end_time']:
+            raise serializers.ValidationError("Czas rozpoczęcia musi być wcześniejszy niż czas zakończenia.")
+        return data
 
 # ==================== SCHEDULE & TIME OFF SERIALIZERS ====================
 
@@ -588,6 +623,8 @@ class ScheduleSerializer(serializers.ModelSerializer):
     employee_full_name = serializers.CharField(
         source="employee.get_full_name", read_only=True
     )
+
+    availability_periods = AvailabilityPeriodSerializer(many=True, read_only=True)
 
     class Meta:
         model = Schedule
@@ -749,7 +786,7 @@ class AppointmentDetailSerializer(serializers.ModelSerializer):
 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
     """
-    POPRAWKA: Używamy SlugRelatedField dla stabilnych kluczy biznesowych.
+    SlugRelatedField dla stabilnych kluczy biznesowych.
 
     Zamiast ID (które się zmienia po reset DB), używamy:
     - client: "CLI-0001" (number)
@@ -980,9 +1017,6 @@ class PaymentSerializer(serializers.ModelSerializer):
         if obj.appointment and obj.appointment.client:
             return obj.appointment.client.get_full_name()
         return None
-
-
-# ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
 
 # ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
 
@@ -1265,3 +1299,31 @@ class EmployeeStatisticsSerializer(serializers.Serializer):
     employee = EmployeeSimpleSerializer(read_only=True)
     total_appointments = serializers.IntegerField(read_only=True)
     occupancy_percent = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+
+class ScheduleUpdateSerializer(serializers.ModelSerializer):
+    availability_periods = AvailabilityPeriodSerializer(many=True)
+
+    class Meta:
+        model = Schedule
+        fields = [
+            "id",
+            "status",
+            "breaks",
+            "availability_periods",
+        ]
+
+    def update(self, instance: Schedule, validated_data: dict) -> Schedule:
+        if "availability_periods" in validated_data:
+            instance.availability_periods = validated_data.pop("availability_periods")
+
+        # Aktualizacja breaks (JSONField)
+        if "breaks" in validated_data:
+            instance.breaks = validated_data.pop("breaks")
+
+        # Aktualizacja pozostałych prostych pól (np. status)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
+
