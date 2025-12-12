@@ -1,20 +1,15 @@
-// src/pages/LoginPage.tsx (POPRAWIONA WERSJA)
-
-import React, { useState, useEffect, type ReactElement } from 'react'; // Dodano import typu ReactElement
-import { useNavigate, type NavigateFunction } from 'react-router-dom'; // Import typu NavigateFunction
+import React, { useState, useEffect, type ReactElement } from 'react';
+import { useNavigate, type NavigateFunction } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import './LoginPage.css';
 
-// 1. Jawne typowanie komponentu i zwracanego typu (naprawia 2 błędy)
 export const LoginPage: React.FC = (): ReactElement => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState<boolean>(false); // Jawne typowanie stanu
-  const [error, setError] = useState<string>(''); // Jawne typowanie stanu
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
   const { login, isAuthenticated } = useAuth();
-
-  // 2. Jawne typowanie zmiennej 'navigate' (naprawia 1 błąd)
   const navigate: NavigateFunction = useNavigate();
 
   // Jeśli już zalogowany, przekieruj na dashboard
@@ -24,13 +19,11 @@ export const LoginPage: React.FC = (): ReactElement => {
     }
   }, [isAuthenticated, navigate]);
 
-  // 3. Jawne typowanie funkcji, argumentu 'e' i zwracanego typu (naprawia 3 błędy)
   const handleSubmit: (e: React.FormEvent) => Promise<void> = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    // 4. Jawne typowanie zmiennej 'result' (naprawia 1 błąd)
     const result: { success: boolean; error?: string } = await login({ email, password });
 
     if (result.success) {
@@ -55,10 +48,12 @@ export const LoginPage: React.FC = (): ReactElement => {
 
   return (
     <div className="login-page">
+      <div className="login-page-decoration"></div>
       <div className="login-container">
         <div className="login-card">
           <div className="login-header">
-            <h1>💅 Beauty Salon</h1>
+            <div className="login-logo"></div>
+            <h1>Beauty Salon</h1>
             <p>System zarządzania salonem kosmetycznym</p>
           </div>
 
@@ -69,7 +64,6 @@ export const LoginPage: React.FC = (): ReactElement => {
                 id="email"
                 type="email"
                 value={email}
-                // 5. Jawne typowanie argumentu 'e' w onChange (naprawia 1 błąd)
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 required
                 placeholder="klient1@example.com"
@@ -84,7 +78,6 @@ export const LoginPage: React.FC = (): ReactElement => {
                 id="password"
                 type="password"
                 value={password}
-                // 6. Jawne typowanie argumentu 'e' w onChange (naprawia 1 błąd)
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
@@ -96,7 +89,7 @@ export const LoginPage: React.FC = (): ReactElement => {
             {error && (
               <div className="error-message">
                 <span className="error-icon">⚠️</span>
-                {error}
+                <span>{error}</span>
               </div>
             )}
 
@@ -112,20 +105,8 @@ export const LoginPage: React.FC = (): ReactElement => {
             </button>
           </form>
 
-          <div className="test-accounts">
-            <p className="test-title">🧪 Konta testowe:</p>
-            <div className="test-account">
-              <strong>Klient:</strong>
-              <span>klient1@example.com / client123</span>
-            </div>
-            <div className="test-account">
-              <strong>Pracownik:</strong>
-              <span>anna.stylist@salon.demo / test1234</span>
-            </div>
-            <div className="test-account">
-              <strong>Manager:</strong>
-              <span>manager@salon.demo / test1234</span>
-            </div>
+          <div className="login-footer">
+            <a href="#">Zapomniałeś hasła?</a>
           </div>
         </div>
       </div>

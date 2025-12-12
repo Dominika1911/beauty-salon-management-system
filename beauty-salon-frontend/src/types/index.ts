@@ -267,3 +267,21 @@ export interface ManagerDashboardData extends DashboardData {
     total_appointments: number;
   };
 }
+
+export interface TimeOff {
+    id: number;
+    employee: number; // ID pracownika
+    start_time: string; // Pełna data i godzina rozpoczęcia (ISO 8601)
+    end_time: string;   // Pełna data i godzina zakończenia
+    reason: string;
+    is_approved: boolean; // Czy manager zatwierdził nieobecność
+    created_at: string;
+}
+
+export interface TimeOffCreateUpdateData {
+    employee: number;
+    start_time: string;
+    end_time: string;
+    reason: string;
+    // statusy mogą być np. 'pending' | 'approved' | 'rejected' w backendzie
+}
