@@ -132,8 +132,6 @@ export interface Employee {
   deleted_at: string | null;
   user_email?: string;
   skill_ids?: number[];
-
-  // ✅ DODANE: zgodne z backendem (Schedule + TimeOff)
   schedule?: Schedule | null;
   time_offs?: TimeOff[];
 }
@@ -162,47 +160,107 @@ export type AppointmentStatus =
   | 'cancelled'
   | 'no_show';
 
-export interface Appointment {
+/**
+ * To zwraca backend w listach:
+ * - GET /appointments/
+ * - GET /appointments/my_appointments/
+ * - GET /appointments/today/
+ * - GET /appointments/upcoming/
+ */
+export interface AppointmentListItem {
   id: number;
   client: number | null;
+  client_name: string | null;
   employee: number;
+  employee_name: string;
   service: number;
-  start: string;
-  end: string;
+  service_name: string;
   status: AppointmentStatus;
-  internal_notes: string;
-  booking_channel: string;
-  client_notes: string;
-  cancelled_by: number | null;
-  cancelled_at: string | null;
-  cancellation_reason: string;
-  reminder_sent: boolean;
-  reminder_sent_at: string | null;
-  created_at: string;
-  updated_at: string;
-
-  // Expanded fields (opcjonalnie zwracane przez backend)
-  client_data?: Client;
-  employee_data?: Employee;
-  service_data?: Service;
-}
-
-export interface AppointmentCreateData {
-  client?: number | null;
-  employee: number;
-  service: number;
+  status_display?: string;
   start: string;
   end: string;
-  status?: AppointmentStatus;
-  internal_notes?: string;
+
+  // extra z list serializer
+  timespan?: string;
   booking_channel?: string;
   client_notes?: string;
+  internal_notes?: string;
+  reminder_sent?: boolean;
+  reminder_sent_at?: string | null;
 }
 
+/**
+ * To zwraca backend w detalu:
+ * - GET /appointments/{id}/
+ */
+export interface AppointmentDetail {
+  id: number;
+  client: Client | null;
+  employee: Pick<Employee, 'id' | 'number' | 'first_name' | 'last_name'> & {
+    user_email?: string;
+  };
+  service: Service;
+
+  status: AppointmentStatus;
+  status_display?: string;
+
+  start: string;
+  end: string;
+  timespan?: string;
+
+  booking_channel: string;
+  client_notes: string;
+  internal_notes: string;
+
+  cancelled_by: number | null;
+  cancelled_by_email?: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string;
+
+  reminder_sent: boolean;
+  reminder_sent_at: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Create/Update payload:
+ * Backend przyjmuje slugowe pola biznesowe:
+ * - client: Client.number (np. "CLI-0001")
+ * - employee: Employee.number (np. "EMP-0001")
+ * - service: Service.name (np. "Manicure")
+ * oraz start/end (end może być pominięte -> backend policzy z duration)
+ */
+export interface AppointmentCreateData {
+  client?: string | null;      // Client.number
+  employee: string;            // Employee.number
+  service: string;             // Service.name
+  start: string;
+  end?: string | null;
+  booking_channel?: string;
+  client_notes?: string;
+  internal_notes?: string;
+}
+
+/**
+ * Zmiana statusu:
+ * - POST /appointments/{id}/change_status/
+ */
 export interface AppointmentStatusUpdateData {
   status: AppointmentStatus;
   cancellation_reason?: string;
 }
+
+/**
+ * Jeśli chcesz mieć dalej "Appointment" jako jeden typ, to najbezpieczniej:
+ * - listy -> AppointmentListItem
+ * - detail -> AppointmentDetail
+ *
+ * Ale żeby nie psuć istniejących importów, możesz używać union:
+ */
+export type Appointment = AppointmentListItem | AppointmentDetail;
+
 
 // ============================================================================
 // DASHBOARD
@@ -216,7 +274,7 @@ export interface DashboardAppointment {
   start: string;
   end: string;
   status: AppointmentStatus;
-  status_display?: string; // Human-readable status
+  status_display?: string;
 }
 
 export interface DashboardData {
@@ -233,9 +291,9 @@ export interface ClientDashboardData extends DashboardData {
     total_appointments: number;
     upcoming_appointments: number;
     completed_appointments: number;
-    total_spent?: string; // Opcjonalne
+    total_spent?: string;
   };
-  total_spent?: string; // Dodatkowe pole na poziomie głównym
+  total_spent?: string;
   client?: {
     visits_count: number;
   };
@@ -301,7 +359,7 @@ export interface TimeOffCreateUpdateData {
   date_to: string;
   type?: TimeOffType;
   reason?: string;
-  status?: TimeOffStatus; // raczej manager
+  status?: TimeOffStatus;
 }
 
 // ============================================================================

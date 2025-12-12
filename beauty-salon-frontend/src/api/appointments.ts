@@ -1,26 +1,38 @@
 import { api } from './axios';
-import type { Appointment, AppointmentCreateData, AppointmentStatusUpdateData, PaginatedResponse } from '../types';
+import type {
+  AppointmentCreateData,
+  AppointmentDetail,
+  AppointmentListItem,
+  AppointmentStatusUpdateData,
+  PaginatedResponse,
+} from '../types';
 import type { AxiosResponse } from 'axios';
 
-// Parametry filtrowania i paginacji
+// Parametry filtrowania i paginacji (zgodne z DRF filterset_fields + custom date_from/date_to)
 interface AppointmentListParams {
   date_from?: string;
   date_to?: string;
+
+  // DRF filterset_fields = ["status", "employee", "client", "service"]
   status?: string;
-  employee_id?: number;
+  employee?: number;
+  client?: number;
+  service?: number;
+
+  // DRF PageNumberPagination
   page?: number;
   page_size?: number;
 }
 
 interface AppointmentsApi {
-  list: (params?: AppointmentListParams) => Promise<AxiosResponse<PaginatedResponse<Appointment>>>;
-  myAppointments: () => Promise<AxiosResponse<Appointment[]>>;
-  today: () => Promise<AxiosResponse<Appointment[]>>;
-  upcoming: () => Promise<AxiosResponse<Appointment[]>>;
-  detail: (id: number) => Promise<AxiosResponse<Appointment>>;
-  create: (data: AppointmentCreateData) => Promise<AxiosResponse<Appointment>>;
-  changeStatus: (id: number, data: AppointmentStatusUpdateData) => Promise<AxiosResponse<Appointment>>;
-  update: (id: number, data: Partial<Appointment>) => Promise<AxiosResponse<Appointment>>;
+  list: (params?: AppointmentListParams) => Promise<AxiosResponse<PaginatedResponse<AppointmentListItem>>>;
+  myAppointments: () => Promise<AxiosResponse<AppointmentListItem[]>>;
+  today: () => Promise<AxiosResponse<AppointmentListItem[]>>;
+  upcoming: () => Promise<AxiosResponse<AppointmentListItem[]>>;
+  detail: (id: number) => Promise<AxiosResponse<AppointmentDetail>>;
+  create: (data: AppointmentCreateData) => Promise<AxiosResponse<AppointmentDetail>>;
+  changeStatus: (id: number, data: AppointmentStatusUpdateData) => Promise<AxiosResponse<AppointmentDetail>>;
+  update: (id: number, data: Partial<AppointmentCreateData>) => Promise<AxiosResponse<AppointmentDetail>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
 }
 
@@ -39,77 +51,75 @@ const ENDPOINTS = {
  */
 export const appointmentsAPI: AppointmentsApi = {
   /**
-   * Lista wszystkich wizyt (filtrowana po roli i obsługująca paginację)
+   * Lista wszystkich wizyt (obsługa filtrów + paginacji DRF)
    */
-  list: (params?: AppointmentListParams): Promise<AxiosResponse<PaginatedResponse<Appointment>>> => {
-    return api.get<PaginatedResponse<Appointment>>(ENDPOINTS.base, { params });
+  list: (params?: AppointmentListParams): Promise<AxiosResponse<PaginatedResponse<AppointmentListItem>>> => {
+    return api.get<PaginatedResponse<AppointmentListItem>>(ENDPOINTS.base, { params });
   },
 
   /**
-   * Moje wizyty (dla klienta/pracownika)
+   * Moje wizyty (klient/pracownik) - backend zwraca tablicę (bez paginacji)
    */
-  myAppointments: (): Promise<AxiosResponse<Appointment[]>> => {
-    return api.get<Appointment[]>(ENDPOINTS.myAppointments);
+  myAppointments: (): Promise<AxiosResponse<AppointmentListItem[]>> => {
+    return api.get<AppointmentListItem[]>(ENDPOINTS.myAppointments);
   },
 
   /**
-   * Wizyty dzisiaj
+   * Wizyty dzisiaj - backend zwraca tablicę (bez paginacji)
    */
-  today: (): Promise<AxiosResponse<Appointment[]>> => {
-    return api.get<Appointment[]>(ENDPOINTS.today);
+  today: (): Promise<AxiosResponse<AppointmentListItem[]>> => {
+    return api.get<AppointmentListItem[]>(ENDPOINTS.today);
   },
 
   /**
-   * Przyszłe wizyty
+   * Przyszłe wizyty - backend zwraca tablicę (bez paginacji)
    */
-  upcoming: (): Promise<AxiosResponse<Appointment[]>> => {
-    return api.get<Appointment[]>(ENDPOINTS.upcoming);
+  upcoming: (): Promise<AxiosResponse<AppointmentListItem[]>> => {
+    return api.get<AppointmentListItem[]>(ENDPOINTS.upcoming);
   },
 
   /**
    * Szczegóły wizyty
    */
-  detail: (id: number): Promise<AxiosResponse<Appointment>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid appointment ID'));
-    }
-    return api.get<Appointment>(ENDPOINTS.detail(id));
+  detail: (id: number): Promise<AxiosResponse<AppointmentDetail>> => {
+    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
+    return api.get<AppointmentDetail>(ENDPOINTS.detail(id));
   },
 
   /**
    * Utwórz wizytę
    */
-  create: (data: AppointmentCreateData): Promise<AxiosResponse<Appointment>> => {
-    return api.post<Appointment>(ENDPOINTS.base, data);
+  create: (data: AppointmentCreateData): Promise<AxiosResponse<AppointmentDetail>> => {
+    return api.post<AppointmentDetail>(ENDPOINTS.base, data);
   },
 
   /**
-   * Zmiana statusu wizyty
+   * Zmiana statusu wizyty (np. anulowanie, no-show)
    */
-  changeStatus: (id: number, data: AppointmentStatusUpdateData): Promise<AxiosResponse<Appointment>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid appointment ID'));
-    }
-    return api.post<Appointment>(ENDPOINTS.changeStatus(id), data);
+  changeStatus: (
+    id: number,
+    data: AppointmentStatusUpdateData
+  ): Promise<AxiosResponse<AppointmentDetail>> => {
+    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
+    return api.post<AppointmentDetail>(ENDPOINTS.changeStatus(id), data);
   },
 
   /**
-   * Aktualizuj wizytę
+   * Aktualizuj wizytę (PATCH)
+   *
+   * Backend do PATCH używa serializer-a jak do create,
+   * więc wysyłamy pola z AppointmentCreateData (lub ich część).
    */
-  update: (id: number, data: Partial<Appointment>): Promise<AxiosResponse<Appointment>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid appointment ID'));
-    }
-    return api.patch<Appointment>(ENDPOINTS.detail(id), data);
+  update: (id: number, data: Partial<AppointmentCreateData>): Promise<AxiosResponse<AppointmentDetail>> => {
+    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
+    return api.patch<AppointmentDetail>(ENDPOINTS.detail(id), data);
   },
 
   /**
    * Usuń wizytę
    */
   delete: (id: number): Promise<AxiosResponse<void>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid appointment ID'));
-    }
+    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
     return api.delete<void>(ENDPOINTS.detail(id));
   },
 };

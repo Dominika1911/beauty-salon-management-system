@@ -17,10 +17,11 @@ import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage'
 // 🚨 DODANO: Strona dla Pracownika (wcześniej placeholder)
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
+import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
+import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
+
 
 // Tymczasowe/Placeholdery
-const AppointmentsPage: React.FC = (): ReactElement => <h1>Wizyty</h1>;
-const MyAppointmentsPage: React.FC = (): ReactElement => <h1>Moje Rezerwacje</h1>;
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
 const StatisticsPage: React.FC = (): ReactElement => <h1>Statystyki</h1>;
 const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
@@ -62,7 +63,7 @@ const router = createBrowserRouter([
         path: 'appointments',
         element: (
           <ProtectedRoute allowedRoles={['manager', 'employee']}>
-            <AppointmentsPage />
+            <AppointmentsManagementPage />
           </ProtectedRoute>
         ),
       },

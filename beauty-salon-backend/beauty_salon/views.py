@@ -1,6 +1,6 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date, time
 from decimal import Decimal
-from typing import Any, Optional, Dict, List, TYPE_CHECKING
+from typing import Any, Optional, Dict, List, TYPE_CHECKING, Iterable, Tuple
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum, QuerySet
@@ -601,7 +601,7 @@ class EmployeeScheduleUpdateView(APIView):
         """
         employee = get_object_or_404(Employee, pk=employee_id)
 
-        schedule = Schedule.objects.filter(employee=employee).first()
+        schedule = Schedule.objects.filter(employee=employee, status="active").order_by("-updated_at").first()
 
         if not schedule:
             # Zwróć pusty grafik zamiast 404
@@ -1391,6 +1391,281 @@ class StatsSnapshotViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self) -> QuerySet[StatsSnapshot]:
         return super().get_queryset()
+
+
+
+WEEKDAY_MAP = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
+def _parse_hhmm(s: str) -> time:
+    parts = s.split(":")
+    h = int(parts[0])
+    m = int(parts[1])
+    sec = int(parts[2]) if len(parts) > 2 else 0
+    return time(hour=h, minute=m, second=sec)
+
+def _daterange(d1: date, d2: date) -> Iterable[date]:
+    cur = d1
+    while cur <= d2:
+        yield cur
+        cur += timedelta(days=1)
+
+def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and a_end > b_start
+
+
+class AvailabilitySlotsAPIView(APIView):
+    """
+    GET /availability/slots/?employee=<id>&service=<id>&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        # 1) Parsowanie parametrów
+        try:
+            employee_id = int(request.query_params.get("employee", ""))
+            service_id = int(request.query_params.get("service", ""))
+            date_from_s = request.query_params.get("date_from", "")
+            date_to_s = request.query_params.get("date_to", "")
+
+            d_from = datetime.strptime(date_from_s, "%Y-%m-%d").date()
+            d_to = datetime.strptime(date_to_s, "%Y-%m-%d").date()
+        except Exception:
+            return Response(
+                {"detail": "Invalid params. Required: employee, service, date_from(YYYY-MM-DD), date_to(YYYY-MM-DD)"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if d_to < d_from:
+            return Response({"detail": "date_to must be >= date_from"}, status=status.HTTP_400_BAD_REQUEST)
+        ignore_timeoff_requested = request.query_params.get("ignore_timeoff", "").strip().lower() in ("1", "true",
+                                                                                                      "yes")
+
+        user = request.user
+        is_staff_user = (
+                user.is_authenticated and (
+                (hasattr(user, "is_manager") and user.is_manager) or
+                (hasattr(user, "is_employee") and user.is_employee) or
+                user.is_staff
+        )
+        )
+
+        ignore_timeoff = bool(ignore_timeoff_requested and is_staff_user)
+
+        # 2) Pobranie obiektów
+        try:
+            employee = Employee.objects.get(pk=employee_id, is_active=True)
+        except Employee.DoesNotExist:
+            return Response({"detail": "Employee not found or inactive"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            service = Service.objects.get(pk=service_id, is_published=True)
+        except Service.DoesNotExist:
+            return Response({"detail": "Service not found or unpublished"}, status=status.HTTP_404_NOT_FOUND)
+
+        schedule = Schedule.objects.filter(employee=employee, status="active").order_by("-updated_at").first()
+
+        if not schedule or schedule.status != "active":
+            settings = SystemSettings.objects.first()
+            slot_minutes = int(getattr(settings, "slot_minutes", 15) or 15)
+            buffer_minutes = int(getattr(settings, "buffer_minutes", 0) or 0)
+            duration_minutes = int(service.duration.total_seconds() // 60)
+
+            return Response(
+                {
+                    "employee": employee_id,
+                    "service": service_id,
+                    "slot_minutes": slot_minutes,
+                    "buffer_minutes": buffer_minutes,
+                    "duration_minutes": duration_minutes,
+                    "slots": [],
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        settings = SystemSettings.objects.first()
+        slot_minutes = int(getattr(settings, "slot_minutes", 15) or 15)
+        buffer_minutes = int(getattr(settings, "buffer_minutes", 0) or 0)
+
+        duration_minutes = int(service.duration.total_seconds() // 60)
+        if duration_minutes <= 0:
+            return Response({"detail": "Invalid service duration"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3) Urlopy / time off w zakresie
+        timeoffs = []
+        if not ignore_timeoff:
+            timeoffs = list(
+                TimeOff.objects.filter(
+                    employee=employee,
+                    status=TimeOff.Status.APPROVED,
+                    date_to__gte=d_from,
+                    date_from__lte=d_to,
+                )
+            )
+
+        # 4) Wizyty w zakresie (kolizje)
+        tz = timezone.get_current_timezone()
+        day_start_dt = timezone.make_aware(datetime.combine(d_from, time.min), tz)
+        day_end_dt = timezone.make_aware(datetime.combine(d_to, time.max), tz)
+
+        active_statuses = [
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+            Appointment.Status.IN_PROGRESS,
+        ]
+
+        appts = list(
+            Appointment.objects.filter(
+                employee=employee,
+                status__in=active_statuses,
+                start__lt=day_end_dt,
+                end__gt=day_start_dt,
+            ).only("start", "end")
+        )
+
+        # 5) availability_periods z grafiku
+        periods = getattr(schedule, "availability_periods", None) or []
+        if not isinstance(periods, list):
+            periods = []
+
+        periods_by_weekday = {}
+        for p in periods:
+            try:
+                if not isinstance(p, dict):
+                    continue
+                wd_key = str(p.get("weekday", "")).strip().lower()
+                wd = WEEKDAY_MAP.get(wd_key)
+                if wd is None:
+                    continue
+                st = _parse_hhmm(str(p.get("start_time")))
+                en = _parse_hhmm(str(p.get("end_time")))
+                if en <= st:
+                    continue
+                periods_by_weekday.setdefault(wd, []).append((st, en))
+            except Exception:
+                continue
+
+        # 6) breaks – best effort (dwie formy)
+        breaks_raw = getattr(schedule, "breaks", None) or []
+        parsed_breaks: List[Tuple[datetime, datetime]] = []
+
+        def _try_add_break(start_dt: datetime, end_dt: datetime):
+            if end_dt > start_dt:
+                parsed_breaks.append((start_dt, end_dt))
+
+        for b in breaks_raw if isinstance(breaks_raw, list) else []:
+            try:
+                if isinstance(b, dict) and "start" in b and "end" in b:
+                    bs = datetime.fromisoformat(str(b["start"]))
+                    be = datetime.fromisoformat(str(b["end"]))
+                    if timezone.is_naive(bs):
+                        bs = timezone.make_aware(bs)
+                    if timezone.is_naive(be):
+                        be = timezone.make_aware(be)
+                    _try_add_break(bs, be)
+            except Exception:
+                continue
+
+        # weekly breaks: {weekday, start_time, end_time}
+        weekly_breaks_by_weekday: dict[int, List[Tuple[time, time]]] = {}
+        for b in breaks_raw if isinstance(breaks_raw, list) else []:
+            try:
+                if not (isinstance(b, dict) and "weekday" in b and "start_time" in b and "end_time" in b):
+                    continue
+                bwd_key = str(b.get("weekday", "")).strip().lower()
+                bwd = WEEKDAY_MAP.get(bwd_key)
+                if bwd is None:
+                    continue
+                bst = _parse_hhmm(str(b.get("start_time")))
+                ben = _parse_hhmm(str(b.get("end_time")))
+                if ben <= bst:
+                    continue
+                weekly_breaks_by_weekday.setdefault(bwd, []).append((bst, ben))
+            except Exception:
+                continue
+
+        # 7) Liczenie slotów
+        slots = []
+        now = timezone.now()
+        step = timedelta(minutes=slot_minutes)
+        dur = timedelta(minutes=duration_minutes)
+        buf = timedelta(minutes=buffer_minutes)
+
+        for day in _daterange(d_from, d_to):
+            # jeśli urlop obejmuje ten dzień → skip
+            if any(to.date_from <= day <= to.date_to for to in timeoffs):
+                continue
+
+            wd = day.weekday()
+            day_periods = periods_by_weekday.get(wd, [])
+            if not day_periods:
+                continue
+
+            for st_t, en_t in day_periods:
+                start_dt = timezone.make_aware(
+                    datetime.combine(day, st_t),
+                    timezone.get_current_timezone(),
+                )
+                end_dt = timezone.make_aware(
+                    datetime.combine(day, en_t),
+                    timezone.get_current_timezone(),
+                )
+
+                cursor = start_dt
+                while cursor + dur <= end_dt:
+                    slot_start = cursor
+                    slot_end = cursor + dur
+
+                    if slot_start < now:
+                        cursor += step
+                        continue
+
+                    # kolizje z wizytami (+ bufor)
+                    has_appt_collision = any(
+                        _overlaps(slot_start, slot_end, a.start - buf, a.end + buf) for a in appts
+                    )
+
+                    # kolizje z przerwami (datowymi)
+                    has_break_collision = any(
+                        _overlaps(slot_start, slot_end, b_start, b_end) for (b_start, b_end) in parsed_breaks
+                    )
+
+                    has_weekly_break_collision = False
+                    for bst, ben in weekly_breaks_by_weekday.get(wd, []):
+                        b_start = timezone.make_aware(datetime.combine(day, bst), timezone.get_current_timezone())
+                        b_end = timezone.make_aware(datetime.combine(day, ben), timezone.get_current_timezone())
+                        if _overlaps(slot_start, slot_end, b_start, b_end):
+                            has_weekly_break_collision = True
+                            break
+
+                    if not (has_appt_collision or has_break_collision or has_weekly_break_collision):
+                        slots.append(
+                            {
+                                "start": slot_start.isoformat(),
+                                "end": slot_end.isoformat(),
+                            }
+                        )
+
+                    cursor += step
+
+        slots.sort(key=lambda s: s["start"])
+        return Response(
+            {
+                "employee": employee_id,
+                "service": service_id,
+                "slot_minutes": slot_minutes,
+                "buffer_minutes": buffer_minutes,
+                "duration_minutes": duration_minutes,
+                "slots": slots,
+            }
+        )
 
 # ==================== STATISTICS VIEW ====================
 
