@@ -1,5 +1,3 @@
-// src/context/AuthContext.tsx
-
 import React, { useState, useEffect } from 'react';
 import type { ReactElement } from 'react';
 import { authAPI } from '../api/auth';
@@ -14,94 +12,112 @@ interface AuthProviderProps {
 /**
  * Provider autentykacji - opakowuje aplikację i zarządza stanem logowania
  */
-export const AuthProvider: React.FC<AuthProviderProps> = ({ children }: AuthProviderProps): ReactElement => {
+export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  const isManager = user?.role === 'manager';
+  const isEmployee = user?.role === 'employee';
+  const isClient = user?.role === 'client';
+
   /**
-   * Sprawdza status autentykacji przy starcie aplikacji
+   * Sprawdza, czy użytkownik jest zalogowany
    */
   const checkAuthStatus: () => Promise<void> = async (): Promise<void> => {
     try {
+      setIsLoading(true);
+      setError(null);
+
       const { data } = await authAPI.status();
-      setUser(data.authenticated ? data.user : null);
+
+      const authed = Boolean(data.authenticated && data.user);
+      setIsAuthenticated(authed);
+      setUser(authed ? data.user : null);
     } catch (err) {
       console.error('Auth check failed:', err);
+      setIsAuthenticated(false);
       setUser(null);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  // Sprawdź auth przy montowaniu komponentu
+  // Sprawdź auth przy montowaniu komponentu (najpierw ustaw CSRF cookie)
   useEffect(() => {
-    void checkAuthStatus();
+    (async () => {
+      try {
+        await authAPI.csrf(); // ustawia csrftoken cookie
+      } catch {
+        // ignorujemy – chodzi o cookie
+      }
+      await checkAuthStatus();
+    })();
   }, []);
 
   /**
    * Loguje użytkownika do systemu
+   * ZGODNIE Z TYPAMI: zwraca { success, error? }
    */
-  const login: (credentials: LoginCredentials) => Promise<{ success: boolean; error?: string }> = async (
+  const login: AuthContextType['login'] = async (
     credentials: LoginCredentials,
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       setError(null);
 
       const { data } = await authAPI.login(credentials);
+
       setUser(data.user);
+      setIsAuthenticated(true);
 
       return { success: true };
     } catch (err) {
-      const axiosError: AxiosError<{ error?: string; detail?: string }> = err as AxiosError<{ error?: string; detail?: string }>;
+      const axiosErr = err as AxiosError<{ error?: string; detail?: string; message?: string }>;
 
-      const errorMsg: string =
-        axiosError.response?.data?.error ||
-        axiosError.response?.data?.detail ||
-        'Błąd logowania';
+      const msg =
+        axiosErr.response?.data?.error ??
+        axiosErr.response?.data?.detail ??
+        axiosErr.response?.data?.message ??
+        (axiosErr.response?.status ? `Login failed (${axiosErr.response.status})` : 'Login failed');
 
-      setError(errorMsg);
-      return { success: false, error: errorMsg };
+
+      setError(msg);
+      setUser(null);
+      setIsAuthenticated(false);
+
+      return { success: false, error: msg };
     }
   };
 
   /**
-   * Wylogowuje użytkownika z systemu
+   * Wylogowuje użytkownika
    */
   const logout: () => Promise<void> = async (): Promise<void> => {
     try {
+      setError(null);
       await authAPI.logout();
     } catch (err) {
       console.error('Logout failed:', err);
     } finally {
-      // Wyloguj lokalnie nawet przy błędzie API
       setUser(null);
+      setIsAuthenticated(false);
     }
   };
 
-  // Flagi na podstawie user.role
-  const isAuthenticated: boolean = !!user;
-  const isManager: boolean = user?.role === 'manager';
-  const isEmployee: boolean = user?.role === 'employee';
-  const isClient: boolean = user?.role === 'client';
-
   const value: AuthContextType = {
     user,
-    loading,
-    isLoading: loading, // ✅ Dodano alias
-    error,
-    login,
-    logout,
-    checkAuthStatus,
     isAuthenticated,
+    isLoading,
+    loading: isLoading, // alias z typów
+    error,
     isManager,
     isEmployee,
     isClient,
+    login,
+    logout,
+    checkAuthStatus,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
