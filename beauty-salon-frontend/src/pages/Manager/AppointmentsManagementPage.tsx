@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { AppointmentListItem, AppointmentStatus } from '../../types';
 
 import { appointmentsAPI } from '../../api/appointments';
@@ -27,7 +27,7 @@ const statusLabelPL: Record<AppointmentStatus, string> = {
   no_show: 'Nieobecność (No-show)',
 };
 
-//  "Rozpocznij" dopiero 15 min przed startem
+// "Rozpocznij" dopiero 15 min przed startem
 const canStartNow = (startISO: string): boolean => {
   const start = new Date(startISO).getTime();
   const now = Date.now();
@@ -48,7 +48,7 @@ type CurrentUser = {
   employeeId?: number;
 };
 
-//  jeden punkt prawdy: user z useAuth()
+// jeden punkt prawdy: user z useAuth()
 const toCurrentUser = (authUser: any): CurrentUser => {
   const role = (authUser?.role ?? 'manager') as CurrentUser['role'];
 
@@ -65,7 +65,7 @@ const toCurrentUser = (authUser: any): CurrentUser => {
   };
 };
 
-//  KLUCZ: pracownik tylko swoje; manager wszystko
+// KLUCZ: pracownik tylko swoje; manager wszystko
 const isActionAllowed = (a: AppointmentListItem, user: CurrentUser): boolean => {
   if (user.role === 'manager') return true;
 
@@ -93,7 +93,7 @@ const actionsForAppointment = (a: AppointmentListItem, user: CurrentUser): Statu
         { next: 'no_show', label: 'Nieobecność', variant: 'ghost' },
       ];
 
-      //  "Rozpocznij" tylko gdy pora
+      // "Rozpocznij" tylko gdy pora
       if (canStartNow(a.start)) {
         actions.unshift({ next: 'in_progress', label: 'Rozpocznij', variant: 'info' });
       }
@@ -110,8 +110,8 @@ const actionsForAppointment = (a: AppointmentListItem, user: CurrentUser): Statu
 };
 
 export const AppointmentsManagementPage: React.FC = () => {
-  const auth = useAuth() as any; // żeby nie walczyć teraz z typami hooka
-  const currentUser = useMemo(() => toCurrentUser(auth?.user), [auth?.user]);
+  const auth = useAuth() as any;
+  const [currentUser] = useState<CurrentUser>(() => toCurrentUser(auth?.user));
 
   const [appointments, setAppointments] = useState<AppointmentListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,17 +120,12 @@ export const AppointmentsManagementPage: React.FC = () => {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Spójne sortowanie po ID (rosnąco) na froncie – niezależnie od kolejności z API
-  const sortedAppointments = useMemo(
-    () => [...appointments].sort((a, b) => a.id - b.id),
-    [appointments]
-  );
-
   const fetchAppointments = async (): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
-      const res = await appointmentsAPI.list({ page: 1, page_size: 50, ordering: 'id' });
+      // ✅ POPRAWKA: ordering = '-id' (najnowsze na górze)
+      const res = await appointmentsAPI.list({ page: 1, page_size: 50, ordering: '-id' });
       setAppointments(res.data.results ?? []);
     } catch (e: any) {
       console.error(e);
@@ -246,14 +241,14 @@ export const AppointmentsManagementPage: React.FC = () => {
                   Ładowanie…
                 </td>
               </tr>
-            ) : sortedAppointments.length === 0 ? (
+            ) : appointments.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ padding: 16 }}>
                   Brak wizyt do wyświetlenia.
                 </td>
               </tr>
             ) : (
-              sortedAppointments.map((a) => {
+              appointments.map((a) => {
                 const actions = actionsForAppointment(a, currentUser);
                 const busy = actionLoadingId === a.id;
 

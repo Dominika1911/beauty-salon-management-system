@@ -1,5 +1,3 @@
-// src/pages/DashboardPage.tsx
-
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { useAuth } from '../hooks/useAuth';

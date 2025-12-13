@@ -1,5 +1,3 @@
-// src/components/Manager/AppointmentFormModal.tsx
-
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import type { Client, Employee, Service } from '../../types';
 
@@ -146,31 +144,30 @@ export const AppointmentFormModal: React.FC<AppointmentFormModalProps> = ({
   }, [employees, formData.serviceId]);
 
   const handleChange = useCallback(
-  (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>): void => {
-    const target = e.target;
-    const { name } = target;
+    (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>): void => {
+      const target = e.target;
+      const { name } = target;
 
-    // checkbox
-    if (target instanceof HTMLInputElement && target.type === 'checkbox') {
-      const checked = target.checked;
-      setFormData((prev) => ({ ...prev, [name]: checked }));
-      return;
-    }
+      // checkbox
+      if (target instanceof HTMLInputElement && target.type === 'checkbox') {
+        const checked = target.checked;
+        setFormData((prev) => ({ ...prev, [name]: checked }));
+        return;
+      }
 
-    const value = target.value;
+      const value = target.value;
 
-    // selecty z ID
-    if (name === 'serviceId' || name === 'employeeId' || name === 'clientId') {
-      setFormData((prev) => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
-      return;
-    }
+      // selecty z ID
+      if (name === 'serviceId' || name === 'employeeId' || name === 'clientId') {
+        setFormData((prev) => ({ ...prev, [name]: value === '' ? '' : Number(value) }));
+        return;
+      }
 
-    // reszta (input/date/textarea)
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  },
-  []
-);
-
+      // reszta (input/date/textarea)
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    },
+    []
+  );
 
   // po zmianie usługi resetuj pracownika + sloty
   useEffect(() => {
@@ -198,7 +195,7 @@ export const AppointmentFormModal: React.FC<AppointmentFormModalProps> = ({
           ignore_timeoff: formData.ignore_timeoff,
         });
 
-        // ✅ backend API wrapper typuje odpowiedź jako { slots: AvailabilitySlot[] }
+        //  backend API wrapper typuje odpowiedź jako { slots: AvailabilitySlot[] }
         const list = res.data?.slots ?? [];
         setSlots(list.slice(0, 60));
       } catch (e: any) {
@@ -221,6 +218,12 @@ export const AppointmentFormModal: React.FC<AppointmentFormModalProps> = ({
       return;
     }
 
+    // WYMAGAJ klienta (backend wymaga pola client w serializerze)
+    if (!selectedClient) {
+      setSubmissionError('Wybierz klienta.');
+      return;
+    }
+
     if (selectedSlotIndex === null || !slots[selectedSlotIndex]) {
       setSubmissionError('Wybierz konkretny termin (slot).');
       return;
@@ -234,7 +237,7 @@ export const AppointmentFormModal: React.FC<AppointmentFormModalProps> = ({
       // backend przyjmuje "slugowe" pola:
       // client: Client.number, employee: Employee.number, service: Service.name
       const payload = {
-        client: selectedClient?.number ?? null,
+        client: selectedClient.number, // ✅ bez null
         employee: (selectedEmployee as any).number,
         service: selectedService.name,
         start: slot.start,
@@ -332,9 +335,9 @@ export const AppointmentFormModal: React.FC<AppointmentFormModalProps> = ({
         <h4 className="form-section-title">Dodatkowe informacje</h4>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 12, opacity: 0.8 }}>Klient (opcjonalnie)</span>
-          <select name="clientId" value={formData.clientId} onChange={handleChange}>
-            <option value="">— brak —</option>
+          <span style={{ fontSize: 12, opacity: 0.8 }}>Klient (wymagane)</span>
+          <select name="clientId" value={formData.clientId} onChange={handleChange} required>
+            <option value="">— wybierz klienta —</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.number ? `${c.number} — ` : ''}
