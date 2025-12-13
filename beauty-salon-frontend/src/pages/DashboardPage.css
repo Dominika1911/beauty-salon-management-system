@@ -6,12 +6,12 @@
   --beauty-primary-darker: #880E4F;
   --beauty-primary-light: #FCE4EC;
   --beauty-primary-bg: #FFF5FA;
-  
+
   /* Accent Colors */
   --beauty-accent: #F06292;
   --beauty-accent-soft: #FFE3F2;
   --beauty-accent-dark: #D81B60;
-  
+
   /* Status Colors */
   --beauty-success: #2ecc71;
   --beauty-success-dark: #27ae60;
@@ -22,40 +22,40 @@
   --beauty-danger-light: #fadbd8;
   --beauty-info: #3498db;
   --beauty-info-light: #d6eaf8;
-  
+
   /* Neutral Colors */
   --beauty-text-primary: #2c3e50;
   --beauty-text-secondary: #7f8c8d;
   --beauty-text-muted: #95a5a6;
   --beauty-border: rgba(233, 30, 99, 0.15);
   --beauty-border-light: rgba(233, 30, 99, 0.08);
-  
+
   /* Shadows & Effects */
   --beauty-shadow-sm: 0 2px 8px rgba(233, 30, 99, 0.06);
   --beauty-shadow: 0 4px 16px rgba(233, 30, 99, 0.1);
   --beauty-shadow-md: 0 6px 20px rgba(233, 30, 99, 0.12);
   --beauty-shadow-lg: 0 8px 28px rgba(233, 30, 99, 0.15);
   --beauty-shadow-xl: 0 12px 40px rgba(233, 30, 99, 0.2);
-  
+
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, var(--beauty-primary) 0%, var(--beauty-accent) 100%);
   --gradient-soft: linear-gradient(135deg, var(--beauty-primary-bg) 0%, white 100%);
   --gradient-success: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
   --gradient-overlay: linear-gradient(135deg, rgba(233, 30, 99, 0.05) 0%, rgba(240, 98, 146, 0.05) 100%);
-  
+
   /* Transitions */
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-bounce: 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  
+
   /* Spacing */
   --spacing-xs: 0.5rem;
   --spacing-sm: 1rem;
   --spacing-md: 1.5rem;
   --spacing-lg: 2rem;
   --spacing-xl: 3rem;
-  
+
   /* Border Radius */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -171,7 +171,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: 
+  background:
     radial-gradient(circle at 20% 80%, rgba(233, 30, 99, 0.03) 0%, transparent 50%),
     radial-gradient(circle at 80% 20%, rgba(240, 98, 146, 0.03) 0%, transparent 50%);
   pointer-events: none;

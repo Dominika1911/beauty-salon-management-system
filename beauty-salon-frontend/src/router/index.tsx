@@ -13,6 +13,8 @@ import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
+import StatisticsPage from "../pages/StatisticsPage";
+
 
 // 🚨 DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
 import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
@@ -25,7 +27,6 @@ import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
 
 // Tymczasowe/Placeholdery
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
-const StatisticsPage: React.FC = (): ReactElement => <h1>Statystyki</h1>;
 const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
 
 
@@ -123,7 +124,7 @@ const router = createBrowserRouter([
       {
         path: 'statistics',
         element: (
-          <ProtectedRoute allowedRoles={['manager']}>
+          <ProtectedRoute allowedRoles={['manager','employee']}>
             <StatisticsPage />
           </ProtectedRoute>
         ),

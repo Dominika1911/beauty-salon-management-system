@@ -1,5 +1,7 @@
 import axios, { type AxiosInstance, type AxiosError, type AxiosResponse } from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
+import { notify } from "../utils/notificationService";
+
 
 const API_BASE_URL: string = '/api';
 
@@ -50,38 +52,51 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response: AxiosResponse): AxiosResponse => response,
   (error: AxiosError<{ detail?: string; error?: string }>): Promise<never> => {
-    // 401 Unauthorized - przekieruj na login
-    if (error.response?.status === 401) {
-      console.warn('Unauthorized - redirecting to login');
+    const status = error.response?.status;
 
-      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-        // TODO: Dodaj toast notification: "Sesja wygasła. Zaloguj się ponownie."
-        window.location.href = '/login';
+    // helper do wyciągania komunikatu DRF
+    const serverMsg =
+      (error.response?.data && (error.response.data.detail || error.response.data.error)) ||
+      undefined;
+
+    // 401 Unauthorized - sesja wygasła
+    if (status === 401) {
+      notify(serverMsg ?? "Sesja wygasła. Zaloguj się ponownie.", "error");
+
+      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+        window.location.href = "/login";
       }
+      return Promise.reject(error);
     }
 
     // 403 Forbidden
-    if (error.response?.status === 403) {
-      console.error('Forbidden:', error.response.data);
-      // TODO: Dodaj toast notification: "Brak uprawnień do wykonania tej operacji."
+    if (status === 403) {
+      notify(serverMsg ?? "Brak uprawnień do wykonania tej operacji.", "error");
+      return Promise.reject(error);
     }
 
     // 404 Not Found
-    if (error.response?.status === 404) {
-      console.error('Not found:', error.response.data);
-      // TODO: Dodaj toast notification: "Zasób nie został znaleziony."
+    if (status === 404) {
+      notify(serverMsg ?? "Zasób nie został znaleziony.", "info");
+      return Promise.reject(error);
     }
 
-    // 500+ Server errors
-    if (error.response && error.response.status >= 500) {
-      console.error('Server error:', error.response.data);
-      // TODO: Dodaj toast notification: "Wystąpił błąd serwera. Spróbuj ponownie później."
+    // 500+
+    if (status && status >= 500) {
+      notify(serverMsg ?? "Wystąpił błąd serwera. Spróbuj ponownie później.", "error");
+      return Promise.reject(error);
     }
 
-    // Network errors
+    // Network errors (brak odpowiedzi)
     if (!error.response) {
-      console.error('Network error - check your connection');
-      // TODO: Dodaj toast notification: "Błąd połączenia. Sprawdź swoje połączenie internetowe."
+      notify("Błąd połączenia. Sprawdź internet i spróbuj ponownie.", "error");
+      return Promise.reject(error);
+    }
+
+    // 400/422 walidacje – nie spamujemy globalnym toastem jeśli i tak obsługujesz pola
+    // ale jeśli backend dał "detail", pokażemy:
+    if (status === 400 && serverMsg) {
+      notify(serverMsg, "error");
     }
 
     return Promise.reject(error);

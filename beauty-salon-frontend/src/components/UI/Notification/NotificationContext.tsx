@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { NotificationToast, type NotificationType } from './NotificationToast';
+import { registerNotificationHandler } from "../../../utils/notificationService";
 
 interface NotificationMessage {
   id: number;
@@ -37,6 +38,11 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 5000);
   }, []);
+
+  // ✅ rejestrujemy handler dopiero gdy istnieje funkcja showNotification
+  useEffect(() => {
+    registerNotificationHandler(showNotification);
+  }, [showNotification]);
 
   return (
     <NotificationContext.Provider value={{ showNotification }}>
