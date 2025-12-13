@@ -47,7 +47,6 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
 
             setClients(data.results);
             setTotalCount(data.count);
-
         } catch (err) {
             console.error('Błąd pobierania listy klientów:', err, user);
             setError('Nie udało się załadować listy klientów. Sprawdź backend i uprawnienia.');
@@ -65,84 +64,91 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
     };
 
     // FUNKCJA USUWANIA (SOFT DELETE)
-    const handleSoftDelete = useCallback(async (clientId: number): Promise<void> => {
+    const handleSoftDelete = useCallback(
+        async (clientId: number): Promise<void> => {
+            if (
+                !window.confirm(
+                    'UWAGA GDPR: Czy na pewno chcesz usunąć tego klienta? Spowoduje to Soft Delete w bazie danych.'
+                )
+            ) {
+                return;
+            }
+            try {
+                //  Soft Delete klienta przez akcję POST /clients/soft_delete/
+                await clientsAPI.softDelete(clientId);
 
-        if (!window.confirm("UWAGA GDPR: Czy na pewno chcesz usunąć tego klienta? Spowoduje to Soft Delete w bazie danych.")) {
-            return;
-        }
-
-        try {
-            // Soft Delete klienta za pomocą metody DELETE z API
-            await clientsAPI.delete(clientId);
-
-            // Po sukcesie odświeżamy bieżącą stronę
-            void fetchClients(currentPage, pageSize);
-
-        } catch (err) {
-            console.error("Błąd podczas usuwania klienta:", err);
-            setError("Nie udało się usunąć klienta.");
-        }
-    }, [currentPage, pageSize]);
-
+                // Po sukcesie odświeżamy bieżącą stronę
+                void fetchClients(currentPage, pageSize);
+            } catch (err) {
+                console.error('Błąd podczas usuwania klienta:', err);
+                setError('Nie udało się usunąć klienta.');
+            }
+        },
+        [currentPage, pageSize]
+    );
 
     useEffect(() => {
         void fetchClients(currentPage, pageSize);
     }, [currentPage]);
 
     // DEFINICJA KOLUMN Z EDYCJĄ I SOFT DELETE
-    const columns: ColumnDefinition<Client>[] = useMemo(() => [
-        { header: 'ID', key: 'id', width: '5%' },
-        {
-            header: 'Klient',
-            key: 'first_name',
-            render: (item: Client) => `${item.first_name} ${item.last_name}`
-        },
-        { header: 'Email', key: 'email', render: (item: Client) => item.email ?? '-' },
-        { header: 'Telefon', key: 'phone', render: (item: Client) => item.phone ?? '-' },
-        { header: 'Wizyt', key: 'visits_count', width: '8%' },
-        { header: 'Wydano', key: 'total_spent_amount', width: '10%' },
-        {
-            header: 'Status',
-            key: 'deleted_at',
-            render: (item: Client) => (
-                <span style={{ color: item.deleted_at ? 'red' : 'green' }}>
-                    {item.deleted_at ? 'Usunięty (GDPR)' : 'Aktywny'}
-                </span>
-            ),
-            width: '15%'
-        },
-        {
-            header: 'Akcje',
-            key: 'actions',
-            width: '15%',
-            render: (item: Client) => (
-                <>
-                    <button
-                      onClick={() => {
-                          setClientToEdit(item); // 🚨 Ustaw klienta do edycji
-                          setIsModalOpen(true);    // Otwórz modal
-                      }}
-                      style={{ marginRight: '5px' }}
-                      disabled={!!item.deleted_at} // Nie edytuj usuniętego
-                    >
-                      Edytuj
-                    </button>
-                    {' | '}
-                    <button
-                        onClick={() => void handleSoftDelete(item.id)}
-                        style={{ color: 'red' }}
-                        disabled={!!item.deleted_at} // Nie usuwaj już usuniętego
-                    >
-                      Usuń (GDPR)
-                    </button>
-                </>
-            ),
-        },
-    ], [handleSoftDelete]);
-  const sortedClients: Client[] = useMemo(() => [...clients].sort((a, b) => a.id - b.id), [clients]);
+    const columns: ColumnDefinition<Client>[] = useMemo(
+        () => [
+            { header: 'ID', key: 'id', width: '5%' },
+            {
+                header: 'Klient',
+                key: 'first_name',
+                render: (item: Client) => `${item.first_name} ${item.last_name}`,
+            },
+            { header: 'Email', key: 'email', render: (item: Client) => item.email ?? '-' },
+            { header: 'Telefon', key: 'phone', render: (item: Client) => item.phone ?? '-' },
+            { header: 'Wizyt', key: 'visits_count', width: '8%' },
+            { header: 'Wydano', key: 'total_spent_amount', width: '10%' },
+            {
+                header: 'Status',
+                key: 'deleted_at',
+                render: (item: Client) => (
+                    <span style={{ color: item.deleted_at ? 'red' : 'green' }}>
+                        {item.deleted_at ? 'Usunięty (GDPR)' : 'Aktywny'}
+                    </span>
+                ),
+                width: '15%',
+            },
+            {
+                header: 'Akcje',
+                key: 'actions',
+                width: '15%',
+                render: (item: Client) => (
+                    <>
+                        <button
+                            onClick={() => {
+                                setClientToEdit(item); // 🚨 Ustaw klienta do edycji
+                                setIsModalOpen(true); // Otwórz modal
+                            }}
+                            style={{ marginRight: '5px' }}
+                            disabled={!!item.deleted_at} // Nie edytuj usuniętego
+                        >
+                            Edytuj
+                        </button>
+                        {' | '}
+                        <button
+                            onClick={() => void handleSoftDelete(item.id)}
+                            style={{ color: 'red' }}
+                            disabled={!!item.deleted_at} // Nie usuwaj już usuniętego
+                        >
+                            Usuń (GDPR)
+                        </button>
+                    </>
+                ),
+            },
+        ],
+        [handleSoftDelete]
+    );
 
-  if (loading && clients.length === 0) {
-    return (
+    const sortedClients: Client[] = useMemo(() => [...clients].sort((a, b) => a.id - b.id), [clients]);
+
+    if (loading && clients.length === 0) {
+        return (
             <div style={{ padding: 20 }}>
                 <h1>Zarządzanie Klientami</h1>
                 <p>Ładowanie listy klientów...</p>
@@ -170,7 +176,14 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
                             setClientToEdit(undefined); // W trybie tworzenia, upewnij się, że stan edycji jest pusty
                             setIsModalOpen(true);
                         }}
-                        style={{ padding: '10px 15px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+                        style={{
+                            padding: '10px 15px',
+                            backgroundColor: '#4CAF50',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '5px',
+                            cursor: 'pointer',
+                        }}
                     >
                         Dodaj Nowego Klienta
                     </button>
@@ -190,7 +203,15 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
 
             {/* Paginacja */}
             {totalPages > 1 && (
-                <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+                <div
+                    style={{
+                        marginTop: 20,
+                        display: 'flex',
+                        gap: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
                     <button
                         type="button"
                         onClick={handlePreviousPage}

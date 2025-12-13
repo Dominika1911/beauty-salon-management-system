@@ -14,16 +14,19 @@ interface ClientListParams {
 interface ClientsApi {
   list: (params?: ClientListParams) => Promise<AxiosResponse<PaginatedResponse<Client>>>;
   detail: (id: number) => Promise<AxiosResponse<Client>>;
-  //  Zaktualizowane typy wejściowe w create i update
   create: (data: ClientCreateUpdateData) => Promise<AxiosResponse<Client>>;
   update: (id: number, data: Partial<ClientCreateUpdateData>) => Promise<AxiosResponse<Client>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
+
+  // ✅ NOWE: soft delete przez akcję (detail=False)
+  softDelete: (clientId: number) => Promise<AxiosResponse<void>>;
 }
 
 // Endpointy API
 const ENDPOINTS = {
   base: '/clients/',
   detail: (id: number) => `/clients/${id}/`,
+  softDelete: '/clients/soft_delete/',
 } as const;
 
 /**
@@ -55,25 +58,34 @@ export const clientsAPI: ClientsApi = {
   },
 
   /**
-   * Aktualizuj klienta
-   * Używamy PATCH, ponieważ aktualizujemy tylko część pól (Partial<T>)
+   * Aktualizuj klienta (PATCH)
    */
   update: (id: number, data: Partial<ClientCreateUpdateData>): Promise<AxiosResponse<Client>> => {
     if (!id || id <= 0) {
       return Promise.reject(new Error('Invalid client ID'));
     }
-    // Zmieniamy na PATCH (bardziej odpowiednie dla częściowej aktualizacji)
     return api.patch<Client>(ENDPOINTS.detail(id), data);
   },
 
   /**
-   * Usuń klienta (Soft Delete, ustawienie deleted_at w backendzie)
+   * (Zostawiamy) Standardowe DELETE na detail endpoint
+   * Uwaga: u Ciebie GDPR soft delete jest przez /soft_delete/, więc w UI używaj softDelete().
    */
   delete: (id: number): Promise<AxiosResponse<void>> => {
     if (!id || id <= 0) {
       return Promise.reject(new Error('Invalid client ID'));
     }
-    // Metoda DELETE jest używana dla Soft Delete w backendzie
     return api.delete<void>(ENDPOINTS.detail(id));
+  },
+
+  /**
+   * ✅ Soft Delete klienta (GDPR) — backend action: POST /api/clients/soft_delete/
+   * Serializer oczekuje pola: { client: <id> }
+   */
+  softDelete: (clientId: number): Promise<AxiosResponse<void>> => {
+    if (!clientId || clientId <= 0) {
+      return Promise.reject(new Error('Invalid client ID'));
+    }
+    return api.post<void>(ENDPOINTS.softDelete, { client: clientId });
   },
 };
