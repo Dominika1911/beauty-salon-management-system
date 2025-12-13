@@ -1559,15 +1559,16 @@ class AvailabilitySlotsAPIView(APIView):
             if end_dt > start_dt:
                 parsed_breaks.append((start_dt, end_dt))
 
+        # datowe breaks: {"start": "...iso...", "end": "...iso..."}
         for b in breaks_raw if isinstance(breaks_raw, list) else []:
             try:
                 if isinstance(b, dict) and "start" in b and "end" in b:
                     bs = datetime.fromisoformat(str(b["start"]))
                     be = datetime.fromisoformat(str(b["end"]))
                     if timezone.is_naive(bs):
-                        bs = timezone.make_aware(bs)
+                        bs = timezone.make_aware(bs, tz)
                     if timezone.is_naive(be):
-                        be = timezone.make_aware(be)
+                        be = timezone.make_aware(be, tz)
                     _try_add_break(bs, be)
             except Exception:
                 continue
@@ -1644,7 +1645,7 @@ class AvailabilitySlotsAPIView(APIView):
                             has_weekly_break_collision = True
                             break
 
-                    if not (has_appt_collision or has_break_collision):
+                    if not (has_appt_collision or has_break_collision or has_weekly_break_collision):
                         slots.append(
                             {
                                 "start": slot_start.isoformat(),
@@ -1665,8 +1666,186 @@ class AvailabilitySlotsAPIView(APIView):
                 "slots": slots,
             }
         )
+# ==================== OCCUPANCY HELPERS (IDEAL) ====================
 
-# ==================== STATISTICS VIEW ====================
+def _clip_interval(s: datetime, e: datetime, win_s: datetime, win_e: datetime):
+    s2 = max(s, win_s)
+    e2 = min(e, win_e)
+    return (s2, e2) if e2 > s2 else None
+
+
+def _subtract_intervals(
+    base: list[tuple[datetime, datetime]],
+    cuts: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """
+    Odejmij przedziały `cuts` od `base`.
+    """
+    out: list[tuple[datetime, datetime]] = []
+    for bs, be in base:
+        cur = [(bs, be)]
+        for cs, ce in cuts:
+            new_cur = []
+            for s, e in cur:
+                if ce <= s or cs >= e:
+                    new_cur.append((s, e))
+                else:
+                    if cs > s:
+                        new_cur.append((s, cs))
+                    if ce < e:
+                        new_cur.append((ce, e))
+            cur = new_cur
+        out.extend(cur)
+    return out
+
+
+def compute_employee_availability_minutes(employee: Employee, since_dt: datetime, to_dt: datetime) -> int:
+    """
+    Dostępność = availability_periods - breaks - timeoff.
+    Zwraca minuty dostępności w oknie since_dt..to_dt.
+    """
+    tz = timezone.get_current_timezone()
+
+    # u Ciebie Schedule jest OneToOne, ale w slotach bierzesz status="active", więc robimy tak samo:
+    schedule = Schedule.objects.filter(employee=employee, status="active").order_by("-updated_at").first()
+    if not schedule:
+        return 0
+
+    periods = schedule.availability_periods or []
+    breaks_raw = schedule.breaks or []
+
+    # TimeOff (pełnodniowe) – DateField date_from/date_to
+    timeoffs = list(
+        TimeOff.objects.filter(
+            employee=employee,
+            status=TimeOff.Status.APPROVED,
+            date_to__gte=since_dt.date(),
+            date_from__lte=to_dt.date(),
+        ).only("date_from", "date_to")
+    )
+
+    # 1) bazowe bloki dostępności z periods
+    availability_blocks: list[tuple[datetime, datetime]] = []
+    for day in _daterange(since_dt.date(), to_dt.date()):
+        # jeśli dzień objęty urlopem -> skip całego dnia
+        if any(t.date_from <= day <= t.date_to for t in timeoffs):
+            continue
+
+        wd = day.weekday()
+        for p in periods:
+            if not isinstance(p, dict):
+                continue
+            if WEEKDAY_MAP.get(str(p.get("weekday", "")).strip().lower()) != wd:
+                continue
+
+            try:
+                st = _parse_hhmm(str(p.get("start_time")))
+                en = _parse_hhmm(str(p.get("end_time")))
+            except Exception:
+                continue
+
+            if en <= st:
+                continue
+
+            s = timezone.make_aware(datetime.combine(day, st), tz)
+            e = timezone.make_aware(datetime.combine(day, en), tz)
+
+            clipped = _clip_interval(s, e, since_dt, to_dt)
+            if clipped:
+                availability_blocks.append(clipped)
+
+    if not availability_blocks:
+        return 0
+
+    # 2) bloki przerw – jak w AvailabilitySlotsAPIView (2 formaty)
+    break_blocks: list[tuple[datetime, datetime]] = []
+
+    # 2a) datowe breaks: {"start": "ISO...", "end": "ISO..."}
+    for b in breaks_raw if isinstance(breaks_raw, list) else []:
+        try:
+            if isinstance(b, dict) and "start" in b and "end" in b:
+                bs = datetime.fromisoformat(str(b["start"]))
+                be = datetime.fromisoformat(str(b["end"]))
+                if timezone.is_naive(bs):
+                    bs = timezone.make_aware(bs, tz)
+                if timezone.is_naive(be):
+                    be = timezone.make_aware(be, tz)
+
+                clipped = _clip_interval(bs, be, since_dt, to_dt)
+                if clipped:
+                    break_blocks.append(clipped)
+        except Exception:
+            continue
+
+    # 2b) tygodniowe breaks: {"weekday": "...", "start_time": "HH:MM", "end_time": "HH:MM"}
+    for b in breaks_raw if isinstance(breaks_raw, list) else []:
+        try:
+            if not (isinstance(b, dict) and "weekday" in b and "start_time" in b and "end_time" in b):
+                continue
+
+            bwd = WEEKDAY_MAP.get(str(b.get("weekday", "")).strip().lower())
+            if bwd is None:
+                continue
+
+            bst = _parse_hhmm(str(b.get("start_time")))
+            ben = _parse_hhmm(str(b.get("end_time")))
+            if ben <= bst:
+                continue
+
+            for day in _daterange(since_dt.date(), to_dt.date()):
+                if day.weekday() != bwd:
+                    continue
+
+                bs = timezone.make_aware(datetime.combine(day, bst), tz)
+                be = timezone.make_aware(datetime.combine(day, ben), tz)
+
+                clipped = _clip_interval(bs, be, since_dt, to_dt)
+                if clipped:
+                    break_blocks.append(clipped)
+        except Exception:
+            continue
+
+    # 3) odejmij przerwy od dostępności
+    final_blocks = _subtract_intervals(availability_blocks, break_blocks)
+
+    # 4) minuty
+    minutes = 0
+    for s, e in final_blocks:
+        if e > s:
+            minutes += int((e - s).total_seconds() // 60)
+
+    return minutes
+
+
+def compute_employee_appointments_minutes(employee: Employee, since_dt: datetime, to_dt: datetime) -> int:
+    """
+    Minuty wizyt nachodzących na okno. Pomija CANCELLED/NO_SHOW.
+    """
+    active_statuses = [
+        Appointment.Status.PENDING,
+        Appointment.Status.CONFIRMED,
+        Appointment.Status.IN_PROGRESS,
+        Appointment.Status.COMPLETED,
+    ]
+
+    qs = Appointment.objects.filter(
+        employee=employee,
+        status__in=active_statuses,
+        start__lt=to_dt,
+        end__gt=since_dt,
+    ).only("start", "end")
+
+    total = 0
+    for a in qs:
+        s = max(a.start, since_dt)
+        e = min(a.end, to_dt)
+        if e > s:
+            total += int((e - s).total_seconds() // 60)
+
+    return total
+
+
+# ==================== STATISTICS VIEW (FIX) ====================
 
 class StatisticsView(APIView):
     """
@@ -1674,7 +1853,6 @@ class StatisticsView(APIView):
 
     Domyślny okres: ostatnie 30 dni (parametr ?days=).
     """
-
     permission_classes = [IsManagerOrEmployee]
 
     def get(self, request: Request) -> Response:
@@ -1688,45 +1866,28 @@ class StatisticsView(APIView):
         since = now - timedelta(days=days)
 
         total_clients = Client.objects.filter(deleted_at__isnull=True).count()
-        new_clients = (
-            Client.objects.filter(
-                created_at__gte=since,
-                deleted_at__isnull=True,
-            ).count()
-        )
+        new_clients = Client.objects.filter(created_at__gte=since, deleted_at__isnull=True).count()
+
         total_appointments = Appointment.objects.count()
-        completed_appointments = Appointment.objects.filter(
-            status=Appointment.Status.COMPLETED
-        ).count()
-        cancelled_appointments = Appointment.objects.filter(
-            status=Appointment.Status.CANCELLED
-        ).count()
-        no_show_appointments = Appointment.objects.filter(
-            status=Appointment.Status.NO_SHOW
-        ).count()
+        completed_appointments = Appointment.objects.filter(status=Appointment.Status.COMPLETED).count()
+        cancelled_appointments = Appointment.objects.filter(status=Appointment.Status.CANCELLED).count()
+        no_show_appointments = Appointment.objects.filter(status=Appointment.Status.NO_SHOW).count()
 
         total_revenue = (
-                Payment.objects.filter(
-                    status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-                    created_at__gte=since,
-                ).aggregate(total=Sum("amount"))["total"]
-                or Decimal("0.00")
+            Payment.objects.filter(
+                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+                created_at__gte=since,
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
         )
 
         services_qs = (
             Service.objects.filter(is_published=True)
             .annotate(
-                total_appointments=Count(
-                    "appointments",
-                    filter=Q(appointments__start__gte=since),
-                ),
+                total_appointments=Count("appointments", filter=Q(appointments__start__gte=since)),
                 total_revenue=Sum(
                     "appointments__payments__amount",
                     filter=Q(
-                        appointments__payments__status__in=[
-                            Payment.Status.PAID,
-                            Payment.Status.DEPOSIT,
-                        ],
+                        appointments__payments__status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
                         appointments__payments__created_at__gte=since,
                     ),
                 ),
@@ -1742,39 +1903,39 @@ class StatisticsView(APIView):
             }
             for service in services_qs
         ]
-        service_stats = ServiceStatisticsSerializer(
-            service_stats_data, many=True
-        ).data
+        service_stats = ServiceStatisticsSerializer(service_stats_data, many=True).data
 
         employees_qs = (
             Employee.objects.filter(is_active=True)
             .annotate(
-                total_appointments=Count(
-                    "appointments",
-                    filter=Q(appointments__start__gte=since),
-                ),
+                total_appointments=Count("appointments", filter=Q(appointments__start__gte=since)),
             )
             .order_by("-total_appointments")
         )
 
-        employee_stats_data = [
-            {
-                "employee": employee,
-                "total_appointments": employee.total_appointments or 0,
-                "occupancy_percent": Decimal("0.00"),
-            }
-            for employee in employees_qs
-        ]
-        employee_stats = EmployeeStatisticsSerializer(
-            employee_stats_data, many=True
-        ).data
+        # ✅ TU JEST NAPRAWA: liczymy occupancy naprawdę
+        employee_stats_data = []
+        for employee in employees_qs:
+            avail_min = compute_employee_availability_minutes(employee, since, now)
+            appt_min = compute_employee_appointments_minutes(employee, since, now)
+
+            if avail_min <= 0:
+                occ = Decimal("0.00")
+            else:
+                occ = (Decimal(appt_min) / Decimal(avail_min)) * Decimal("100.0")
+
+            employee_stats_data.append(
+                {
+                    "employee": employee,
+                    "total_appointments": employee.total_appointments or 0,
+                    "occupancy_percent": occ.quantize(Decimal("0.01")),
+                }
+            )
+
+        employee_stats = EmployeeStatisticsSerializer(employee_stats_data, many=True).data
 
         data = {
-            "period": {
-                "days": days,
-                "from": since,
-                "to": now,
-            },
+            "period": {"days": days, "from": since, "to": now},
             "summary": {
                 "total_clients": total_clients,
                 "new_clients": new_clients,
@@ -1789,6 +1950,7 @@ class StatisticsView(APIView):
         }
 
         return Response(data)
+
 
 # ==================== DASHBOARD VIEW ====================
 class DashboardView(APIView):
