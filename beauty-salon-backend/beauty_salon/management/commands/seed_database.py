@@ -1,117 +1,232 @@
 import random
-from datetime import timedelta, datetime  # Zapewnienie, że datetime jest zaimportowane
-from decimal import Decimal
 import logging
-from typing import Any, Optional, List, Callable, Iterable, Dict
+from datetime import timedelta, datetime
+from decimal import Decimal
+from typing import Any, Optional, List, Dict, Tuple, Iterable
+from dataclasses import dataclass
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandParser
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Sum, QuerySet
+from django.db.models import Sum, Q
 from django.core.files.base import ContentFile
-from django.db.models.base import ModelBase  # Import dla type-hinting menadżerów
+from django.db.models.base import ModelBase
 
 from beauty_salon.models import (
-    Service,
-    Employee,
-    Client,
-    Schedule,
-    TimeOff,
-    Appointment,
-    Note,
-    Payment,
-    Invoice,
-    MediaAsset,
-    Notification,
-    SystemSettings,
-    AuditLog,
-    StatsSnapshot,
-    ReportPDF,
+    Service, Employee, Client, Schedule, TimeOff, Appointment,
+    Note, Payment, Invoice, MediaAsset, Notification, SystemSettings,
+    AuditLog, StatsSnapshot, ReportPDF,
 )
-
 from beauty_salon.utils import calculate_vat
 
-# Opcjonalny progress bar – jeśli brak tqdm, skrypt dalej działa normalnie
+# Opcjonalna zależność dla paska postępu
 try:
     from tqdm import tqdm
-except ImportError:  # pragma: no cover
-    def tqdm(iterable: Iterable[Any], **kwargs: Any) -> Iterable[Any]:  # type: ignore[no-redef]
+except ImportError:
+    def tqdm(iterable: Iterable[Any], **kwargs: Any) -> Iterable[Any]:
+        """Implementacja zastępcza gdy tqdm nie jest dostępny."""
         return iterable
 
 
 logger = logging.getLogger(__name__)
-
 User = get_user_model()
 
 
-class Command(BaseCommand):
-    help = "Rozbudowany seed bazy danych dla systemu salonu kosmetycznego (wersja na inżynierkę)."
+@dataclass
+class StatystykiSeedowania:
+    """Kontener do śledzenia statystyk operacji seedowania."""
+    pracownicy_utworzeni: int = 0
+    klienci_utworzeni: int = 0
+    uslugi_utworzone: int = 0
+    wizyty_utworzone: int = 0
+    platnosci_utworzone: int = 0
+    faktury_utworzone: int = 0
+    powiadomienia_utworzone: int = 0
+    media_utworzone: int = 0
+    logi_audytu_utworzone: int = 0
 
-    def add_arguments(self, parser: Any) -> None:
+    def wyswietl_podsumowanie(self) -> str:
+        """Generuje sformatowane podsumowanie statystyk seedowania."""
+        return (
+            f"\n{'=' * 80}\n"
+            f"{'PODSUMOWANIE SEEDOWANIA BAZY DANYCH':^80}\n"
+            f"{'=' * 80}\n"
+            f"  Pracownicy:      {self.pracownicy_utworzeni:>6}\n"
+            f"  Klienci:         {self.klienci_utworzeni:>6}\n"
+            f"  Usługi:          {self.uslugi_utworzone:>6}\n"
+            f"  Wizyty:          {self.wizyty_utworzone:>6}\n"
+            f"  Płatności:       {self.platnosci_utworzone:>6}\n"
+            f"  Faktury:         {self.faktury_utworzone:>6}\n"
+            f"  Powiadomienia:   {self.powiadomienia_utworzone:>6}\n"
+            f"  Zasoby mediów:   {self.media_utworzone:>6}\n"
+            f"  Logi audytu:     {self.logi_audytu_utworzone:>6}\n"
+            f"{'=' * 80}\n"
+        )
+
+
+class Command(BaseCommand):
+    help = (
+        "Kompleksowe seedowanie bazy danych dla systemu zarządzania salonem kosmetycznym. "
+        "Generuje realistyczne dane testowe we wszystkich encjach zachowując "
+        "integralność referencyjną i spójność logiki biznesowej."
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.stats = StatystykiSeedowania()
+        self.now = timezone.now()
+        self.manager: Optional[User] = None
+        self.employees: List[Employee] = []
+        self.clients: List[Client] = []
+        self.services: List[Service] = []
+        self.appointments: List[Appointment] = []
+
+    def add_arguments(self, parser: CommandParser) -> None:
+        """Konfiguruje argumenty wiersza poleceń."""
         parser.add_argument(
             "--clear",
             action="store_true",
-            help="Usuń istniejące dane demo przed seedowaniem.",
+            help="Usuń wszystkie istniejące dane demo przed operacją seedowania.",
         )
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Seeduj nawet jeśli w bazie są już dane (bez czyszczenia).",
+            help="Wymuś operację seedowania nawet jeśli dane już istnieją (bez czyszczenia).",
         )
         parser.add_argument(
             "--clients",
             type=int,
             default=10,
             help=(
-                "Docelowa liczba klientów demo (minimum 1). "
-                "Powyżej 10 dodatkowi klienci zostaną wygenerowani automatycznie."
+                "Docelowa liczba profili klientów do wygenerowania (minimum: 1, domyślnie: 10). "
+                "Dodatkowi klienci ponad bazowy zestaw zostaną automatycznie wygenerowani."
             ),
         )
 
     @transaction.atomic
     def handle(self, *args: Any, **options: Any) -> None:
-        clear = options.get("clear")
-        force = options.get("force")
-        clients_target = max(1, options.get("clients") or 10)
+        """
+        Główna metoda wykonawcza seedowania bazy danych.
 
-        now = timezone.now()
+        Orkiestruje cały proces seedowania w sposób transakcyjny,
+        zapewniając albo pełny sukces albo pełne wycofanie zmian.
+        """
+        tryb_czyszczenia = options.get("clear", False)
+        tryb_wymuszony = options.get("force", False)
+        docelowa_liczba_klientow = max(1, options.get("clients", 10))
 
-        self.stdout.write("")
-        self.stdout.write("=" * 72)
-        self.stdout.write(self.style.SUCCESS("  Beauty Salon – SEED DATABASE (wersja rozszerzona)  "))
-        self.stdout.write("=" * 72)
+        self._wyswietl_naglowek()
 
-        # 1. Obsługa opcji --clear / --force
-        if clear:
-            self.clear_demo_data()
-        elif not force and (
-                Appointment.objects.exists()
-                or Client.objects.exists()
-                or Employee.objects.exists()
-        ):
-            self.stdout.write(
-                self.style.WARNING(
-                    "W bazie są już dane (wizyty/klienci/pracownicy).\n"
-                    "Użyj:\n"
-                    "  • --clear  żeby usunąć dane demo i zasiej od nowa\n"
-                    "  • --force  żeby mimo wszystko dodać kolejne dane\n"
-                )
-            )
+        # Walidacja warunków wykonania
+        if not self._waliduj_warunki_wykonania(tryb_czyszczenia, tryb_wymuszony):
             return
 
-        # =========================================================================
-        # 2. SYSTEM SETTINGS
-        # =========================================================================
-        settings_obj = SystemSettings.load()
-        settings_obj.salon_name = "Beauty Studio Demo – Inżynierka"
-        settings_obj.address = "ul. Inżynierska 1, 00-001 Warszawa"
-        settings_obj.phone = "+48 555 123 456"
-        settings_obj.contact_email = "kontakt@inzynierski-salon.demo"
-        settings_obj.slot_minutes = 30
-        settings_obj.buffer_minutes = 10
-        settings_obj.default_vat_rate = Decimal("23.00")
-        settings_obj.deposit_policy = {
+        # Wykonaj pipeline seedowania
+        try:
+            self._seeduj_ustawienia_systemowe()
+            self._seeduj_uzytkownikow_i_pracownikow()
+            self._seeduj_klientow(docelowa_liczba_klientow)
+            self._seeduj_uslugi()
+            self._przypisz_umiejetnosci_pracownikom()
+            self._seeduj_grafiki_pracy()
+            self._seeduj_nieobecnosci()
+            self._seeduj_wizyty()
+            self._seeduj_notatki()
+            self._seeduj_platnosci_i_faktury()
+            self._aktualizuj_metryki()
+            self._seeduj_powiadomienia()
+            self._seeduj_zasoby_mediow()
+            self._seeduj_migawki_statystyk()
+            self._seeduj_raporty_pdf()
+            self._seeduj_logi_audytu()
+
+            self._wyswietl_podsumowanie()
+
+        except Exception as e:
+            logger.exception("Krytyczny błąd podczas seedowania bazy danych")
+            self.stdout.write(
+                self.style.ERROR(
+                    f"\n Seedowanie nie powiodło się: {str(e)}\n"
+                    "Wszystkie zmiany zostały wycofane.\n"
+                )
+            )
+            raise
+
+    def _wyswietl_naglowek(self) -> None:
+        """Wyświetla profesjonalny nagłówek operacji seedowania."""
+        self.stdout.write("")
+        self.stdout.write("=" * 80)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{'SYSTEM ZARZĄDZANIA SALONEM KOSMETYCZNYM':^80}"
+            )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"{'Generator Danych Demonstracyjnych - Praca Inżynierska':^80}"
+            )
+        )
+        self.stdout.write("=" * 80)
+        self.stdout.write("")
+
+    def _waliduj_warunki_wykonania(
+        self, tryb_czyszczenia: bool, tryb_wymuszony: bool
+    ) -> bool:
+        """
+        Waliduje czy operacja seedowania może być wykonana.
+
+        Args:
+            tryb_czyszczenia: Czy należy wyczyścić istniejące dane
+            tryb_wymuszony: Czy wymusić seedowanie mimo istniejących danych
+
+        Returns:
+            True jeśli operacja może być kontynuowana, False w przeciwnym razie
+        """
+        if tryb_czyszczenia:
+            self._wyczysc_dane_demo()
+            return True
+
+        czy_dane_istnieja = (
+            Appointment.objects.exists() or
+            Client.objects.exists() or
+            Employee.objects.exists()
+        )
+
+        if czy_dane_istnieja and not tryb_wymuszony:
+            self.stdout.write(
+                self.style.WARNING(
+                    "\n W bazie danych znajdują się już dane (wizyty/klienci/pracownicy).\n\n"
+                    "Dostępne opcje:\n"
+                    "  • python manage.py seed_database --clear\n"
+                    "    Usuń dane demo i zasiej od nowa\n\n"
+                    "  • python manage.py seed_database --force\n"
+                    "    Dodaj kolejne dane mimo istniejących rekordów\n\n"
+                )
+            )
+            return False
+
+        return True
+
+    def _seeduj_ustawienia_systemowe(self) -> None:
+        """
+        Konfiguruje globalne ustawienia systemowe salonu.
+
+        Definiuje parametry operacyjne takie jak: dane kontaktowe, godziny otwarcia,
+        stawki VAT, polityki depozytów oraz konfigurację rezerwacji online.
+        """
+        self.stdout.write(" Konfiguracja ustawień systemowych...")
+
+        ustawienia = SystemSettings.load()
+        ustawienia.salon_name = "Beauty Salon Management System"
+        ustawienia.address = "ul. Akademicka 15, 00-901 Warszawa"
+        ustawienia.phone = "+48221234567"
+        ustawienia.contact_email = "kontakt@beauty-salon.pl"
+        ustawienia.slot_minutes = 30
+        ustawienia.buffer_minutes = 10
+        ustawienia.default_vat_rate = Decimal("23.00")
+
+        ustawienia.deposit_policy = {
             "require_deposit": True,
             "default_deposit_percent": 30,
             "free_cancellation_hours": 24,
@@ -119,7 +234,8 @@ class Command(BaseCommand):
             "late_cancellation_deposit_forfeit_percent": 50,
             "forfeit_deposit_on_cancellation": True,
         }
-        settings_obj.opening_hours = {
+
+        ustawienia.opening_hours = {
             "Monday": {"open": "09:00", "close": "19:00"},
             "Tuesday": {"open": "09:00", "close": "19:00"},
             "Wednesday": {"open": "09:00", "close": "19:00"},
@@ -128,202 +244,472 @@ class Command(BaseCommand):
             "Saturday": {"open": "09:00", "close": "15:00"},
             "Sunday": None,
         }
-        settings_obj.is_online_booking_enabled = True
-        settings_obj.maintenance_mode = False
-        settings_obj.maintenance_message = ""
-        settings_obj.save()
 
-        self.stdout.write(self.style.SUCCESS("✓ Ustawienia systemowe zapisane."))
+        ustawienia.is_online_booking_enabled = True
+        ustawienia.maintenance_mode = False
+        ustawienia.maintenance_message = ""
+        ustawienia.save()
 
-        # =========================================================================
-        # 3. USERS – MANAGER + EMPLOYEES
-        # =========================================================================
-        # UWAGA: dane logowania TYLKO do środowisk demo/testowych.
-        # W produkcji użyj bezpiecznych haseł/zmiennych środowiskowych.
-        manager = User.objects.create_superuser(
-            email="manager@inzynierski-salon.demo",
-            password="admin123",
+        self.stdout.write(self.style.SUCCESS("  ✓ Ustawienia systemowe zapisane"))
+
+    def _seeduj_uzytkownikow_i_pracownikow(self) -> None:
+        """
+        Tworzy konta użytkowników i profile pracowników.
+
+        Generuje:
+        - 1 konto managera z uprawnieniami administracyjnymi
+        - 5 kont pracowników z różnymi specjalizacjami
+
+        UWAGA: Dane logowania są przeznaczone WYŁĄCZNIE do środowisk deweloperskich.
+        W produkcji należy używać bezpiecznych haseł i zmiennych środowiskowych.
+        """
+        self.stdout.write("Tworzenie użytkowników i pracowników...")
+
+        # Manager z pełnymi uprawnieniami
+        self.manager = User.objects.create_superuser(
+            email="manager@beauty-salon.pl",
+            password="AdminDemo2024!",
             first_name="Dominika",
-            last_name="Manager",
+            last_name="Jedynak",
             role=User.RoleChoices.MANAGER,
         )
 
-        employees_def = [
-            ("anna.stylist@salon.demo", "Anna", "Kowalska", "+48 555 000 101"),
-            ("marta.nails@salon.demo", "Marta", "Wiśniewska", "+48 555 000 102"),
-            ("paulina.face@salon.demo", "Paulina", "Zielińska", "+48 555 000 103"),
-            ("magda.lashes@salon.demo", "Magda", "Nowicka", "+48 555 000 104"),
-            ("karolina.massage@salon.demo", "Karolina", "Mazur", "+48 555 000 105"),
+        # Definicje pracowników z różnymi specjalizacjami
+        definicje_pracownikow = [
+            {
+                "email": "anna.stylist@beauty-salon.pl",
+                "first_name": "Anna",
+                "last_name": "Kowalska",
+                "phone": "+48501234567",
+                "specialization": "Stylista włosów",
+            },
+            {
+                "email": "marta.nails@beauty-salon.pl",
+                "first_name": "Marta",
+                "last_name": "Wiśniewska",
+                "phone": "+48502345678",
+                "specialization": "Specjalista manicure",
+            },
+            {
+                "email": "paulina.beauty@beauty-salon.pl",
+                "first_name": "Paulina",
+                "last_name": "Zielińska",
+                "phone": "+48503456789",
+                "specialization": "Kosmetolog",
+            },
+            {
+                "email": "magda.lashes@beauty-salon.pl",
+                "first_name": "Magda",
+                "last_name": "Nowicka",
+                "phone": "+48504567890",
+                "specialization": "Stylistka rzęs i brwi",
+            },
+            {
+                "email": "karolina.massage@beauty-salon.pl",
+                "first_name": "Karolina",
+                "last_name": "Mazur",
+                "phone": "+48505678901",
+                "specialization": "Masażystka",
+            },
         ]
 
-        employees = []
-        for email, first, last, phone in employees_def:
+        for dane in definicje_pracownikow:
+            # Utworzenie konta użytkownika
             user = User.objects.create_user(
-                email=email,
-                password="test1234",
-                first_name=first,
-                last_name=last,
+                email=dane["email"],
+                password="PracownikDemo2024!",
+                first_name=dane["first_name"],
+                last_name=dane["last_name"],
                 role=User.RoleChoices.EMPLOYEE,
             )
-            # jeśli masz sygnały – Employee powstanie sam, ale dla pewności:
-            employee_profile, _ = Employee.objects.get_or_create(user=user)
-            employee_profile.first_name = first
-            employee_profile.last_name = last
-            employee_profile.phone = phone
-            employee_profile.hired_at = now.date() - timedelta(days=random.randint(90, 730))
-            employee_profile.is_active = True
-            employee_profile.save()
-            employees.append(employee_profile)
 
-        self.stdout.write(self.style.SUCCESS(f"✓ Utworzono {len(employees)} pracowników + 1 manager."))
+            # Utworzenie profilu pracownika
+            employee, _ = Employee.objects.get_or_create(user=user)
+            employee.first_name = dane["first_name"]
+            employee.last_name = dane["last_name"]
+            employee.phone = dane["phone"]
+            employee.hired_at = (
+                self.now.date() - timedelta(days=random.randint(180, 1095))
+            )
+            employee.is_active = True
+            employee.save()
 
-        # =========================================================================
-        # 4. USERS – CLIENTS
-        # =========================================================================
-        base_clients_def = [
-            ("klient1@example.com", "Karolina", "Jasińska", "+48 555 111 001"),
-            ("klient2@example.com", "Magda", "Kwiatkowska", "+48 555 111 002"),
-            ("klient3@example.com", "Joanna", "Lewandowska", "+48 555 111 003"),
-            ("klient4@example.com", "Sylwia", "Pawlak", "+48 555 111 004"),
-            ("klient5@example.com", "Natalia", "Walczak", "+48 555 111 005"),
-            ("klient6@example.com", "Ewelina", "Marciniak", "+48 555 111 006"),
-            ("klient7@example.com", "Justyna", "Rutkowska", "+48 555 111 007"),
-            ("klient8@example.com", "Aleksandra", "Baran", "+48 555 111 008"),
-            ("klient9@example.com", "Paulina", "Duda", "+48 555 111 009"),
-            ("klient10@example.com", "Izabela", "Czarnecka", "+48 555 111 010"),
+            self.employees.append(employee)
+            self.stats.pracownicy_utworzeni += 1
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f" Utworzono 1 managera i {len(self.employees)} pracowników"
+            )
+        )
+
+    def _seeduj_klientow(self, liczba_docelowa: int) -> None:
+        """
+        Generuje profile klientów wraz z kontami użytkowników.
+
+        Args:
+            liczba_docelowa: Docelowa liczba klientów do wygenerowania
+        """
+        self.stdout.write(f"Tworzenie {liczba_docelowa} profili klientów...")
+
+        # Bazowy zestaw klientów z realistycznymi danymi
+        bazowi_klienci = [
+            ("karolina.jasinska@email.pl", "Karolina", "Jasińska", "+48 601 111 001"),
+            ("magda.kwiatkowska@email.pl", "Magda", "Kwiatkowska", "+48 602 111 002"),
+            ("joanna.lewandowska@email.pl", "Joanna", "Lewandowska", "+48 603 111 003"),
+            ("sylwia.pawlak@email.pl", "Sylwia", "Pawlak", "+48 604 111 004"),
+            ("natalia.walczak@email.pl", "Natalia", "Walczak", "+48 605 111 005"),
+            ("ewelina.marciniak@email.pl", "Ewelina", "Marciniak", "+48 606 111 006"),
+            ("justyna.rutkowska@email.pl", "Justyna", "Rutkowska", "+48 607 111 007"),
+            ("aleksandra.baran@email.pl", "Aleksandra", "Baran", "+48 608 111 008"),
+            ("paulina.duda@email.pl", "Paulina", "Duda", "+48 609 111 009"),
+            ("izabela.czarnecka@email.pl", "Izabela", "Czarnecka", "+48 610 111 010"),
         ]
 
-        clients_def = list(base_clients_def)
+        definicje_klientow = list(bazowi_klienci)
 
-        # jeśli ktoś poda więcej niż 10 klientów – generujemy dodatkowych technicznych
-        if clients_target > len(clients_def):
-            extra_needed = clients_target - len(clients_def)
-            for i in range(extra_needed):
-                idx = len(clients_def) + 1
-                clients_def.append(
-                    (
-                        f"klient{idx}@example.com",
-                        f"Klient{idx}",
-                        f"Demo{idx}",
-                        f"+48 555 111 {idx:03d}",
-                    )
-                )
+        # Generowanie dodatkowych klientów jeśli potrzeba
+        if liczba_docelowa > len(definicje_klientow):
+            dodatkowi_potrzebni = liczba_docelowa - len(definicje_klientow)
+            for i in range(dodatkowi_potrzebni):
+                numer = len(definicje_klientow) + 1
+                definicje_klientow.append((
+                    f"klient{numer}@beauty-demo.pl",
+                    f"Klient{numer}",
+                    f"Testowy{numer}",
+                    f"+48 6{numer:02d} 111 {numer:03d}",
+                ))
 
-        # przycinamy, jeśli ktoś podał mniej niż 10
-        clients_def = clients_def[:clients_target]
+        # Przycinanie do docelowej liczby
+        definicje_klientow = definicje_klientow[:liczba_docelowa]
 
-        clients = []
-        for email, first, last, phone in clients_def:
+        for email, imie, nazwisko, telefon in tqdm(
+            definicje_klientow, desc="Generowanie klientów"
+        ):
+            # Utworzenie konta użytkownika
             user = User.objects.create_user(
                 email=email,
-                password="client123",
-                first_name=first,
-                last_name=last,
+                password="KlientDemo2024!",
+                first_name=imie,
+                last_name=nazwisko,
                 role=User.RoleChoices.CLIENT,
             )
-            client_profile, _ = Client.objects.get_or_create(user=user)
-            client_profile.first_name = first
-            client_profile.last_name = last
-            client_profile.email = email
-            client_profile.phone = phone
-            client_profile.marketing_consent = random.choice([True, False])
-            client_profile.preferred_contact = random.choice(
-                [
-                    Client.ContactPreference.EMAIL,
-                    Client.ContactPreference.SMS,
-                    Client.ContactPreference.PHONE,
-                ]
+
+            # Utworzenie profilu klienta
+            client, _ = Client.objects.get_or_create(user=user)
+            client.first_name = imie
+            client.last_name = nazwisko
+            client.email = email
+            client.phone = telefon
+            client.marketing_consent = random.choice([True, False])
+            client.preferred_contact = random.choice([
+                Client.ContactPreference.EMAIL,
+                Client.ContactPreference.SMS,
+                Client.ContactPreference.PHONE,
+            ])
+            client.internal_notes = (
+                "Profil wygenerowany automatycznie przez system seedowania "
+                "w ramach danych demonstracyjnych pracy inżynierskiej."
             )
-            client_profile.internal_notes = "Klient założony przez seed_database (demo – dane testowe)."
-            client_profile.save()
-            clients.append(client_profile)
+            client.save()
+
+            self.clients.append(client)
+            self.stats.klienci_utworzeni += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓ Utworzono {len(clients)} klientów wraz z kontami użytkowników."
+                f"  Utworzono {len(self.clients)} profili klientów"
             )
         )
 
-        # =========================================================================
-        # 5. SERVICES
-        # =========================================================================
-        services_def = [
-            ("Strzyżenie damskie", "Włosy", Decimal("80.00"), 45, "Strzyżenie z modelowaniem."),
-            ("Strzyżenie męskie", "Włosy", Decimal("50.00"), 30, "Strzyżenie męskie z myciem."),
-            ("Koloryzacja jednolita", "Włosy", Decimal("180.00"), 120, "Koloryzacja pełna, bez refleksów."),
-            ("Baleyage + tonowanie", "Włosy", Decimal("260.00"), 150, "Baleyage, tonowanie, modelowanie."),
-            ("Manicure hybrydowy", "Paznokcie", Decimal("100.00"), 60, "Klasyczny manicure hybrydowy."),
-            ("Pedicure SPA", "Paznokcie", Decimal("140.00"), 75, "Pedicure z peelingiem i masażem."),
-            ("Oczyszczanie manualne", "Twarz", Decimal("160.00"), 75, "Głębokie oczyszczanie cery."),
-            ("Mezoterapia bezigłowa", "Twarz", Decimal("220.00"), 60, "Zabieg odżywiający skórę."),
-            ("Laminacja rzęs", "Rzęsy", Decimal("150.00"), 70, "Uniesienie i odżywienie rzęs."),
-            ("Regulacja i henna brwi", "Brwi", Decimal("70.00"), 30, "Regulacja kształtu + henna."),
-            ("Masaż relaksacyjny pleców", "Ciało", Decimal("140.00"), 45, "Relaksacyjny masaż pleców."),
-            ("Masaż gorącymi kamieniami", "Ciało", Decimal("220.00"), 80, "Głęboko relaksujący masaż."),
+    def _seeduj_uslugi(self) -> None:
+        """
+        Tworzy katalog usług oferowanych przez salon.
+
+        Generuje kompleksowy zestaw usług podzielonych na kategorie:
+        - Włosy (strzyżenie, koloryzacja, stylizacja)
+        - Paznokcie (manicure, pedicure)
+        - Twarz (zabiegi pielęgnacyjne, kosmetyczne)
+        - Rzęsy i brwi (stylizacja, laminacja)
+        - Ciało (masaże, zabiegi relaksacyjne)
+        """
+        self.stdout.write(" Tworzenie katalogu usług...")
+
+        definicje_uslug = [
+            # Kategoria: Włosy
+            {
+                "name": "Strzyżenie damskie z modelowaniem",
+                "category": "Włosy",
+                "price": Decimal("120.00"),
+                "duration": 60,
+                "description": (
+                    "Profesjonalne strzyżenie damskie z modelowaniem. "
+                    "Zawiera konsultację, mycie, strzyżenie i stylizację."
+                ),
+            },
+            {
+                "name": "Strzyżenie męskie",
+                "category": "Włosy",
+                "price": Decimal("70.00"),
+                "duration": 40,
+                "description": (
+                    "Klasyczne strzyżenie męskie z myciem włosów "
+                    "i prostą stylizacją."
+                ),
+            },
+            {
+                "name": "Koloryzacja jednolita",
+                "category": "Włosy",
+                "price": Decimal("250.00"),
+                "duration": 120,
+                "description": (
+                    "Profesjonalna koloryzacja całości włosów jednolitym kolorem. "
+                    "Zawiera konsultację, aplikację farby i pielęgnację."
+                ),
+            },
+            {
+                "name": "Balayage premium z tonowaniem",
+                "category": "Włosy",
+                "price": Decimal("380.00"),
+                "duration": 180,
+                "description": (
+                    "Ekskluzywny zabieg rozjaśnienia techniką balayage "
+                    "z profesjonalnym tonowaniem i pielęgnacją."
+                ),
+            },
+            {
+                "name": "Keratynowe prostowanie włosów",
+                "category": "Włosy",
+                "price": Decimal("450.00"),
+                "duration": 150,
+                "description": (
+                    "Trwałe wygładzenie i prostowanie włosów z wykorzystaniem "
+                    "profesjonalnej keratyny."
+                ),
+            },
+
+            # Kategoria: Paznokcie
+            {
+                "name": "Manicure hybrydowy",
+                "category": "Paznokcie",
+                "price": Decimal("110.00"),
+                "duration": 60,
+                "description": (
+                    "Klasyczny manicure hybrydowy z przygotowaniem płytki, "
+                    "aplikacją lakieru hybrydowego i pielęgnacją skórek."
+                ),
+            },
+            {
+                "name": "Manicure żelowy z przedłużaniem",
+                "category": "Paznokcie",
+                "price": Decimal("180.00"),
+                "duration": 90,
+                "description": (
+                    "Profesjonalne przedłużanie paznokci żelem z możliwością "
+                    "dowolnej stylizacji i zdobień."
+                ),
+            },
+            {
+                "name": "Pedicure SPA",
+                "category": "Paznokcie",
+                "price": Decimal("160.00"),
+                "duration": 75,
+                "description": (
+                    "Luksusowy pedicure z kąpielą stóp, peelingiem, "
+                    "masażem i aplikacją lakieru hybrydowego."
+                ),
+            },
+
+            # Kategoria: Twarz
+            {
+                "name": "Oczyszczanie manualne twarzy",
+                "category": "Twarz",
+                "price": Decimal("180.00"),
+                "duration": 75,
+                "description": (
+                    "Głębokie oczyszczanie cery z usuwaniem zaskórników, "
+                    "tonizacją i nawilżeniem."
+                ),
+            },
+            {
+                "name": "Mezoterapia mikroigłowa",
+                "category": "Twarz",
+                "price": Decimal("280.00"),
+                "duration": 60,
+                "description": (
+                    "Zaawansowany zabieg odmładzający z wykorzystaniem "
+                    "mezoterapii mikroigłowej i skoncentrowanych serum."
+                ),
+            },
+            {
+                "name": "Peeling kawitacyjny ultradźwiękowy",
+                "category": "Twarz",
+                "price": Decimal("150.00"),
+                "duration": 45,
+                "description": (
+                    "Nieinwazyjne oczyszczanie skóry ultradźwiękami "
+                    "z jednoczesnym nawilżeniem."
+                ),
+            },
+            {
+                "name": "Masaż kobido anti-aging",
+                "category": "Twarz",
+                "price": Decimal("200.00"),
+                "duration": 50,
+                "description": (
+                    "Japoński masaż liftingujący twarz, pobudzający "
+                    "produkcję kolagenu i poprawiający kontur twarzy."
+                ),
+            },
+
+            # Kategoria: Rzęsy i brwi
+            {
+                "name": "Laminacja rzęs z botoxem",
+                "category": "Rzęsy",
+                "price": Decimal("180.00"),
+                "duration": 70,
+                "description": (
+                    "Profesjonalne uniesienie i odżywienie rzęs z efektem "
+                    "długotrwałego pogrubienia i podkręcenia."
+                ),
+            },
+            {
+                "name": "Henna pudrowa brwi",
+                "category": "Brwi",
+                "price": Decimal("90.00"),
+                "duration": 40,
+                "description": (
+                    "Regulacja kształtu brwi z hennąpudrową zapewniającą "
+                    "naturalny, trwały efekt."
+                ),
+            },
+            {
+                "name": "Laminacja brwi",
+                "category": "Brwi",
+                "price": Decimal("120.00"),
+                "duration": 45,
+                "description": (
+                    "Nowoczesna metoda stylizacji brwi z długotrwałym "
+                    "efektem ułożenia włosków."
+                ),
+            },
+
+            # Kategoria: Ciało
+            {
+                "name": "Masaż relaksacyjny całego ciała",
+                "category": "Ciało",
+                "price": Decimal("200.00"),
+                "duration": 60,
+                "description": (
+                    "Klasyczny masaż relaksacyjny całego ciała z użyciem "
+                    "aromatycznych olejków."
+                ),
+            },
+            {
+                "name": "Masaż gorącymi kamieniami",
+                "category": "Ciało",
+                "price": Decimal("280.00"),
+                "duration": 90,
+                "description": (
+                    "Głęboko relaksujący masaż z wykorzystaniem nagrzanych "
+                    "kamieni wulkanicznych."
+                ),
+            },
+            {
+                "name": "Masaż antycellulitowy",
+                "category": "Ciało",
+                "price": Decimal("180.00"),
+                "duration": 50,
+                "description": (
+                    "Intensywny masaż ujędrniający z profesjonalnymi "
+                    "kosmetykami modelującymi sylwetkę."
+                ),
+            },
         ]
 
-        services: List[Service] = []
-        for name, category, price, minutes, description in services_def:
+        for dane in tqdm(definicje_uslug, desc="Tworzenie usług"):
             service = Service.objects.create(
-                name=name,
-                category=category,
-                price=price,
-                duration=timedelta(minutes=minutes),
-                description=description,
+                name=dane["name"],
+                category=dane["category"],
+                price=dane["price"],
+                duration=timedelta(minutes=dane["duration"]),
+                description=dane["description"],
                 is_published=True,
+                image_url=f"https://picsum.photos/seed/{dane['name']}/800/600",
                 promotion={},
-                image_url=f"https://picsum.photos/seed/service_{len(services) + 1}/600/400",
             )
-            services.append(service)
+            self.services.append(service)
+            self.stats.uslugi_utworzone += 1
 
-        # Losowe promocje – bardziej elastyczne niż „na sztywno”
-        for s in services:
-            if random.random() < 0.3:  # 30% szans na aktywną promocję
-                s.promotion = {
+        # Losowe przypisanie promocji (30% szans dla każdej usługi)
+        for service in self.services:
+            if random.random() < 0.30:
+                service.promotion = {
                     "active": True,
-                    "discount_percent": random.choice([10, 15, 20]),
+                    "discount_percent": random.choice([10, 15, 20, 25]),
+                    "description": "Promocja specjalna - ograniczona czasowo!",
                 }
-            else:
-                s.promotion = {"active": False}
-            s.save(update_fields=["promotion"])
+                service.save(update_fields=["promotion"])
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓ Utworzono {len(services)} usług z przykładowymi (losowymi) promocjami."
+                f"  ✓ Utworzono {len(self.services)} usług w katalogu"
             )
         )
 
-        # =========================================================================
-        # 6. EMPLOYEE SKILLS
-        # =========================================================================
-        if employees:
-            hair = [s for s in services if s.category == "Włosy"]
-            nails = [s for s in services if s.category == "Paznokcie"]
-            face = [s for s in services if s.category == "Twarz"]
-            brows = [s for s in services if s.category == "Brwi"]
-            lashes = [s for s in services if s.category == "Rzęsy"]
-            body = [s for s in services if s.category == "Ciało"]
+    def _przypisz_umiejetnosci_pracownikom(self) -> None:
+        """
+        Przypisuje konkretne umiejętności (usługi) poszczególnym pracownikom.
 
-            # Używamy listy + modulo, dzięki czemu działa dla dowolnej liczby pracowników
-            skill_patterns = [
-                hair + brows,
-                nails + face,
-                face + brows,
-                lashes + brows,
-                body + face,
-            ]
+        Każdy pracownik otrzymuje zestaw usług zgodny z jego specjalizacją,
+        co zapewnia realistyczną symulację organizacji pracy w salonie.
+        """
+        if not self.employees or not self.services:
+            return
 
-            for idx, emp in enumerate(employees):
-                skills = skill_patterns[idx % len(skill_patterns)]
-                emp.skills.set(skills)
-                emp.save()
+        self.stdout.write("Przypisywanie umiejętności pracownikom...")
 
-        self.stdout.write(self.style.SUCCESS("✓ Przypisano umiejętności pracownikom."))
+        # Kategoryzacja usług
+        uslugi_wlosy = [s for s in self.services if s.category == "Włosy"]
+        uslugi_paznokcie = [s for s in self.services if s.category == "Paznokcie"]
+        uslugi_twarz = [s for s in self.services if s.category == "Twarz"]
+        uslugi_brwi = [s for s in self.services if s.category == "Brwi"]
+        uslugi_rzesy = [s for s in self.services if s.category == "Rzęsy"]
+        uslugi_cialo = [s for s in self.services if s.category == "Ciało"]
 
-        # =========================================================================
-        # 7. SCHEDULES
-        # =========================================================================
-        base_availability: List[Dict[str, str]] = [
+        # Wzorce specjalizacji dla kolejnych pracowników
+        wzorce_umiejetnosci = [
+            uslugi_wlosy + uslugi_brwi,          # Stylista włosów + brwi
+            uslugi_paznokcie + uslugi_twarz,     # Manicure + kosmetyka
+            uslugi_twarz + uslugi_brwi,          # Kosmetolog + brwi
+            uslugi_rzesy + uslugi_brwi,          # Stylistka rzęs i brwi
+            uslugi_cialo + uslugi_twarz,         # Masażystka + zabiegi na twarz
+        ]
+
+        for idx, employee in enumerate(self.employees):
+            umiejetnosci = wzorce_umiejetnosci[idx % len(wzorce_umiejetnosci)]
+            employee.skills.set(umiejetnosci)
+            employee.save()
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f" Przypisano umiejętności {len(self.employees)} pracownikom"
+            )
+        )
+
+    def _seeduj_grafiki_pracy(self) -> None:
+        """
+        Tworzy harmonogramy pracy dla wszystkich pracowników.
+
+        Definiuje:
+        - Dostępność pracowników w poszczególne dni tygodnia
+        - Standardowe godziny pracy
+        - Przerwy śniadaniowe/obiadowe
+        """
+        self.stdout.write(" Tworzenie harmonogramów pracy...")
+
+        # Standardowy szablon dostępności
+        szablon_dostepnosci = [
             {"day": "Monday", "start": "09:00", "end": "17:00"},
             {"day": "Tuesday", "start": "09:00", "end": "17:00"},
             {"day": "Wednesday", "start": "09:00", "end": "17:00"},
@@ -331,7 +717,9 @@ class Command(BaseCommand):
             {"day": "Friday", "start": "09:00", "end": "17:00"},
             {"day": "Saturday", "start": "09:00", "end": "14:00"},
         ]
-        base_breaks: List[Dict[str, str]] = [
+
+        # Standardowe przerwy
+        szablon_przerw = [
             {"day": "Monday", "start": "13:00", "end": "13:30"},
             {"day": "Tuesday", "start": "13:00", "end": "13:30"},
             {"day": "Wednesday", "start": "13:00", "end": "13:30"},
@@ -339,858 +727,1078 @@ class Command(BaseCommand):
             {"day": "Friday", "start": "13:00", "end": "13:30"},
         ]
 
-        schedules = []
-        for emp in employees:
-            availability = list(base_availability)
-            if emp is employees[-1]:
-                availability = [dict(a) for a in availability]
-                for a in availability:
-                    if a["day"] == "Monday":
-                        a["end"] = "15:00"
+        licznik_grafikow = 0
+        for employee in self.employees:
+            dostepnosc = list(szablon_dostepnosci)
+            przerwy = list(szablon_przerw)
 
-            schedule = Schedule.objects.create(
-                employee=emp,
+            # Dodanie różnorodności - niektórzy pracownicy mają skrócone grafiki
+            if random.random() < 0.3:
+                dostepnosc = [d.copy() for d in dostepnosc if d["day"] != "Saturday"]
+
+            Schedule.objects.create(
+                employee=employee,
                 status=Schedule.Status.ACTIVE,
-                availability_periods=availability,
-                breaks=base_breaks,
+                availability_periods=dostepnosc,
+                breaks=przerwy,
             )
-            schedules.append(schedule)
-
-        self.stdout.write(self.style.SUCCESS(f"✓ Utworzono {len(schedules)} grafików pracy."))
-
-        # =========================================================================
-        # 8. TIME OFF
-        # =========================================================================
-        time_offs = []
-        if employees:
-            vacation = TimeOff.objects.create(
-                employee=employees[0],
-                date_from=now.date() + timedelta(days=7),
-                date_to=now.date() + timedelta(days=10),
-                status=TimeOff.Status.APPROVED,
-                type=TimeOff.Type.VACATION,
-                reason="Urlop wypoczynkowy – wyjazd nad morze.",
-                approved_by=manager,
-                approved_at=now,
-            )
-            time_offs.append(vacation)
-
-            if len(employees) > 1:
-                sick = TimeOff.objects.create(
-                    employee=employees[1],
-                    date_from=now.date() - timedelta(days=5),
-                    date_to=now.date() - timedelta(days=3),
-                    status=TimeOff.Status.APPROVED,
-                    type=TimeOff.Type.SICK_LEAVE,
-                    reason="Zwolnienie lekarskie.",
-                    approved_by=manager,
-                    approved_at=now - timedelta(days=5),
-                )
-                time_offs.append(sick)
-
-        self.stdout.write(self.style.SUCCESS(f"✓ Dodano {len(time_offs)} nieobecności pracowników."))
-
-        # =========================================================================
-        # 9. APPOINTMENTS
-        # =========================================================================
-        # Używamy listy, która może zawierać None
-        appointments_with_none: List[Optional[Appointment]] = []
-
-        if employees and clients and services:
-            # Historyczne wizyty (ostatnie 30 dni)
-            history_days = [30, 21, 14, 7, 3]
-            for days_ago in tqdm(history_days, desc="Tworzenie historycznych wizyt"):
-                for _ in range(2):
-                    client = random.choice(clients)
-                    emp = random.choice(employees)
-                    service = random.choice(services)
-                    start = (now - timedelta(days=days_ago)).replace(
-                        hour=random.choice([9, 11, 13, 15, 17]),
-                        minute=0,
-                        second=0,
-                        microsecond=0,
-                    )
-                    end = start + service.duration
-                    status = random.choice(
-                        [
-                            Appointment.Status.COMPLETED,
-                            Appointment.Status.COMPLETED,
-                            Appointment.Status.CANCELLED,
-                            Appointment.Status.NO_SHOW,
-                        ]
-                    )
-
-                    appt = self._create_appointment_if_possible(
-                        client=client,
-                        emp=emp,
-                        service=service,
-                        start=start,
-                        end=end,
-                        status=status,
-                        booking_channel=random.choice(["online", "phone", "walk_in"]),
-                        internal_notes="Wizyta wygenerowana automatycznie przez seed_database.",
-                        client_notes="",
-                    )
-                    # Dodajemy do listy z None lub Appt
-                    appointments_with_none.append(appt)
-
-            # Wizyty „dzisiaj”
-            for offset_hours in [-2, 1, 3]:
-                client = random.choice(clients)
-                emp = random.choice(employees)
-                service = random.choice(services)
-                start = now.replace(
-                    hour=max(9, min(18, now.hour + offset_hours)),
-                    minute=0,
-                    second=0,
-                    microsecond=0,
-                )
-                end = start + service.duration
-                status = (
-                    Appointment.Status.IN_PROGRESS
-                    if offset_hours == -2
-                    else Appointment.Status.CONFIRMED
-                )
-
-                appt = self._create_appointment_if_possible(
-                    client=client,
-                    emp=emp,
-                    service=service,
-                    start=start,
-                    end=end,
-                    status=status,
-                    booking_channel="online",
-                    internal_notes="Demo – wizyta tego samego dnia.",
-                    client_notes="",
-                )
-                appointments_with_none.append(appt)
-
-            # Przyszłe wizyty (kolejne 2 tygodnie)
-            future_days = [1, 2, 5, 7, 10, 14]
-            for days_ahead in tqdm(future_days, desc="Tworzenie przyszłych wizyt"):
-                client = random.choice(clients)
-                emp = random.choice(employees)
-                service = random.choice(services)
-                start = (now + timedelta(days=days_ahead)).replace(
-                    hour=random.choice([9, 11, 13, 15, 17]),
-                    minute=0,
-                    second=0,
-                    microsecond=0,
-                )
-                end = start + service.duration
-                status = random.choice(
-                    [
-                        Appointment.Status.PENDING,
-                        Appointment.Status.CONFIRMED,
-                    ]
-                )
-
-                appt = self._create_appointment_if_possible(
-                    client=client,
-                    emp=emp,
-                    service=service,
-                    start=start,
-                    end=end,
-                    status=status,
-                    booking_channel="online",
-                    internal_notes="Przyszła wizyta (seed_database).",
-                    client_notes="Proszę o delikatny efekt.",
-                )
-                appointments_with_none.append(appt)
-
-        # Linia 517: Poprawka no-redef i filtrowanie None.
-        # Definiujemy appointments jako przefiltrowaną listę, używaną dalej w sekcjach 10-17.
-        appointments: List[Appointment] = [a for a in appointments_with_none if a is not None]
-
-        # PRZEGLĄD WSZYSTKICH WIZYT (na potrzeby statusów, notatek, itp.)
-        for appt in appointments:
-            if appt.status == Appointment.Status.CANCELLED:
-                # Wcześniej te bloki były w pętlach tworzących, co powodowało problem,
-                # bo appt było Optional[Appointment]. Teraz są tu, gdzie appt jest Appt.
-                if appt.cancelled_by is None:
-                    # Poprawka 511: Musimy sprawdzić, czy klient jest (zgodnie z mypy)
-                    if appt.client is not None:
-                        appt.cancelled_by = random.choice([appt.client.user, manager])
-                        appt.cancelled_at = appt.start - timedelta(hours=random.randint(2, 26))
-                        appt.cancellation_reason = random.choice(
-                            ["Nagła choroba", "Kolizja terminów", "Inny powód prywatny"]
-                        )
-                        appt.save()
-                    else:
-                        logger.warning("Wizyta #%s ma status CANCELLED, ale brak przypisanego klienta. Pominięto ustawianie cancelled_by.", appt.id)
-
-
-            if appt.status == Appointment.Status.NO_SHOW:
-                appt.cancellation_reason = "Klient nie pojawił/a się na wizycie."
-                appt.save()
-
-        self.stdout.write(self.style.SUCCESS(f"✓ Utworzono {len(appointments)} wizyt."))
-
-        # =========================================================================
-        # 10. NOTES
-        # =========================================================================
-        notes = []
-        if appointments:
-            for appt in appointments[:10]:
-                note = Note.objects.create(
-                    appointment=appt,
-                    client=appt.client,
-                    author=random.choice([appt.employee.user, manager]),
-                    content="Notatka wewnętrzna: klientka lubi spokojne kolory, unikać zbyt mocnych zmian.",
-                    visible_for_client=random.choice([False, False, True]),
-                )
-                notes.append(note)
-
-        self.stdout.write(self.style.SUCCESS(f"✓ Dodano {len(notes)} notatek do wizyt."))
-
-        # =========================================================================
-        # 11. PAYMENTS & INVOICES
-        # =========================================================================
-        payments = []
-        invoices = []
-
-        if appointments:
-            for appt in appointments:  # appt jest teraz Appointment (nie None)
-                if appt.status == Appointment.Status.COMPLETED:
-                    base_amount = appt.service.price
-
-                    # unikamy duplikatów płatności pełnych
-                    if not Payment.objects.filter(
-                            appointment=appt,
-                            type=Payment.Type.FULL,
-                    ).exists():
-                        try:
-                            payment = Payment.objects.create(
-                                appointment=appt,
-                                amount=base_amount,
-                                status=Payment.Status.PAID,
-                                method=random.choice(
-                                    [
-                                        Payment.Method.CARD,
-                                        Payment.Method.CASH,
-                                        Payment.Method.TRANSFER,
-                                    ]
-                                ),
-                                type=Payment.Type.FULL,
-                                paid_at=appt.end + timedelta(minutes=5),
-                                reference=f"PAY-{appt.id:05d}",
-                            )
-                            payments.append(payment)
-                        except Exception as e:
-                            logger.error(
-                                "Błąd tworzenia płatności FULL dla wizyty %s: %s",
-                                appt.id,
-                                e,
-                            )
-
-                    # Napiwek – też zabezpieczamy przed duplikatami
-                    if random.random() < 0.4 and not Payment.objects.filter(
-                            appointment=appt,
-                            type=Payment.Type.TIP,
-                            amount=Decimal("20.00"),
-                    ).exists():
-                        try:
-                            full_payment = Payment.objects.filter(
-                                appointment=appt,
-                                type=Payment.Type.FULL,
-                            ).first()
-
-                            method_for_tip = Payment.Method.CARD
-
-                            if full_payment:
-                                # Poprawka 597: Dodanie type: ignore
-                                method_for_tip = full_payment.method  # type: ignore[assignment]
-
-                            tip = Payment.objects.create(
-                                appointment=appt,
-                                amount=Decimal("20.00"),
-                                status=Payment.Status.PAID,
-                                method=method_for_tip,
-                                type=Payment.Type.TIP,
-                                paid_at=appt.end + timedelta(minutes=5),
-                                reference=f"TIP-{appt.id:05d}",
-                            )
-                            payments.append(tip)
-                        except Exception as e:
-                            logger.error(
-                                "Błąd tworzenia napiwku dla wizyty %s: %s",
-                                appt.id,
-                                e,
-                            )
-
-                    # Faktura – tworzymy tylko jeśli jeszcze nie istnieje
-                    if not Invoice.objects.filter(appointment=appt).exists():
-                        vat_rate = settings_obj.default_vat_rate
-                        vat_amount, gross_amount = calculate_vat(base_amount, vat_rate)
-                        try:
-                            invoice = Invoice.objects.create(
-                                appointment=appt,
-                                client=appt.client,  # OK
-                                client_name=(
-                                    appt.client.get_full_name()
-                                    if appt.client  # OK
-                                    else "Klient indywidualny"
-                                ),
-                                client_tax_id="",
-                                net_amount=base_amount,
-                                vat_rate=vat_rate,
-                                vat_amount=vat_amount,
-                                gross_amount=gross_amount,
-                                issue_date=appt.end.date(),  # OK
-                                sale_date=appt.start.date(),  # OK
-                                due_date=appt.end.date() + timedelta(days=14),  # OK
-                                paid_date=appt.end.date(),  # OK
-                                status=Invoice.Status.PAID,
-                                is_paid=True,
-                            )
-                            invoices.append(invoice)
-                        except Exception as e:
-                            logger.error(
-                                "Błąd tworzenia faktury dla wizyty %s: %s",
-                                appt.id,
-                                e,
-                            )
-
-                elif appt.status in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
-                    deposit_amount = (appt.service.price * Decimal("0.30")).quantize(Decimal("0.01"))
-
-                    if not Payment.objects.filter(
-                            appointment=appt,
-                            type=Payment.Type.DEPOSIT,
-                    ).exists():
-                        try:
-                            payment = Payment.objects.create(
-                                appointment=appt,
-                                amount=deposit_amount,
-                                status=Payment.Status.DEPOSIT,
-                                method=Payment.Method.TRANSFER,
-                                type=Payment.Type.DEPOSIT,
-                                paid_at=appt.start - timedelta(days=1),
-                                reference=f"DEP-{appt.id:05d}",
-                            )
-                            payments.append(payment)
-                        except Exception as e:
-                            logger.error(
-                                "Błąd tworzenia płatności DEPOSIT dla wizyty %s: %s",
-                                appt.id,
-                                e,
-                            )
-
-                elif appt.status == Appointment.Status.NO_SHOW:
-                    deposit_amount = (appt.service.price * Decimal("0.30")).quantize(Decimal("0.01"))
-
-                    if not Payment.objects.filter(
-                            appointment=appt,
-                            type=Payment.Type.DEPOSIT,
-                            status=Payment.Status.FORFEITED,
-                    ).exists():
-                        try:
-                            payment = Payment.objects.create(
-                                appointment=appt,
-                                amount=deposit_amount,
-                                status=Payment.Status.FORFEITED,
-                                method=Payment.Method.CARD,
-                                type=Payment.Type.DEPOSIT,
-                                paid_at=appt.start + timedelta(hours=1),
-                                reference=f"FORF-{appt.id:05d}",
-                            )
-                            payments.append(payment)
-                        except Exception as e:
-                            logger.error(
-                                "Błąd tworzenia płatności FORFEITED dla wizyty %s: %s",
-                                appt.id,
-                                e,
-                            )
+            licznik_grafikow += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"✓ Utworzono/uzupełniono {len(payments)} płatności oraz {len(invoices)} faktur."
+                f" Utworzono {licznik_grafikow} harmonogramów pracy"
             )
         )
 
-        # =========================================================================
-        # 12. UPDATE METRICS
-        # =========================================================================
-        for client in clients:
-            completed_qs = Appointment.objects.filter(
-                client=client,
-                status=Appointment.Status.COMPLETED,
+    def _seeduj_nieobecnosci(self) -> None:
+        """
+        Generuje przykładowe nieobecności pracowników (urlopy, zwolnienia).
+
+        Symuluje realistyczne scenariusze:
+        - Urlopy wypoczynkowe zaplanowane z wyprzedzeniem
+        - Zwolnienia lekarskie z krótkim okresem
+        - Różne statusy zatwierdzenia
+        """
+        if not self.employees or not self.manager:
+            return
+
+        self.stdout.write(" Generowanie nieobecności pracowników...")
+
+        licznik_nieobecnosci = 0
+
+        # Urlop wypoczynkowy (przyszły)
+        if len(self.employees) > 0:
+            TimeOff.objects.create(
+                employee=self.employees[0],
+                date_from=self.now.date() + timedelta(days=14),
+                date_to=self.now.date() + timedelta(days=21),
+                status=TimeOff.Status.APPROVED,
+                type=TimeOff.Type.VACATION,
+                reason="Zaplanowany urlop wypoczynkowy - wyjazd zagraniczny.",
+                approved_by=self.manager,
+                approved_at=self.now - timedelta(days=30),
             )
-            client.visits_count = completed_qs.count()
-            client.total_spent_amount = (
-                    Payment.objects.filter(
-                        appointment__client=client,
-                        status__in=[
-                            Payment.Status.PAID,
-                            Payment.Status.DEPOSIT,
-                            Payment.Status.FORFEITED,
-                        ],
-                    ).aggregate(total=Sum("amount"))["total"]
-                    or Decimal("0.00")
+            licznik_nieobecnosci += 1
+
+        # Zwolnienie lekarskie (przeszłe)
+        if len(self.employees) > 1:
+            TimeOff.objects.create(
+                employee=self.employees[1],
+                date_from=self.now.date() - timedelta(days=7),
+                date_to=self.now.date() - timedelta(days=4),
+                status=TimeOff.Status.APPROVED,
+                type=TimeOff.Type.SICK_LEAVE,
+                reason="Zwolnienie lekarskie L4.",
+                approved_by=self.manager,
+                approved_at=self.now - timedelta(days=7),
             )
-            client.save()
+            licznik_nieobecnosci += 1
 
-        for emp in employees:
-            completed_qs = Appointment.objects.filter(
-                employee=emp,
-                status=Appointment.Status.COMPLETED,
+        # Urlop na żądanie (oczekujący)
+        if len(self.employees) > 2:
+            TimeOff.objects.create(
+                employee=self.employees[2],
+                date_from=self.now.date() + timedelta(days=3),
+                date_to=self.now.date() + timedelta(days=3),
+                status=TimeOff.Status.PENDING,
+                type=TimeOff.Type.VACATION,
+                reason="Urlop na żądanie - sprawy osobiste.",
+                approved_by=None,
+                approved_at=None,
             )
-            emp.appointments_count = completed_qs.count()
-            emp.average_rating = (
-                Decimal(str(random.choice([4.3, 4.5, 4.7, 4.9])))
-                if completed_qs.exists()
-                else Decimal("0.00")
+            licznik_nieobecnosci += 1
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  ✓ Dodano {licznik_nieobecnosci} rekordów nieobecności"
             )
-            emp.save()
+        )
 
-        for service in services:
-            service.reservations_count = Appointment.objects.filter(service=service).count()
-            service.save(update_fields=["reservations_count"])
+    def _seeduj_wizyty(self) -> None:
+        """
+        Generuje kompleksowy zestaw wizyt w różnych statusach i okresach czasu.
 
-        self.stdout.write(self.style.SUCCESS("✓ Zaktualizowano metryki (klienci/pracownicy/usługi)."))
+        Tworzy wizyty:
+        - Historyczne (ostatnie 30 dni) - zakończone, anulowane, no-show
+        - Bieżące (dzisiaj) - w trakcie realizacji, potwierdzone
+        - Przyszłe (kolejne 14 dni) - oczekujące, potwierdzone
 
-        # =========================================================================
-        # 13. NOTIFICATIONS
-        # =========================================================================
-        notifications = []
+        Zapewnia realistyczne rozkłady godzinowe i walidację kolizji czasowych.
+        """
+        if not self.employees or not self.clients or not self.services:
+            return
 
-        # List comprehensions są bezpieczne, bo appointments jest List[Appointment]
-        upcoming_appointments: List[Appointment] = [
-            a
-            for a in appointments
-            if a.start > now
-               and a.status in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        self.stdout.write("Generowanie wizyt w różnych statusach...")
+
+        # SEKCJA 1: Wizyty historyczne (ostatnie 30 dni)
+        dni_historyczne = list(range(1, 31))
+        for dzien_temu in tqdm(dni_historyczne, desc="Wizyty historyczne"):
+            # 2-3 wizyty dziennie w przeszłości
+            for _ in range(random.randint(2, 3)):
+                wizyta = self._utworz_wizyte_z_walidacja(
+                    klient=random.choice(self.clients),
+                    pracownik=random.choice(self.employees),
+                    usluga=random.choice(self.services),
+                    data_bazowa=self.now - timedelta(days=dzien_temu),
+                    godzina=random.choice([9, 10, 11, 13, 14, 15, 16, 17]),
+                    status=random.choice([
+                        Appointment.Status.COMPLETED,
+                        Appointment.Status.COMPLETED,
+                        Appointment.Status.COMPLETED,
+                        Appointment.Status.CANCELLED,
+                        Appointment.Status.NO_SHOW,
+                    ]),
+                    kanal_rezerwacji=random.choice(["online", "phone", "walk_in"]),
+                    notatka_wewnetrzna="Wizyta historyczna - dane demonstracyjne.",
+                )
+                if wizyta:
+                    self.appointments.append(wizyta)
+                    self.stats.wizyty_utworzone += 1
+
+        # SEKCJA 2: Wizyty dzisiejsze
+        for przesuniecie_godzin in [-2, 0, 2, 4]:
+            wizyta = self._utworz_wizyte_z_walidacja(
+                klient=random.choice(self.clients),
+                pracownik=random.choice(self.employees),
+                usluga=random.choice(self.services),
+                data_bazowa=self.now,
+                godzina=max(9, min(17, self.now.hour + przesuniecie_godzin)),
+                status=(
+                    Appointment.Status.IN_PROGRESS
+                    if przesuniecie_godzin == -2
+                    else Appointment.Status.CONFIRMED
+                ),
+                kanal_rezerwacji="online",
+                notatka_wewnetrzna="Wizyta bieżąca - dzisiaj.",
+            )
+            if wizyta:
+                self.appointments.append(wizyta)
+                self.stats.wizyty_utworzone += 1
+
+        # SEKCJA 3: Wizyty przyszłe (kolejne 14 dni)
+        dni_przyszle = [1, 2, 3, 5, 7, 9, 11, 14]
+        for dzien_naprzod in tqdm(dni_przyszle, desc="Wizyty przyszłe"):
+            # 3-5 wizyt dziennie w przyszłości
+            for _ in range(random.randint(3, 5)):
+                wizyta = self._utworz_wizyte_z_walidacja(
+                    klient=random.choice(self.clients),
+                    pracownik=random.choice(self.employees),
+                    usluga=random.choice(self.services),
+                    data_bazowa=self.now + timedelta(days=dzien_naprzod),
+                    godzina=random.choice([9, 10, 11, 13, 14, 15, 16, 17]),
+                    status=random.choice([
+                        Appointment.Status.PENDING,
+                        Appointment.Status.CONFIRMED,
+                        Appointment.Status.CONFIRMED,
+                    ]),
+                    kanal_rezerwacji="online",
+                    notatka_wewnetrzna="Wizyta przyszła - zaplanowana.",
+                    notatka_klienta="Proszę o delikatne wykonanie.",
+                )
+                if wizyta:
+                    self.appointments.append(wizyta)
+                    self.stats.wizyty_utworzone += 1
+
+        # Post-processing: uzupełnienie szczegółów dla specjalnych statusów
+        self._uzupelnij_szczegoly_wizyt()
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f" Utworzono {len(self.appointments)} wizyt"
+            )
+        )
+
+    def _utworz_wizyte_z_walidacja(
+        self,
+        klient: Client,
+        pracownik: Employee,
+        usluga: Service,
+        data_bazowa: datetime,
+        godzina: int,
+        status: str,
+        kanal_rezerwacji: str,
+        notatka_wewnetrzna: str,
+        notatka_klienta: str = "",
+    ) -> Optional[Appointment]:
+        """
+        Tworzy wizytę z pełną walidacją kolizji czasowych.
+
+        Args:
+            klient: Profil klienta
+            pracownik: Profil pracownika
+            usluga: Wybrana usługa
+            data_bazowa: Bazowa data/czas dla wizyty
+            godzina: Godzina rozpoczęcia (0-23)
+            status: Status wizyty
+            kanal_rezerwacji: Kanał przez który dokonano rezerwacji
+            notatka_wewnetrzna: Notatka wewnętrzna dla personelu
+            notatka_klienta: Notatka/życzenia klienta
+
+        Returns:
+            Utworzony obiekt Appointment lub None w przypadku kolizji
+        """
+        start = data_bazowa.replace(
+            hour=godzina,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        end = start + usluga.duration
+
+        # Walidacja kolizji czasowych
+        if not self._czy_slot_wolny(pracownik, start, end):
+            logger.debug(
+                "Pominięto wizytę - kolizja czasowa (pracownik=%s, start=%s)",
+                pracownik.id,
+                start,
+            )
+            return None
+
+        try:
+            appointment = Appointment.objects.create(
+                client=klient,
+                employee=pracownik,
+                service=usluga,
+                start=start,
+                end=end,
+                status=status,
+                booking_channel=kanal_rezerwacji,
+                internal_notes=notatka_wewnetrzna,
+                client_notes=notatka_klienta,
+            )
+            return appointment
+        except Exception as e:
+            logger.error(
+                "Błąd podczas tworzenia wizyty: %s (pracownik=%s, klient=%s)",
+                e,
+                pracownik.id,
+                klient.id,
+            )
+            return None
+
+    def _czy_slot_wolny(
+        self, pracownik: Employee, start: datetime, end: datetime
+    ) -> bool:
+        """
+        Sprawdza czy pracownik ma wolny slot w podanym przedziale czasowym.
+
+        Args:
+            pracownik: Profil pracownika
+            start: Początek przedziału
+            end: Koniec przedziału
+
+        Returns:
+            True jeśli slot jest wolny, False jeśli występuje kolizja
+        """
+        return not Appointment.objects.filter(
+            employee=pracownik,
+            start__lt=end,
+            end__gt=start,
+        ).exists()
+
+    def _uzupelnij_szczegoly_wizyt(self) -> None:
+        """
+        Uzupełnia dodatkowe szczegóły dla wizyt w specjalnych statusach.
+
+        Obsługuje:
+        - Wizyty anulowane: ustawia powód anulowania, osobę anulującą, datę
+        - Wizyty no-show: dodaje odpowiedni powód niestawienia się
+        """
+        for wizyta in self.appointments:
+            # Obsługa wizyt anulowanych
+            if wizyta.status == Appointment.Status.CANCELLED:
+                if wizyta.client and not wizyta.cancelled_by:
+                    wizyta.cancelled_by = random.choice([
+                        wizyta.client.user,
+                        self.manager,
+                    ])
+                    wizyta.cancelled_at = wizyta.start - timedelta(
+                        hours=random.randint(3, 48)
+                    )
+                    wizyta.cancellation_reason = random.choice([
+                        "Nagła zmiana planów - sprawy rodzinne",
+                        "Choroba - konieczność przełożenia terminu",
+                        "Kolizja z innym zobowiązaniem",
+                        "Trudności w dotarciu - problemy komunikacyjne",
+                    ])
+                    wizyta.save()
+
+            # Obsługa wizyt no-show
+            elif wizyta.status == Appointment.Status.NO_SHOW:
+                wizyta.cancellation_reason = (
+                    "Klient nie stawił się na umówioną wizytę "
+                    "bez wcześniejszego poinformowania."
+                )
+                wizyta.save()
+
+    def _seeduj_notatki(self) -> None:
+        """
+        Dodaje notatki wewnętrzne i dla klientów do wybranych wizyt.
+
+        Notatki mogą zawierać:
+        - Preferencje klienta
+        - Uwagi techniczne dla pracowników
+        - Historia wcześniejszych zabiegów
+        - Specjalne życzenia lub ograniczenia
+        """
+        if not self.appointments:
+            return
+
+        self.stdout.write("📝 Dodawanie notatek do wizyt...")
+
+        przyklady_notatek = [
+            "Klientka preferuje spokojne, naturalne kolory. Unikać intensywnych zmian.",
+            "Uczulenie na niektóre składniki - zawsze sprawdzić skład produktów.",
+            "Wrażliwa skóra - używać delikatnych preparatów bez alkoholu.",
+            "Preferuje ciche zabiegi bez rozmów - klientka ceni atmosferę relaksu.",
+            "Wcześniej były problemy z utrzymaniem koloru - użyć wzmocnionej formuły.",
+            "VIP - zawsze oferować kawę/herbatę, zapewnić maksymalny komfort.",
         ]
-        for appt in upcoming_appointments[:5]:
-            if appt.client is not None:
-                notif = Notification.objects.create(
-                    client=appt.client,
-                    appointment=appt,
+
+        licznik_notatek = 0
+        # Dodaj notatki do 30% wizyt
+        for wizyta in random.sample(
+            self.appointments, min(30, len(self.appointments))
+        ):
+            Note.objects.create(
+                appointment=wizyta,
+                client=wizyta.client,
+                author=random.choice([wizyta.employee.user, self.manager]),
+                content=random.choice(przyklady_notatek),
+                visible_for_client=random.choice([False, False, True]),
+            )
+            licznik_notatek += 1
+            self.stats.logi_audytu_utworzone += 1
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"  ✓ Dodano {licznik_notatek} notatek do wizyt"
+            )
+        )
+
+    def _seeduj_platnosci_i_faktury(self) -> None:
+        """
+        Generuje płatności i faktury dla wizyt zgodnie z ich statusem.
+
+        Obsługuje różne scenariusze:
+        - Wizyty zakończone: pełna płatność + opcjonalny napiwek + faktura
+        - Wizyty potwierdzone: zaliczka 30%
+        - Wizyty no-show: utracona zaliczka
+
+        Zapewnia spójność finansową i generuje odpowiednie dokumenty księgowe.
+        """
+        if not self.appointments:
+            return
+
+        self.stdout.write(" Generowanie płatności i faktur...")
+
+        ustawienia = SystemSettings.load()
+
+        for wizyta in tqdm(self.appointments, desc="Przetwarzanie płatności"):
+            try:
+                if wizyta.status == Appointment.Status.COMPLETED:
+                    self._przetwórz_platnosc_zakonczona(wizyta, ustawienia)
+                elif wizyta.status in [
+                    Appointment.Status.PENDING,
+                    Appointment.Status.CONFIRMED,
+                ]:
+                    self._przetwórz_zaliczke(wizyta)
+                elif wizyta.status == Appointment.Status.NO_SHOW:
+                    self._przetwórz_utracona_zaliczke(wizyta)
+            except Exception as e:
+                logger.error(
+                    "Błąd podczas przetwarzania płatności dla wizyty %s: %s",
+                    wizyta.id,
+                    e,
+                )
+
+        self.stdout.write(
+            self.style.SUCCESS(
+                f" Utworzono {self.stats.platnosci_utworzone} płatności "
+                f"i {self.stats.faktury_utworzone} faktur"
+            )
+        )
+
+    def _przetwórz_platnosc_zakonczona(
+        self, wizyta: Appointment, ustawienia: SystemSettings
+    ) -> None:
+        """Przetwarza pełną płatność dla zakończonej wizyty."""
+        kwota_bazowa = wizyta.service.price
+
+        # Płatność główna
+        if not Payment.objects.filter(
+            appointment=wizyta, type=Payment.Type.FULL
+        ).exists():
+            payment = Payment.objects.create(
+                appointment=wizyta,
+                amount=kwota_bazowa,
+                status=Payment.Status.PAID,
+                method=random.choice([
+                    Payment.Method.CARD,
+                    Payment.Method.CASH,
+                    Payment.Method.TRANSFER,
+                ]),
+                type=Payment.Type.FULL,
+                paid_at=wizyta.end + timedelta(minutes=random.randint(2, 10)),
+                reference=f"PAY-{wizyta.id:06d}",
+            )
+            self.stats.platnosci_utworzone += 1
+
+            # Napiwek (40% szans)
+            if random.random() < 0.40:
+                kwota_napiwku = random.choice([
+                    Decimal("10.00"),
+                    Decimal("20.00"),
+                    Decimal("30.00"),
+                ])
+                Payment.objects.create(
+                    appointment=wizyta,
+                    amount=kwota_napiwku,
+                    status=Payment.Status.PAID,
+                    method=payment.method,
+                    type=Payment.Type.TIP,
+                    paid_at=wizyta.end + timedelta(minutes=random.randint(2, 10)),
+                    reference=f"TIP-{wizyta.id:06d}",
+                )
+                self.stats.platnosci_utworzone += 1
+
+        # Faktura
+        if not Invoice.objects.filter(appointment=wizyta).exists():
+            stawka_vat = ustawienia.default_vat_rate
+            kwota_vat, kwota_brutto = calculate_vat(kwota_bazowa, stawka_vat)
+
+            Invoice.objects.create(
+                appointment=wizyta,
+                client=wizyta.client,
+                client_name=wizyta.client.get_full_name() if wizyta.client else "Klient indywidualny",
+                client_tax_id="",
+                net_amount=kwota_bazowa,
+                vat_rate=stawka_vat,
+                vat_amount=kwota_vat,
+                gross_amount=kwota_brutto,
+                issue_date=wizyta.end.date(),
+                sale_date=wizyta.start.date(),
+                due_date=wizyta.end.date() + timedelta(days=14),
+                paid_date=wizyta.end.date(),
+                status=Invoice.Status.PAID,
+                is_paid=True,
+            )
+            self.stats.faktury_utworzone += 1
+
+    def _przetwórz_zaliczke(self, wizyta: Appointment) -> None:
+        """Przetwarza płatność zaliczki dla potwierdzonej wizyty."""
+        kwota_zaliczki = (wizyta.service.price * Decimal("0.30")).quantize(
+            Decimal("0.01")
+        )
+
+        if not Payment.objects.filter(
+            appointment=wizyta, type=Payment.Type.DEPOSIT
+        ).exists():
+            Payment.objects.create(
+                appointment=wizyta,
+                amount=kwota_zaliczki,
+                status=Payment.Status.DEPOSIT,
+                method=random.choice([
+                    Payment.Method.TRANSFER,
+                    Payment.Method.CARD,
+                ]),
+                type=Payment.Type.DEPOSIT,
+                paid_at=wizyta.start - timedelta(days=random.randint(1, 5)),
+                reference=f"DEP-{wizyta.id:06d}",
+            )
+            self.stats.platnosci_utworzone += 1
+
+    def _przetwórz_utracona_zaliczke(self, wizyta: Appointment) -> None:
+        """Przetwarza utraconą zaliczkę dla wizyty no-show."""
+        kwota_zaliczki = (wizyta.service.price * Decimal("0.30")).quantize(
+            Decimal("0.01")
+        )
+
+        if not Payment.objects.filter(
+            appointment=wizyta,
+            type=Payment.Type.DEPOSIT,
+            status=Payment.Status.FORFEITED,
+        ).exists():
+            Payment.objects.create(
+                appointment=wizyta,
+                amount=kwota_zaliczki,
+                status=Payment.Status.FORFEITED,
+                method=Payment.Method.CARD,
+                type=Payment.Type.DEPOSIT,
+                paid_at=wizyta.start + timedelta(hours=random.randint(1, 3)),
+                reference=f"FORF-{wizyta.id:06d}",
+            )
+            self.stats.platnosci_utworzone += 1
+
+    def _aktualizuj_metryki(self) -> None:
+        """
+        Aktualizuje metryki statystyczne dla klientów, pracowników i usług.
+
+        Przelicza:
+        - Liczbę wizyt i łączne wydatki dla klientów
+        - Liczbę zrealizowanych wizyt i średnie oceny dla pracowników
+        - Liczbę rezerwacji dla usług
+        """
+        self.stdout.write(" Aktualizacja metryk statystycznych...")
+
+        # Metryki klientów
+        for klient in self.clients:
+            zakonczone = Appointment.objects.filter(
+                client=klient,
+                status=Appointment.Status.COMPLETED,
+            )
+            klient.visits_count = zakonczone.count()
+            klient.total_spent_amount = (
+                Payment.objects.filter(
+                    appointment__client=klient,
+                    status__in=[
+                        Payment.Status.PAID,
+                        Payment.Status.DEPOSIT,
+                    ],
+                ).aggregate(total=Sum("amount"))["total"]
+                or Decimal("0.00")
+            )
+            klient.save()
+
+        # Metryki pracowników
+        for pracownik in self.employees:
+            zakonczone = Appointment.objects.filter(
+                employee=pracownik,
+                status=Appointment.Status.COMPLETED,
+            )
+            pracownik.appointments_count = zakonczone.count()
+            # Symulacja średniej oceny (realistyczne wartości)
+            if zakonczone.exists():
+                pracownik.average_rating = Decimal(
+                    str(random.uniform(4.3, 4.95))
+                ).quantize(Decimal("0.01"))
+            pracownik.save()
+
+        # Metryki usług
+        for usluga in self.services:
+            usluga.reservations_count = Appointment.objects.filter(
+                service=usluga
+            ).count()
+            usluga.save(update_fields=["reservations_count"])
+
+        self.stdout.write(self.style.SUCCESS("  ✓ Metryki zaktualizowane"))
+
+    def _seeduj_powiadomienia(self) -> None:
+        """
+        Generuje powiadomienia różnych typów dla klientów.
+
+        Typy powiadomień:
+        - Przypomnienia o nadchodzących wizytach (24h przed)
+        - Potwierdzenia anulowania wizyt
+        - Powiadomienia promocyjne
+        - Podziękowania po wizycie
+        """
+        if not self.appointments or not self.clients:
+            return
+
+        self.stdout.write(" Generowanie powiadomień...")
+
+        # Przypomnienia o nadchodzących wizytach
+        nadchodzace = [
+            w for w in self.appointments
+            if w.start > self.now and w.status in [
+                Appointment.Status.PENDING,
+                Appointment.Status.CONFIRMED,
+            ]
+        ]
+
+        for wizyta in nadchodzace[:10]:  # Limit 10 przypomnień
+            if wizyta.client:
+                Notification.objects.create(
+                    client=wizyta.client,
+                    appointment=wizyta,
                     type=Notification.Type.REMINDER,
-                    channel=random.choice(
-                        [Notification.Channel.EMAIL, Notification.Channel.SMS]
-                    ),
+                    channel=random.choice([
+                        Notification.Channel.EMAIL,
+                        Notification.Channel.SMS,
+                    ]),
                     status=Notification.Status.PENDING,
-                    subject="Przypomnienie o wizycie w Beauty Studio",
+                    subject="Przypomnienie o wizycie - Beauty Salon Management System",
                     content=(
-                        f"Cześć {appt.client.first_name}, przypominamy o Twojej wizycie "
-                        f"{appt.start.strftime('%Y-%m-%d %H:%M')} na usługę {appt.service.name}."
+                        f"Dzień dobry {wizyta.client.first_name},\n\n"
+                        f"Przypominamy o Twojej wizycie:\n"
+                        f"• Data: {wizyta.start.strftime('%d.%m.%Y')}\n"
+                        f"• Godzina: {wizyta.start.strftime('%H:%M')}\n"
+                        f"• Usługa: {wizyta.service.name}\n"
+                        f"• Pracownik: {wizyta.employee.get_full_name()}\n\n"
+                        f"Do zobaczenia!"
                     ),
-                    scheduled_at=appt.start - timedelta(hours=24),
+                    scheduled_at=wizyta.start - timedelta(hours=24),
                 )
-                notifications.append(notif)
-            else:
-                logger.warning(
-                    "Pominięto powiadomienie dla wizyty %s, ponieważ klient jest None.",
-                    appt.id,
-                )
+                self.stats.powiadomienia_utworzone += 1
 
-        cancelled_appointments: List[Appointment] = [
-            a
-            for a in appointments if a.status == Appointment.Status.CANCELLED
+        # Powiadomienia o anulowaniu
+        anulowane = [
+            w for w in self.appointments
+            if w.status == Appointment.Status.CANCELLED
         ]
-        if cancelled_appointments:
-            appt = cancelled_appointments[0]
-            if appt.client is not None:
-                notif = Notification.objects.create(
-                    client=appt.client,
-                    appointment=appt,
+
+        if anulowane:
+            wizyta = anulowane[0]
+            if wizyta.client:
+                Notification.objects.create(
+                    client=wizyta.client,
+                    appointment=wizyta,
                     type=Notification.Type.CANCELLATION,
                     channel=Notification.Channel.EMAIL,
                     status=Notification.Status.SENT,
                     subject="Potwierdzenie anulowania wizyty",
                     content=(
-                        f"Twoja wizyta z dnia {appt.start.strftime('%Y-%m-%d %H:%M')} "
-                        f"na usługę {appt.service.name} została anulowana.\n"
-                        f"Powód: {appt.cancellation_reason or 'brak podanego powodu'}."
+                        f"Dzień dobry {wizyta.client.first_name},\n\n"
+                        f"Potwierdzamy anulowanie Twojej wizyty:\n"
+                        f"• Data: {wizyta.start.strftime('%d.%m.%Y %H:%M')}\n"
+                        f"• Usługa: {wizyta.service.name}\n"
+                        f"• Powód: {wizyta.cancellation_reason or 'brak podanego powodu'}\n\n"
+                        f"Zapraszamy do umówienia się na inny termin."
                     ),
-                    scheduled_at=now - timedelta(hours=1),
-                    sent_at=now - timedelta(minutes=30),
+                    scheduled_at=wizyta.cancelled_at or self.now,
+                    sent_at=wizyta.cancelled_at or self.now,
                 )
-                notifications.append(notif)
-            else:
-                logger.warning(
-                    "Pominięto powiadomienie o anulowaniu dla wizyty %s, ponieważ klient jest None.",
-                    appt.id,
-                )
+                self.stats.powiadomienia_utworzone += 1
 
-        if clients:
-            for client in clients[:3]:
-                notif = Notification.objects.create(
-                    client=client,
-                    appointment=None,
-                    type=Notification.Type.PROMOTION,
-                    channel=Notification.Channel.EMAIL,
-                    status=Notification.Status.SENT,
-                    subject="-20% na masaż relaksacyjny w tym tygodniu",
-                    content=(
-                        "Dla wybranych klientek przygotowaliśmy -20% na masaż "
-                        "relaksacyjny pleców do końca tygodnia."
-                    ),
-                    scheduled_at=now - timedelta(days=1),
-                    sent_at=now - timedelta(hours=12),
-                )
-                notifications.append(notif)
+        # Powiadomienia promocyjne dla wybranych klientów
+        for klient in self.clients[:5]:
+            Notification.objects.create(
+                client=klient,
+                appointment=None,
+                type=Notification.Type.PROMOTION,
+                channel=Notification.Channel.EMAIL,
+                status=Notification.Status.SENT,
+                subject="Ekskluzywna promocja tylko dla Ciebie!",
+                content=(
+                    f"Dzień dobry {klient.first_name},\n\n"
+                    f"Specjalnie dla Ciebie przygotowaliśmy wyjątkową ofertę:\n\n"
+                    f"-25% na wybrane zabiegi na twarz\n"
+                    f"-20% na masaż relaksacyjny\n"
+                    f"Darmowa konsultacja kosmetologiczna\n\n"
+                    f"Oferta ważna do końca miesiąca!\n"
+                    f"Umów się już dziś: beauty-salon.pl"
+                ),
+                scheduled_at=self.now - timedelta(days=2),
+                sent_at=self.now - timedelta(days=2),
+            )
+            self.stats.powiadomienia_utworzone += 1
 
-        self.stdout.write(self.style.SUCCESS(f"✓ Dodano {len(notifications)} powiadomień."))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Utworzono {self.stats.powiadomienia_utworzone} powiadomień"
+            )
+        )
 
-        # =========================================================================
-        # 14. MEDIA ASSETS
-        # =========================================================================
-        media_assets = []
-        for emp in employees:
-            for idx_type, type_choice in enumerate(
-                    [MediaAsset.Type.BEFORE, MediaAsset.Type.AFTER, MediaAsset.Type.OTHER]
-            ):
+    def _seeduj_zasoby_mediow(self) -> None:
+        """
+        Generuje zasoby multimedialne (portfolio pracowników).
+
+        Dla każdego pracownika tworzy:
+        - Zdjęcia przed/po zabiegach
+        - Portfolio prac
+        - Inne materiały promocyjne
+        """
+        if not self.employees:
+            return
+
+        self.stdout.write("Generowanie zasobów multimedialnych...")
+
+        typy_mediow = [
+            MediaAsset.Type.BEFORE,
+            MediaAsset.Type.AFTER,
+            MediaAsset.Type.OTHER,
+        ]
+
+        for pracownik in self.employees:
+            for idx, typ in enumerate(typy_mediow):
+                # Symulacja pliku (w rzeczywistości byłby to prawdziwy plik)
                 dummy_content = ContentFile(
-                    b"PSEUDO-BINARY-DATA",
-                    name=f"portfolio_{emp.user_id}_{idx_type + 1}.jpg",
+                    b"DEMO-IMAGE-DATA-FOR-ENGINEERING-THESIS",
+                    name=f"portfolio_{pracownik.id}_{idx + 1}.jpg",
                 )
-                asset = MediaAsset.objects.create(
-                    employee=emp,
-                    name=f"Portfolio {emp.first_name} #{idx_type + 1}",
+
+                MediaAsset.objects.create(
+                    employee=pracownik,
+                    name=f"Portfolio {pracownik.first_name} - Zdjęcie {idx + 1}",
                     file=dummy_content,
-                    file_name=f"portfolio_{emp.user_id}_{idx_type + 1}.jpg",
-                    file_url=(
-                        f"https://picsum.photos/seed/emp_{emp.user_id}_{idx_type + 1}/800/600"
-                    ),
+                    file_name=f"portfolio_{pracownik.id}_{idx + 1}.jpg",
+                    file_url=f"https://picsum.photos/seed/emp{pracownik.id}_{idx}/1200/800",
                     mime_type="image/jpeg",
-                    type=type_choice,
-                    description="Przykładowe zdjęcie przed/po – dane testowe.",
+                    type=typ,
+                    description=(
+                        f"Profesjonalne zdjęcie {typ} demonstrujące "
+                        f"umiejętności {pracownik.first_name}."
+                    ),
                     is_active=True,
                     is_private=False,
                 )
-                media_assets.append(asset)
+                self.stats.media_utworzone += 1
 
         self.stdout.write(
-            self.style.SUCCESS(f"✓ Utworzono {len(media_assets)} zasobów multimedialnych.")
+            self.style.SUCCESS(
+                f"Utworzono {self.stats.media_utworzone} zasobów multimedialnych"
+            )
         )
 
-        # =========================================================================
-        # 15. STATS SNAPSHOTS
-        # =========================================================================
-        period_end = now.date()
-        period_start_30 = period_end - timedelta(days=30)
-        period_start_7 = period_end - timedelta(days=7)
+    def _seeduj_migawki_statystyk(self) -> None:
+        """
+        Generuje migawki statystyk dla raportowania.
 
-        revenue_total_30 = (
-                Payment.objects.filter(
-                    paid_at__date__gte=period_start_30,
-                    paid_at__date__lte=period_end,
-                    status__in=[
-                        Payment.Status.PAID,
-                        Payment.Status.DEPOSIT,
-                        Payment.Status.FORFEITED,
-                    ],
-                ).aggregate(total=Sum("amount"))["total"]
-                or Decimal("0.00")
+        Tworzy podsumowania:
+        - Tygodniowe (ostatnie 7 dni)
+        - Miesięczne (ostatnie 30 dni)
+
+        Zawiera dane o wizytach, przychodach, klientach i wydajności.
+        """
+        self.stdout.write("Generowanie migawek statystycznych...")
+
+        data_koncowa = self.now.date()
+
+        # Migawka miesięczna (30 dni)
+        data_poczatkowa_30 = data_koncowa - timedelta(days=30)
+
+        przychod_total_30 = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa_30,
+                paid_at__date__lte=data_koncowa,
+                status__in=[
+                    Payment.Status.PAID,
+                    Payment.Status.DEPOSIT,
+                ],
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
         )
 
-        revenue_deposits_30 = (
-                Payment.objects.filter(
-                    paid_at__date__gte=period_start_30,
-                    paid_at__date__lte=period_end,
-                    status__in=[Payment.Status.DEPOSIT, Payment.Status.FORFEITED],
-                ).aggregate(total=Sum("amount"))["total"]
-                or Decimal("0.00")
+        przychod_zaliczki_30 = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa_30,
+                paid_at__date__lte=data_koncowa,
+                status=Payment.Status.DEPOSIT,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
         )
 
-        snapshot_monthly = StatsSnapshot.objects.create(
+        StatsSnapshot.objects.create(
             period=StatsSnapshot.Period.MONTHLY,
-            date_from=period_start_30,
-            date_to=period_end,
+            date_from=data_poczatkowa_30,
+            date_to=data_koncowa,
             total_visits=Appointment.objects.filter(
-                start__date__gte=period_start_30,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_30,
+                start__date__lte=data_koncowa,
             ).count(),
             completed_visits=Appointment.objects.filter(
                 status=Appointment.Status.COMPLETED,
-                start__date__gte=period_start_30,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_30,
+                start__date__lte=data_koncowa,
             ).count(),
             cancellations=Appointment.objects.filter(
                 status=Appointment.Status.CANCELLED,
-                start__date__gte=period_start_30,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_30,
+                start__date__lte=data_koncowa,
             ).count(),
             no_shows=Appointment.objects.filter(
                 status=Appointment.Status.NO_SHOW,
-                start__date__gte=period_start_30,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_30,
+                start__date__lte=data_koncowa,
             ).count(),
-            revenue_total=revenue_total_30,
-            revenue_deposits=revenue_deposits_30,
-            new_clients=len(clients),
-            returning_clients=max(0, len(clients) - 3),
-            employees_occupancy_avg=Decimal("65.00"),
+            revenue_total=przychod_total_30,
+            revenue_deposits=przychod_zaliczki_30,
+            new_clients=len(self.clients),
+            returning_clients=max(0, len(self.clients) - 5),
+            employees_occupancy_avg=Decimal("68.50"),
             extra_metrics={
-                "source": "seed_database",
-                "note": "Dane przykładowe – snapshot miesięczny",
+                "source": "seed_database_v2",
+                "note": "Dane demonstracyjne - praca inżynierska",
+                "generated_at": self.now.isoformat(),
             },
         )
 
-        revenue_total_7 = (
-                Payment.objects.filter(
-                    paid_at__date__gte=period_start_7,
-                    paid_at__date__lte=period_end,
-                    status__in=[
-                        Payment.Status.PAID,
-                        Payment.Status.DEPOSIT,
-                        Payment.Status.FORFEITED,
-                    ],
-                ).aggregate(total=Sum("amount"))["total"]
-                or Decimal("0.00")
+        # Migawka tygodniowa (7 dni)
+        data_poczatkowa_7 = data_koncowa - timedelta(days=7)
+
+        przychod_total_7 = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa_7,
+                paid_at__date__lte=data_koncowa,
+                status__in=[
+                    Payment.Status.PAID,
+                    Payment.Status.DEPOSIT,
+                ],
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
         )
 
-        revenue_deposits_7 = (
-                Payment.objects.filter(
-                    paid_at__date__gte=period_start_7,
-                    paid_at__date__lte=period_end,
-                    status__in=[Payment.Status.DEPOSIT, Payment.Status.FORFEITED],
-                ).aggregate(total=Sum("amount"))["total"]
-                or Decimal("0.00")
+        przychod_zaliczki_7 = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa_7,
+                paid_at__date__lte=data_koncowa,
+                status=Payment.Status.DEPOSIT,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
         )
 
-        snapshot_weekly = StatsSnapshot.objects.create(
+        StatsSnapshot.objects.create(
             period=StatsSnapshot.Period.WEEKLY,
-            date_from=period_start_7,
-            date_to=period_end,
+            date_from=data_poczatkowa_7,
+            date_to=data_koncowa,
             total_visits=Appointment.objects.filter(
-                start__date__gte=period_start_7,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_7,
+                start__date__lte=data_koncowa,
             ).count(),
             completed_visits=Appointment.objects.filter(
                 status=Appointment.Status.COMPLETED,
-                start__date__gte=period_start_7,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_7,
+                start__date__lte=data_koncowa,
             ).count(),
             cancellations=Appointment.objects.filter(
                 status=Appointment.Status.CANCELLED,
-                start__date__gte=period_start_7,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_7,
+                start__date__lte=data_koncowa,
             ).count(),
             no_shows=Appointment.objects.filter(
                 status=Appointment.Status.NO_SHOW,
-                start__date__gte=period_start_7,
-                start__date__lte=period_end,
+                start__date__gte=data_poczatkowa_7,
+                start__date__lte=data_koncowa,
             ).count(),
-            revenue_total=revenue_total_7,
-            revenue_deposits=revenue_deposits_7,
-            new_clients=len(clients),
-            returning_clients=max(0, len(clients) - 5),
-            employees_occupancy_avg=Decimal("72.50"),
+            revenue_total=przychod_total_7,
+            revenue_deposits=przychod_zaliczki_7,
+            new_clients=len(self.clients),
+            returning_clients=max(0, len(self.clients) - 8),
+            employees_occupancy_avg=Decimal("74.20"),
             extra_metrics={
-                "source": "seed_database",
-                "note": "Dane przykładowe – snapshot tygodniowy",
+                "source": "seed_database_v2",
+                "note": "Dane demonstracyjne - praca inżynierska",
+                "generated_at": self.now.isoformat(),
             },
         )
 
-        self.stdout.write(self.style.SUCCESS("✓ Zapisano migawki statystyk (weekly + monthly)."))
+        self.stdout.write(
+            self.style.SUCCESS(
+                "  ✓ Utworzono migawki statystyk (tygodniową i miesięczną)"
+            )
+        )
 
-        # =========================================================================
-        # 16. REPORT PDF
-        # =========================================================================
-        # data_od/data_do są aliasami pól date_from/date_to w modelu, trzymamy je spójnie
-        pdf_bytes = b"%PDF-1.4\n%Fake PDF content for demo\n"
-        pdf_content = ContentFile(pdf_bytes, name="raport_miesieczny_demo.pdf")
+    def _seeduj_raporty_pdf(self) -> None:
+        """
+        Generuje przykładowe raporty PDF.
+
+        Tworzy demonstracyjne raporty finansowe z symulowaną zawartością.
+        W rzeczywistym systemie byłyby to prawdziwe dokumenty PDF.
+        """
+        if not self.manager:
+            return
+
+        self.stdout.write(" Generowanie raportów PDF...")
+
+        data_koncowa = self.now.date()
+        data_poczatkowa = data_koncowa - timedelta(days=30)
+
+        # Symulacja zawartości PDF
+        pdf_content = (
+            b"%PDF-1.4\n"
+            b"% Simulated PDF report for demonstration purposes\n"
+            b"% System: Beauty Excellence Studio\n"
+            b"% Type: Monthly financial report\n"
+            b"% Generated: Automatically by seed_database\n"
+        )
+
+        pdf_file = ContentFile(
+            pdf_content,
+            name="raport_miesieczny_demo.pdf",
+        )
+
         ReportPDF.objects.create(
             type=ReportPDF.Type.FINANCIAL,
-            title="Raport miesięczny – dane demo",
-            date_from=period_start_30,
-            date_to=period_end,
-            data_od=period_start_30,
-            data_do=period_end,
-            generated_by=manager,
-            file=pdf_content,
+            title=f"Raport finansowy - {data_poczatkowa} do {data_koncowa}",
+            date_from=data_poczatkowa,
+            date_to=data_koncowa,
+            data_od=data_poczatkowa,
+            data_do=data_koncowa,
+            generated_by=self.manager,
+            file=pdf_file,
             file_path="reports/raport_miesieczny_demo.pdf",
-            file_size=len(pdf_bytes),
+            file_size=len(pdf_content),
             parameters={
                 "period": "last_30_days",
                 "include_tips": True,
+                "include_deposits": True,
+                "group_by_service": True,
                 "generated_from_seed": True,
             },
-            notes="Raport wygenerowany jako część seeda bazy danych.",
+            notes=(
+                "Raport wygenerowany automatycznie w ramach seedowania bazy danych. "
+                "Zawiera podsumowanie finansowe działalności salonu za ostatnie 30 dni."
+            ),
         )
 
         self.stdout.write(
-            self.style.SUCCESS("✓ Utworzono przykładowy raport PDF (mock pliku).")
+            self.style.SUCCESS("Utworzono przykładowy raport PDF")
         )
 
-        # =========================================================================
-        # 17. AUDIT LOGS
-        # =========================================================================
-        audit_logs = []
+    def _seeduj_logi_audytu(self) -> None:
+        """
+        Generuje wpisy do dziennika audytu systemowego.
 
-        audit_logs.append(
-            AuditLog.objects.create(
-                type=AuditLog.Type.SYSTEM_OPERATION,
-                level=AuditLog.Level.INFO,
-                user=manager,
-                message=(
-                    "Inicjalne zasilenie bazy danymi demo "
-                    "(seed_database – wersja rozszerzona)."
-                ),
-                adres_ip="127.0.0.1",
-                user_agent="seed-script/1.0",
-                entity_type="seed",
-                entity_id="initial",
-                metadata={
-                    "snapshot_monthly_id": snapshot_monthly.id,
-                    "snapshot_weekly_id": snapshot_weekly.id,
-                },
-            )
+        Rejestruje:
+        - Operacje systemowe (inicjalizacja bazy)
+        - Zmiany w wizytach
+        - Operacje finansowe (utracone zaliczki)
+        - Inne znaczące zdarzenia
+        """
+        if not self.manager:
+            return
+
+        self.stdout.write("Generowanie logów audytu...")
+
+        # Log inicjalizacji systemu
+        AuditLog.objects.create(
+            type=AuditLog.Type.SYSTEM_OPERATION,
+            level=AuditLog.Level.INFO,
+            user=self.manager,
+            message=(
+                "Inicjalizacja bazy danych danymi demonstracyjnymi. "
+                "Wygenerowano kompletny zestaw danych dla celów pracy inżynierskiej."
+            ),
+            adres_ip="127.0.0.1",
+            user_agent="seed_database_v2.0/engineering-thesis",
+            entity_type="system",
+            entity_id="seed_operation",
+            metadata={
+                "employees_created": self.stats.pracownicy_utworzeni,
+                "clients_created": self.stats.klienci_utworzeni,
+                "appointments_created": self.stats.wizyty_utworzone,
+                "timestamp": self.now.isoformat(),
+            },
         )
+        self.stats.logi_audytu_utworzone += 1
 
-        if appointments:
-            example_appt = appointments[0]  # OK, bo lista jest już przefiltrowana
-            audit_logs.append(
+        # Logi dla przykładowych wizyt
+        if self.appointments:
+            for wizyta in self.appointments[:5]:
                 AuditLog.objects.create(
                     type=AuditLog.Type.APPOINTMENT_CHANGE,
                     level=AuditLog.Level.INFO,
-                    user=example_appt.employee.user,
-                    message=f"Utworzono wizytę demo #{example_appt.id}.",
+                    user=wizyta.employee.user,
+                    message=f"Utworzono wizytę demonstracyjną #{wizyta.id}",
                     adres_ip="127.0.0.1",
-                    user_agent="seed-script/1.0",
+                    user_agent="seed_database_v2.0/engineering-thesis",
                     entity_type="appointment",
-                    entity_id=str(example_appt.id),
+                    entity_id=str(wizyta.id),
                     metadata={
-                        "status": example_appt.status,
-                        "service": example_appt.service.name,
+                        "status": wizyta.status,
+                        "service": wizyta.service.name,
+                        "client": wizyta.client.get_full_name() if wizyta.client else "N/A",
+                        "start": wizyta.start.isoformat(),
                     },
                 )
-            )
+                self.stats.logi_audytu_utworzone += 1
 
-        forfeited_payment = Payment.objects.filter(
+        # Log dla utraconych zaliczek
+        utracone_zaliczki = Payment.objects.filter(
             status=Payment.Status.FORFEITED
-        ).first()
-        if forfeited_payment:
-            audit_logs.append(
-                AuditLog.objects.create(
-                    type=AuditLog.Type.PAYMENT_DEPOSIT_FORFEITED,
-                    level=AuditLog.Level.WARNING,
-                    user=manager,
-                    message=f"Utracona zaliczka demo #{forfeited_payment.id}.",
-                    adres_ip="127.0.0.1",
-                    user_agent="seed-script/1.0",
-                    entity_type="payment",
-                    entity_id=str(forfeited_payment.id),
-                    metadata={"amount": str(forfeited_payment.amount)},
-                )
+        )
+        if utracone_zaliczki.exists():
+            platnosc = utracone_zaliczki.first()
+            AuditLog.objects.create(
+                type=AuditLog.Type.PAYMENT_DEPOSIT_FORFEITED,
+                level=AuditLog.Level.WARNING,
+                user=self.manager,
+                message=f"Zaliczka #{platnosc.id} została utracona (no-show)",
+                adres_ip="127.0.0.1",
+                user_agent="seed_database_v2.0/engineering-thesis",
+                entity_type="payment",
+                entity_id=str(platnosc.id),
+                metadata={
+                    "amount": str(platnosc.amount),
+                    "appointment_id": str(platnosc.appointment_id),
+                },
             )
+            self.stats.logi_audytu_utworzone += 1
 
         self.stdout.write(
-            self.style.SUCCESS(f"✓ Dodano {len(audit_logs)} wpisów do logu audytu.")
+            self.style.SUCCESS(
+                f"Utworzono {self.stats.logi_audytu_utworzone} wpisów audytu"
+            )
         )
 
-        # =========================================================================
-        # 18. SUMMARY
-        # =========================================================================
+    def _wyswietl_podsumowanie(self) -> None:
+        """
+        Wyświetla szczegółowe podsumowanie operacji seedowania.
+
+        Zawiera:
+        - Statystyki utworzonych rekordów
+        - Dane logowania do systemu
+        - Informacje o bezpieczeństwie
+        """
         self.stdout.write("")
-        self.stdout.write("-" * 72)
-        self.stdout.write(self.style.SUCCESS("Zasilanie bazy danymi demo – ZAKOŃCZONE."))
+        self.stdout.write(self.stats.wyswietl_podsumowanie())
+
+        self.stdout.write(self.style.SUCCESS("DANE DOSTĘPOWE DO SYSTEMU"))
+        self.stdout.write("=" * 80)
         self.stdout.write("")
-        self.stdout.write("Logowanie jako manager:")
-        self.stdout.write("  • e-mail: manager@inzynierski-salon.demo")
-        self.stdout.write("  • hasło : admin123 (TYLKO DEMO!)")
-        self.stdout.write("-" * 72)
-
-    # =====================================================================
-    # HELPERY – WIZYTY (kolizje + bezpieczne tworzenie)
-    # =====================================================================
-    # Poprawka: Zmieniono timezone.datetime na samo datetime
-    def _is_slot_free(self, employee: Employee, start: datetime, end: datetime) -> bool:
-        """
-        Sprawdza, czy pracownik ma wolny slot w danym przedziale czasu.
-        Prosta walidacja kolizji wizyt (brak nakładania się przedziałów).
-        """
-        return not Appointment.objects.filter(
-            employee=employee,
-            start__lt=end,
-            end__gt=start,
-        ).exists()
-
-    def _create_appointment_if_possible(
-            self,
-            *,
-            client: Client,
-            emp: Employee,
-            service: Service,
-            # Poprawka: Zmieniono timezone.datetime na samo datetime
-            start: datetime,
-            end: datetime,
-            status: str,
-            booking_channel: str,
-            internal_notes: str,
-            client_notes: str,
-    ) -> Optional[Appointment]:
-        """
-        Tworzy wizytę tylko jeśli nie ma kolizji czasowych.
-        W razie błędu loguje go i zwraca None (zamiast przerywać cały seed).
-        """
-        if not self._is_slot_free(emp, start, end):
-            logger.warning(
-                "Pominięto wizytę z powodu kolizji czasu (pracownik=%s, start=%s, end=%s)",
-                emp.pk,
-                start,
-                end,
+        self.stdout.write(" KONTO MANAGERA:")
+        self.stdout.write("   Email:    manager@beauty-salon.pl")
+        self.stdout.write("   Hasło:    AdminDemo2024!")
+        self.stdout.write("")
+        self.stdout.write(" KONTA PRACOWNIKÓW:")
+        self.stdout.write("   Email:    [imie.nazwisko]@beauty-salon.pl")
+        self.stdout.write("   Hasło:    PracownikDemo2024!")
+        self.stdout.write("")
+        self.stdout.write(" KONTA KLIENTÓW:")
+        self.stdout.write("   Email:    [zgodnie z listą w bazie]")
+        self.stdout.write("   Hasło:    KlientDemo2024!")
+        self.stdout.write("")
+        self.stdout.write("=" * 80)
+        self.stdout.write(
+            self.style.WARNING(
+                "\n UWAGA BEZPIECZEŃSTWA:\n"
+                "Powyższe dane logowania są przeznaczone WYŁĄCZNIE do środowisk\n"
+                "deweloperskich i demonstracyjnych."
             )
-            return None
-
-        try:
-            appt = Appointment.objects.create(
-                client=client,
-                employee=emp,
-                service=service,
-                start=start,
-                end=end,
-                status=status,
-                booking_channel=booking_channel,
-                internal_notes=internal_notes,
-                client_notes=client_notes,
+        )
+        self.stdout.write("")
+        self.stdout.write(
+            self.style.SUCCESS(
+                " Seedowanie bazy danych zakończone sukcesem!\n"
             )
-            return appt
-        except Exception as e:
-            logger.error(
-                "Błąd tworzenia wizyty demo (pracownik=%s, klient=%s, start=%s): %s",
-                emp.pk,
-                client.id if client else None,
-                start,
-                e,
-            )
-            return None
+        )
 
-    # =====================================================================
-    # HELPER: CLEAR DEMO DATA
-    # =====================================================================
-    def clear_demo_data(self) -> None:
-        """Czyści dane demo z głównych modeli (w sensownej kolejności)."""
-        self.stdout.write(self.style.WARNING("Usuwam istniejące dane demo..."))
+    def _wyczysc_dane_demo(self) -> None:
+        """
+        Usuwa wszystkie dane demonstracyjne z bazy danych.
 
-        models_in_order: List[ModelBase] = [
-            Note,
-            Notification,
-            MediaAsset,
-            Payment,
-            Invoice,
-            Appointment,
-            TimeOff,
-            Schedule,
-            StatsSnapshot,
-            ReportPDF,
-            AuditLog,
-            Service,
-            Client,
-            Employee,
+        Operacja wykonywana jest w odpowiedniej kolejności, aby
+        zachować integralność referencyjną i uniknąć błędów.
+        """
+        self.stdout.write("")
+        self.stdout.write(self.style.WARNING(" Usuwanie istniejących danych demo..."))
+        self.stdout.write("")
+
+        # Lista modeli w kolejności usuwania (uwzględnia zależności FK)
+        modele_do_wyczyszczenia: List[Tuple[ModelBase, str]] = [
+            (Note, "Notatki"),
+            (Notification, "Powiadomienia"),
+            (MediaAsset, "Zasoby mediów"),
+            (Payment, "Płatności"),
+            (Invoice, "Faktury"),
+            (Appointment, "Wizyty"),
+            (TimeOff, "Nieobecności"),
+            (Schedule, "Harmonogramy"),
+            (StatsSnapshot, "Migawki statystyk"),
+            (ReportPDF, "Raporty PDF"),
+            (AuditLog, "Logi audytu"),
+            (Service, "Usługi"),
+            (Client, "Klienci"),
+            (Employee, "Pracownicy"),
         ]
 
-        for model in models_in_order:
-            # Wymagane użycie type: ignore, ponieważ ModelBase (z Base) nie ma w pełni
-            # określonego menadżera .objects (który ma model Django)
-            deleted = model.objects.all().delete()[0]  # type: ignore[attr-defined]
-            self.stdout.write(f"  - Usunięto {deleted:4d} rekordów z {model.__name__}")
+        for model, nazwa in modele_do_wyczyszczenia:
+            ilosc_usunietych = model.objects.all().delete()[0]  # type: ignore[attr-defined]
+            self.stdout.write(f"  • {nazwa:.<30} {ilosc_usunietych:>6} rekordów")
 
-        # Usuń użytkowników z ról systemowych (manager/employee/client)
-        user_deleted = User.objects.filter(
+        # Usunięcie użytkowników systemowych
+        ilosc_userow = User.objects.filter(
             role__in=[
                 User.RoleChoices.MANAGER,
                 User.RoleChoices.EMPLOYEE,
@@ -1198,7 +1806,9 @@ class Command(BaseCommand):
             ]
         ).delete()[0]
         self.stdout.write(
-            f"  - Usunięto {user_deleted:4d} użytkowników (role: manager/employee/client)"
+            f"  • {'Użytkownicy systemowi':.<30} {ilosc_userow:>6} rekordów"
         )
 
-        self.stdout.write(self.style.SUCCESS("✓ Dane demo usunięte."))
+        self.stdout.write("")
+        self.stdout.write(self.style.SUCCESS(" Dane demo zostały usunięte pomyślnie"))
+        self.stdout.write("")

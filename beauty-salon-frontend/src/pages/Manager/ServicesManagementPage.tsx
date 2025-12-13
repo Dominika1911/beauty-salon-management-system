@@ -1,5 +1,3 @@
-// src/pages/Manager/ServicesManagementPage.tsx
-
 import React, { useState, useEffect, useMemo, useCallback, type ReactElement } from 'react';
 import { servicesAPI } from '../../api/services';
 import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
@@ -13,7 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 const SERVICES_PAGE_SIZE = 20;
 
 export const ServicesManagementPage: React.FC = (): ReactElement => {
-    // 🚨 ZMIENIONO: Dodano isManager do destruktyryzacji
+    // Dodano isManager do destruktyryzacji
     const { user, isManager } = useAuth();
     const [services, setServices] = useState<Service[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
@@ -88,7 +86,7 @@ export const ServicesManagementPage: React.FC = (): ReactElement => {
         }
     }, [currentPage, pageSize]);
 
-    // 🚨 DODANO: Funkcja do usunięcia (dla managera)
+    // Funkcja do usunięcia (dla managera)
     const handleDelete = useCallback(async (id: number) => {
         if (!window.confirm('Czy na pewno chcesz usunąć tę usługę? Ta operacja jest nieodwracalna!')) {
             return;
@@ -176,13 +174,15 @@ export const ServicesManagementPage: React.FC = (): ReactElement => {
 
         return baseColumns;
 
-    }, [isManager, handleTogglePublish, handleDelete]); // 🚨 DODANO zależności
+    }, [isManager, handleTogglePublish, handleDelete]);
 
     // ----------------------------------------------------
     // RENDEROWANIE
     // ----------------------------------------------------
-    if (loading && services.length === 0) {
-        return (
+  const sortedServices: Service[] = useMemo(() => [...services].sort((a, b) => a.id - b.id), [services]);
+
+  if (loading && services.length === 0) {
+    return (
             <div style={{ padding: 20 }}>
                 <h1>Zarządzanie Usługami</h1>
                 <p>Ładowanie listy usług...</p>
@@ -203,7 +203,7 @@ export const ServicesManagementPage: React.FC = (): ReactElement => {
         <div className="services-management-page" style={{ padding: 20 }}>
             <h1>Katalog Usług</h1>
 
-            {/* 🚨 ZMIENIONO: Przycisk widoczny tylko dla Managera */}
+            {/* Przycisk widoczny tylko dla Managera */}
             {isManager && (
                 <div style={{ marginBottom: 20, textAlign: 'right' }}>
                     <button
@@ -222,7 +222,7 @@ export const ServicesManagementPage: React.FC = (): ReactElement => {
 
             <div style={{ marginTop: 20 }}>
                 <Table
-                    data={services}
+                    data={sortedServices}
                     columns={columns} // Kolumny są teraz warunkowe
                     loading={loading}
                     emptyMessage="Brak usług do wyświetlenia."

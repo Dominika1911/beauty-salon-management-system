@@ -120,11 +120,17 @@ export const AppointmentsManagementPage: React.FC = () => {
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Spójne sortowanie po ID (rosnąco) na froncie – niezależnie od kolejności z API
+  const sortedAppointments = useMemo(
+    () => [...appointments].sort((a, b) => a.id - b.id),
+    [appointments]
+  );
+
   const fetchAppointments = async (): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
-      const res = await appointmentsAPI.list({ page: 1, page_size: 50 });
+      const res = await appointmentsAPI.list({ page: 1, page_size: 50, ordering: 'id' });
       setAppointments(res.data.results ?? []);
     } catch (e: any) {
       console.error(e);
@@ -240,14 +246,14 @@ export const AppointmentsManagementPage: React.FC = () => {
                   Ładowanie…
                 </td>
               </tr>
-            ) : appointments.length === 0 ? (
+            ) : sortedAppointments.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ padding: 16 }}>
                   Brak wizyt do wyświetlenia.
                 </td>
               </tr>
             ) : (
-              appointments.map((a) => {
+              sortedAppointments.map((a) => {
                 const actions = actionsForAppointment(a, currentUser);
                 const busy = actionLoadingId === a.id;
 

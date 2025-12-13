@@ -367,7 +367,7 @@ class Appointment(TimestampedModel):
     class Meta:
         verbose_name = _('wizyta')
         verbose_name_plural = _('wizyty')
-        ordering = ['start']
+        ordering = ['id']
 
     def __str__(self) -> str:
         return f"Wizyta {self.id} - {self.service.name} ({self.start.strftime('%Y-%m-%d %H:%M')})"

@@ -373,7 +373,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         qs = Appointment.objects.filter(
             employee=employee,
             start__gte=now,
-        ).order_by("start")[:50]
+        ).order_by("id")[:50]
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -505,7 +505,7 @@ class ClientViewSet(viewsets.ModelViewSet):
     def appointments(self, request: Request, pk: Optional[int] = None) -> Response:
         """Lista wizyt konkretnego klienta."""
         client = self.get_object()
-        qs = Appointment.objects.filter(client=client).order_by("-start")
+        qs = Appointment.objects.filter(client=client).order_by("id")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -526,7 +526,7 @@ class ClientViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        qs = Appointment.objects.filter(client=client).order_by("-start")
+        qs = Appointment.objects.filter(client=client).order_by("id")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -755,8 +755,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     )
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["status", "employee", "client", "service"]
-    ordering_fields = ["start", "created_at"]
-    ordering = ["-start"]
+    ordering_fields = ["id", "start", "created_at"]
+    ordering = ["id"]
 
     def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         if self.action == "list":
@@ -823,7 +823,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def today(self, request: Request) -> Response:
         """Wizyty dzisiaj (filtrowane po roli użytkownika)."""
         today = timezone.localdate()
-        qs = self.get_queryset().filter(start__date=today).order_by("start")
+        qs = self.get_queryset().filter(start__date=today).order_by("id")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -831,7 +831,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def upcoming(self, request: Request) -> Response:
         """Przyszłe wizyty (domyślnie od teraz)."""
         now = timezone.now()
-        qs = self.get_queryset().filter(start__gte=now).order_by("start")
+        qs = self.get_queryset().filter(start__gte=now).order_by("id")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
@@ -853,7 +853,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     {"detail": "Konto nie jest powiązane z klientem."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            qs = Appointment.objects.filter(client=client).order_by("-start")
+            qs = Appointment.objects.filter(client=client).order_by("id")
         elif hasattr(user, "is_employee") and getattr(user, "is_employee", False):
             try:
                 employee = user.employee
@@ -862,7 +862,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     {"detail": "Konto nie jest powiązane z pracownikiem."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            qs = Appointment.objects.filter(employee=employee).order_by("-start")
+            qs = Appointment.objects.filter(employee=employee).order_by("id")
         else:
             qs = Appointment.objects.none()
 
@@ -1426,7 +1426,6 @@ class AvailabilitySlotsAPIView(APIView):
     GET /availability/slots/?employee=<id>&service=<id>&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
     """
     permission_classes = [permissions.AllowAny]
-
     def get(self, request):
         # 1) Parsowanie parametrów
         try:
@@ -1645,7 +1644,7 @@ class AvailabilitySlotsAPIView(APIView):
                             has_weekly_break_collision = True
                             break
 
-                    if not (has_appt_collision or has_break_collision or has_weekly_break_collision):
+                    if not (has_appt_collision or has_break_collision):
                         slots.append(
                             {
                                 "start": slot_start.isoformat(),
@@ -1842,7 +1841,7 @@ class DashboardView(APIView):
         upcoming = Appointment.objects.filter(
             client=client,
             start__gte=now,
-        ).order_by("start")[:10]
+        ).order_by("id")[:10]
 
         last_visits = Appointment.objects.filter(
             client=client,
@@ -1852,7 +1851,7 @@ class DashboardView(APIView):
                 Appointment.Status.CANCELLED,
                 Appointment.Status.NO_SHOW,
             ],
-        ).order_by("-start")[:5]
+        ).order_by("-id")[:5]
 
         total_spent = (
                 Payment.objects.filter(
@@ -1888,12 +1887,12 @@ class DashboardView(APIView):
         today_appointments = Appointment.objects.filter(
             employee=employee,
             start__date=today,
-        ).order_by("start")
+        ).order_by("id")
 
         upcoming = Appointment.objects.filter(
             employee=employee,
             start__gt=now,
-        ).order_by("start")[:20]
+        ).order_by("id")[:20]
 
         pending_time_off = TimeOff.objects.filter(
             employee=employee, status=TimeOff.Status.PENDING
@@ -1949,7 +1948,7 @@ class DashboardView(APIView):
 
         upcoming_appointments = Appointment.objects.filter(
             start__gte=now
-        ).order_by("start")[:20]
+        ).order_by("id")[:20]
 
         data = {
             "role": "manager",

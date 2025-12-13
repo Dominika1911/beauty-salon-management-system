@@ -100,7 +100,7 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
     search_fields = ('email', 'first_name', 'last_name')
-    ordering = ('email',)
+    ordering = ('id',)
     readonly_fields = ('last_login', 'created_at', 'failed_login_attempts', 'account_locked_until', 'last_login_ip')
     actions = ['activate_users', 'deactivate_users']
 
@@ -543,7 +543,7 @@ class EmployeeAdmin(admin.ModelAdmin[Employee]):
                     'average_rating', 'hired_at']
     list_filter = ['is_active', 'hired_at']
     search_fields = ['number', 'first_name', 'last_name', 'user__email']
-    ordering = ['last_name', 'first_name']
+    ordering = ['id']
     readonly_fields = ['number', 'appointments_count', 'average_rating']
     filter_horizontal = ['skills']
     inlines = [ScheduleInline]
@@ -649,7 +649,7 @@ class ClientAdmin(admin.ModelAdmin[Client]):
                     'total_spent_amount', 'marketing_consent', 'deleted_status']
     list_filter = ['marketing_consent', 'preferred_contact', 'deleted_at', RevenueRangeFilter]
     search_fields = ['number', 'first_name', 'last_name', 'email', 'phone']
-    ordering = ['last_name', 'first_name']
+    ordering = ['id']
     readonly_fields = ['number', 'visits_count', 'total_spent_amount', 'deleted_at']
     raw_id_fields = ['user']
     actions = [export_to_csv]
@@ -695,7 +695,7 @@ class AppointmentAdmin(admin.ModelAdmin[Appointment]):
     list_filter = ['status', 'booking_channel', 'start', 'reminder_sent', TodayAppointmentsFilter]
     search_fields = ['client__first_name', 'client__last_name', 'employee__first_name',
                      'employee__last_name', 'service__name']
-    ordering = ['-start']
+    ordering = ['id']
     date_hierarchy = 'start'
     readonly_fields = ['timespan', 'cancelled_at']
     inlines = [NoteInline, PaymentInline]
@@ -775,7 +775,7 @@ class PaymentAdmin(admin.ModelAdmin[Payment]):
                     'method', 'paid_at']
     list_filter = ['status', 'type', 'method', 'paid_at']
     search_fields = ['appointment__client__first_name', 'appointment__client__last_name', 'reference']
-    ordering = ['-created_at']
+    ordering = ['id']
     date_hierarchy = 'paid_at'
     readonly_fields = ['created_at']
     raw_id_fields = ['appointment']
@@ -818,7 +818,7 @@ class InvoiceAdmin(admin.ModelAdmin[Invoice]):
                     'is_paid', 'due_date', 'payment_status']
     list_filter = ['is_paid', 'issue_date', 'due_date']
     search_fields = ['number', 'client__first_name', 'client__last_name']
-    ordering = ['-issue_date']
+    ordering = ['id']
     date_hierarchy = 'issue_date'
     readonly_fields = ['created_at']
     raw_id_fields = ['client', 'appointment']
@@ -857,7 +857,7 @@ class NotificationAdmin(admin.ModelAdmin[Notification]):
                     'scheduled_at', 'attempts_count']
     list_filter = ['type', 'channel', 'status', 'scheduled_at']
     search_fields = ['client__first_name', 'client__last_name', 'content']
-    ordering = ['scheduled_at']
+    ordering = ['id']
     date_hierarchy = 'scheduled_at'
     readonly_fields = ['sent_at', 'attempts_count']
     raw_id_fields = ['client', 'appointment']
@@ -1043,7 +1043,7 @@ class MediaAssetAdmin(admin.ModelAdmin[MediaAsset]):
                     'size_display', 'is_active', 'created_at']
     list_filter = ['type', 'is_active', 'created_at']
     search_fields = ['file_name', 'description', 'employee__first_name', 'employee__last_name']
-    ordering = ['-created_at']
+    ordering = ['id']
     readonly_fields = ['created_at', 'file_size', 'size_bytes']
     raw_id_fields = ['employee', 'client', 'appointment']
     actions = ['activate_assets', 'deactivate_assets']
@@ -1094,7 +1094,7 @@ class NoteAdmin(admin.ModelAdmin[Note]):
                     'created_at', 'visible_for_client', 'content_short']
     list_filter = ['visible_for_client', 'created_at']
     search_fields = ['content', 'appointment__client__first_name', 'appointment__client__last_name', 'author__email']
-    ordering = ['-created_at']
+    ordering = ['id']
     date_hierarchy = 'created_at'
     readonly_fields = ['created_at', 'author']
     raw_id_fields = ['appointment', 'client', 'author']

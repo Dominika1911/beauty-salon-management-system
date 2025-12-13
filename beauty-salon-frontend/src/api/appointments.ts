@@ -22,6 +22,7 @@ interface AppointmentListParams {
   // DRF PageNumberPagination
   page?: number;
   page_size?: number;
+  ordering?: string;
 }
 
 interface AppointmentsApi {

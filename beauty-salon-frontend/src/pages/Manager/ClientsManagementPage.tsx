@@ -90,12 +90,11 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
     }, [currentPage]);
 
     // DEFINICJA KOLUMN Z EDYCJĄ I SOFT DELETE
-    // 🚨 POPRAWKA: Użyj 'first_name' jako key zamiast 'full_name'
     const columns: ColumnDefinition<Client>[] = useMemo(() => [
         { header: 'ID', key: 'id', width: '5%' },
         {
             header: 'Klient',
-            key: 'first_name', // ✅ Użyj istniejącego klucza
+            key: 'first_name',
             render: (item: Client) => `${item.first_name} ${item.last_name}`
         },
         { header: 'Email', key: 'email', render: (item: Client) => item.email ?? '-' },
@@ -140,10 +139,10 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
             ),
         },
     ], [handleSoftDelete]);
+  const sortedClients: Client[] = useMemo(() => [...clients].sort((a, b) => a.id - b.id), [clients]);
 
-
-    if (loading && clients.length === 0) {
-        return (
+  if (loading && clients.length === 0) {
+    return (
             <div style={{ padding: 20 }}>
                 <h1>Zarządzanie Klientami</h1>
                 <p>Ładowanie listy klientów...</p>
@@ -182,7 +181,7 @@ export const ClientsManagementPage: React.FC = (): ReactElement => {
 
             <div style={{ marginTop: 20 }}>
                 <Table
-                    data={clients}
+                    data={sortedClients}
                     columns={columns}
                     loading={loading}
                     emptyMessage="Brak klientów do wyświetlenia."

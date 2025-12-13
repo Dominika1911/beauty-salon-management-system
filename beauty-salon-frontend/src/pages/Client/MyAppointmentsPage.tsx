@@ -26,6 +26,9 @@ export const MyAppointmentsPage: React.FC = (): ReactElement => {
     void fetchMy();
   }, []);
 
+  // ✅ Spójne sortowanie po ID (rosnąco) na froncie
+  const sortedItems = useMemo(() => [...items].sort((a, b) => a.id - b.id), [items]);
+
   const now = useMemo(() => Date.now(), []);
   const canCancel = (a: AppointmentListItem): boolean => {
     // klient sensownie: tylko przyszłe i nieodwołane/niezakończone
@@ -68,10 +71,10 @@ export const MyAppointmentsPage: React.FC = (): ReactElement => {
 
       {!loading && !error && (
         <ul style={{ marginTop: 12 }}>
-          {items.length === 0 ? (
+          {sortedItems.length === 0 ? (
             <li>Brak rezerwacji.</li>
           ) : (
-            items.map((a) => (
+            sortedItems.map((a) => (
               <li key={a.id} style={{ marginBottom: 10 }}>
                 <div>
                   <strong>{new Date(a.start).toLocaleString()}</strong> — {a.service_name} — {a.employee_name}{' '}

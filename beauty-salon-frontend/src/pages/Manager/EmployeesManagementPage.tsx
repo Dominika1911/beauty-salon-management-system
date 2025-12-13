@@ -148,9 +148,10 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
       ),
     },
   ], [handleDeactivate]);
+  const sortedEmployees: Employee[] = useMemo(() => [...employees].sort((a, b) => a.id - b.id), [employees]);
 
   if (loading && employees.length === 0) {
-    return (
+  return (
       <div style={{ padding: 20 }}>
         <h1>Zarządzanie Pracownikami</h1>
         <p>Ładowanie listy pracowników...</p>
@@ -193,7 +194,7 @@ export const EmployeesManagementPage: React.FC = (): ReactElement => {
 
       <div style={{ marginTop: 20 }}>
         <Table
-          data={employees}
+          data={sortedEmployees}
           columns={columns}
           loading={loading}
           emptyMessage="Brak pracowników do wyświetlenia."
