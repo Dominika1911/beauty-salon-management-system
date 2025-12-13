@@ -24,7 +24,7 @@ const navItems: NavLinkItem[] = [
   { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
   { to: 'my-appointments', label: 'Moje Rezerwacje', roles: ['client'] },
 
-  { to: 'statistics', label: 'Statystyki', roles: ['manager'] },
+  { to: 'statistics', label: 'Statystyki', roles: ['manager', 'employee'] },
   { to: 'settings', label: 'Ustawienia Systemu', roles: ['manager'] },
 ];
 

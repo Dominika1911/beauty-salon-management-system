@@ -14,11 +14,12 @@ import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPag
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
 import StatisticsPage from "../pages/StatisticsPage";
+import SettingsPage from "../pages/SettingsPage";
 
 
-// 🚨 DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
+// DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
 import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
-// 🚨 DODANO: Strona dla Pracownika (wcześniej placeholder)
+// DODANO: Strona dla Pracownika (wcześniej placeholder)
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
@@ -27,7 +28,6 @@ import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
 
 // Tymczasowe/Placeholdery
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
-const SettingsPage: React.FC = (): ReactElement => <h1>Ustawienia</h1>;
 
 
 const router = createBrowserRouter([
