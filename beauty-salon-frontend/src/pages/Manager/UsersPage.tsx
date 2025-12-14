@@ -73,7 +73,7 @@ function extractErrorMessage(err: unknown): { status: number | null; message: st
 
 const roleOptions: Array<{ value: 'all' | UserRole; label: string }> = [
   { value: 'all', label: 'Wszystkie role' },
-  { value: 'manager', label: 'Manager' },
+  { value: 'manager', label: 'Administrator' },
   { value: 'employee', label: 'Pracownik' },
   { value: 'client', label: 'Klient' },
 ];
@@ -175,18 +175,15 @@ export function UsersPage(): ReactElement {
     () => [
       { header: 'ID', key: 'id', width: '70px' },
       {
-  header: 'Email',
-  key: 'email',
-  width: '260px',
-  render: (u) => (
-    <a
-      href={`/users/${u.id}`}
-      style={{ color: '#8b2c3b', textDecoration: 'underline' }}
-    >
-      {u.email}
-    </a>
-  ),
-},
+        header: 'Email',
+        key: 'email',
+        width: '260px',
+        render: (u) => (
+          <a href={`/users/${u.id}`} style={{ color: '#8b2c3b', textDecoration: 'underline' }}>
+            {u.email}
+          </a>
+        ),
+      },
 
       {
         header: 'Aktywny',
@@ -259,12 +256,7 @@ export function UsersPage(): ReactElement {
             </button>
           </div>
 
-          <Table<UserListItem>
-            data={users}
-            columns={columns}
-            loading={loading}
-            emptyMessage="Brak wyników"
-          />
+          <Table<UserListItem> data={users} columns={columns} loading={loading} emptyMessage="Brak wyników" />
         </div>
       </div>
     </div>

@@ -2,12 +2,12 @@
 
 import React, { type ReactElement } from 'react';
 import { Outlet } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth'; // Ścieżka do useAuth w context/
+import { useAuth } from '../../hooks/useAuth';
 import { Sidebar } from './Sidebar';
 import './Layout.css';
 
 export const Layout: React.FC = (): ReactElement => {
-  const { loading } = useAuth();
+  const { loading, user } = useAuth();
 
   // Wyświetlanie ekranu ładowania podczas sprawdzania statusu autoryzacji
   if (loading) {
@@ -19,12 +19,14 @@ export const Layout: React.FC = (): ReactElement => {
     );
   }
 
+  const hasSidebar = user !== null;
+
   return (
-    <div className="app-layout">
-      {/* 1. Panel boczny z nawigacją */}
+    <div className={`app-layout ${hasSidebar ? '' : 'app-layout--no-sidebar'}`.trim()}>
+      {/* Panel boczny tylko gdy user zalogowany (Sidebar i tak zwraca null, ale Layout musi też zmienić grid) */}
       <Sidebar />
 
-      {/* 2. Główna treść strony (gdzie renderują się pages) */}
+      {/* Główna treść strony */}
       <main className="layout-content">
         <Outlet />
       </main>

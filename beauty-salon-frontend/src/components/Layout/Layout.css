@@ -7,6 +7,11 @@
     background-color: #f7f7f7;
 }
 
+/* ✅ Gdy użytkownik niezalogowany — nie rezerwujemy pustej kolumny na sidebar */
+.app-layout--no-sidebar {
+    grid-template-columns: 1fr;
+}
+
 /* Stan ładowania */
 .layout-loading {
     display: flex;

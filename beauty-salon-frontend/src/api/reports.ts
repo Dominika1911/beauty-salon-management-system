@@ -21,6 +21,28 @@ const ENDPOINTS = {
   detail: (id: number) => `/reports/${id}/`,
 } as const;
 
+function isAbsoluteHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function buildAbsoluteUrl(filePath: string): string {
+  const trimmed = filePath.trim();
+  if (!trimmed) return "";
+
+  // Jeśli backend zwraca już pełny URL – zostawiamy
+  if (isAbsoluteHttpUrl(trimmed)) return trimmed;
+
+  // Jeśli to ścieżka bez "/" na początku – dodajemy "/"
+  const normalizedPath = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+
+  // Robimy URL absolutny względem origin, żeby uniknąć problemów z routerem (np. /reports/...)
+  try {
+    return new URL(normalizedPath, window.location.origin).toString();
+  } catch {
+    return normalizedPath;
+  }
+}
+
 export const reportsAPI = {
   list: async (params?: ReportListParams): Promise<ReportPDF[]> => {
     const res = await api.get<PaginatedResponse<ReportPDF> | ReportPDF[]>(ENDPOINTS.base, { params });
@@ -33,7 +55,6 @@ export const reportsAPI = {
     return res.data;
   },
 
-  // Backend zwraca file_path – w UI chcesz zrobić href.
-  // Najbezpieczniej: zwróć to co backend daje (może być już pełnym URL-em).
-  mediaUrl: (filePath: string): string => filePath,
+  // Backend zwraca file_path – w UI robimy link. Normalizujemy do URL absolutnego.
+  mediaUrl: (filePath: string): string => buildAbsoluteUrl(filePath),
 };

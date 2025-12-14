@@ -29,19 +29,28 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
-    // MANAGER + EMPLOYEE
+    // MANAGER
     {
-      label: 'Usługi (zarządzanie)',
+      label: 'Grafik (zarządzanie)',
+      path: '/schedule',
+      roles: ['manager'],
+    },
+
+    // EMPLOYEE
+    {
+      label: 'Mój grafik',
+      path: '/my-schedule',
+      roles: ['employee'],
+    },
+
+    // ✅ JEDEN wpis /services (etykieta zależna od roli)
+    {
+      label: user.role === 'client' ? 'Usługi' : 'Usługi (zarządzanie)',
       path: '/services',
-      roles: ['manager', 'employee'],
+      roles: ['manager', 'employee', 'client'],
     },
 
     // CLIENT
-    {
-      label: 'Usługi',
-      path: '/services',
-      roles: ['client'],
-    },
     {
       label: 'Umów wizytę',
       path: '/book',
@@ -59,7 +68,7 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
-    // ✅ Manager: Payments + Invoices
+    // ✅ Manager: Payments, Invoices, Notifications (MUSZĄ być)
     {
       label: 'Płatności',
       path: '/payments',
@@ -70,11 +79,21 @@ export function Sidebar(): ReactElement | null {
       path: '/invoices',
       roles: ['manager'],
     },
-
-    // ✅ Manager: notifications
     {
       label: 'Powiadomienia',
       path: '/notifications',
+      roles: ['manager'],
+    },
+
+    // ✅ DOPIĘTE: Raporty / Logi
+    {
+      label: 'Raporty',
+      path: '/reports',
+      roles: ['manager'],
+    },
+    {
+      label: 'Logi systemowe',
+      path: '/system-logs',
       roles: ['manager'],
     },
 
@@ -124,7 +143,7 @@ export function Sidebar(): ReactElement | null {
                 textDecoration: 'none',
                 color: '#5a2a35',
                 backgroundColor: isActive ? '#f8c1cc' : 'transparent',
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: isActive ? 700 : 500,
               })}
             >
               {item.label}
@@ -142,7 +161,7 @@ export function Sidebar(): ReactElement | null {
           backgroundColor: '#fff0f3',
           color: '#8b2c3b',
           cursor: 'pointer',
-          fontWeight: 500,
+          fontWeight: 700,
         }}
       >
         Wyloguj

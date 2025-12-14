@@ -1,7 +1,15 @@
-// src/pages/StatisticsPage.tsx
-import React, { useEffect, useMemo, useState, type ReactElement } from "react";
-import { getStatistics, type StatisticsResponse } from "../api/statistics";
-import { notify } from "../utils/notificationService";
+import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
+import { getStatistics, type StatisticsResponse } from '../api/statistics';
+import type { EmployeeStatisticsItem, ServiceStatisticsItem } from '../types';
+import { notify } from '../utils/notificationService';
+import {
+  beautyButtonSecondaryStyle,
+  beautyCardBodyStyle,
+  beautyCardHeaderStyle,
+  beautyCardStyle,
+  beautyMutedTextStyle,
+  beautyPageTitleStyle,
+} from '../utils/ui';
 
 type Days = 7 | 30 | 90;
 
@@ -9,26 +17,68 @@ interface DaysButtonProps {
   label: string;
   active: boolean;
   onClick: () => void;
+  disabled: boolean;
 }
 
-const DaysButton: React.FC<DaysButtonProps> = ({ label, active, onClick }): ReactElement => {
+const daysButtonStyle = (active: boolean): CSSProperties => ({
+  ...beautyButtonSecondaryStyle,
+  padding: '8px 12px',
+  fontWeight: 800,
+  backgroundColor: active ? '#ffffff' : '#fff5fa',
+  borderColor: active ? 'rgba(233, 30, 99, 0.35)' : 'rgba(233, 30, 99, 0.20)',
+  cursor: 'pointer',
+});
+
+const DaysButton: React.FC<DaysButtonProps> = ({ label, active, onClick, disabled }): ReactElement => {
   return (
-    <button
-      onClick={onClick}
-      type="button"
-      className="print-hide"
-      style={{
-        padding: "8px 12px",
-        borderRadius: 8,
-        border: "1px solid rgba(0,0,0,0.12)",
-        background: active ? "white" : "transparent",
-        fontWeight: 650,
-        cursor: "pointer",
-      }}
-    >
+    <button onClick={onClick} type="button" style={daysButtonStyle(active)} disabled={disabled}>
       {label}
     </button>
   );
+};
+
+function formatDatePL(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('pl-PL', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function formatCurrencyPLN(value: string): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  return new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(n);
+}
+
+function formatPercent(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '—';
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return `${trimmed}%`;
+  return `${n}%`;
+}
+
+const kpiCardStyle: CSSProperties = {
+  padding: 14,
+  borderRadius: 12,
+  border: '1px solid rgba(233, 30, 99, 0.20)',
+  background: '#fff5fa',
+};
+
+const tableStyle: CSSProperties = {
+  width: '100%',
+  borderCollapse: 'collapse',
+};
+
+const thStyle: CSSProperties = {
+  padding: '10px 8px',
+  textAlign: 'left',
+  borderBottom: '1px solid rgba(233, 30, 99, 0.25)',
+};
+
+const tdStyle: CSSProperties = {
+  padding: '10px 8px',
+  borderBottom: '1px solid rgba(233, 30, 99, 0.12)',
+  verticalAlign: 'top',
 };
 
 export default function StatisticsPage(): ReactElement {
@@ -50,7 +100,8 @@ export default function StatisticsPage(): ReactElement {
         if (cancelled) return;
         setData(result);
       } catch {
-        notify("Nie udało się pobrać statystyk.", "error");
+        notify('Nie udało się pobrać statystyk.', 'error');
+        if (!cancelled) setData(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -63,169 +114,153 @@ export default function StatisticsPage(): ReactElement {
     };
   }, [days]);
 
-  const periodLabel = useMemo((): string => {
-    if (!data) return "";
-    return `Okres: ostatnie ${data.period.days} dni`;
+  const headerInfo = useMemo((): string => {
+    if (!data) return '';
+    return `Okres: ostatnie ${data.period.days} dni (${formatDatePL(data.period.from)} – ${formatDatePL(data.period.to)})`;
   }, [data]);
 
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner" />
-        <p>Ładowanie statystyk...</p>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div style={{ padding: "1.5rem" }}>
-        <h2 style={{ marginTop: 0 }}>Statystyki</h2>
-        <p style={{ color: "#666" }}>Brak danych do wyświetlenia.</p>
-      </div>
-    );
-  }
-
-  const s = data.summary;
+  const summary = data?.summary ?? null;
 
   return (
-    <div className="print-root" style={{ padding: "1.5rem" }}>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-          alignItems: "flex-start",
-        }}
-      >
-        <div>
-          <h2 style={{ margin: 0 }}>Statystyki</h2>
-          <p style={{ marginTop: 6, color: "#666" }}>{periodLabel}</p>
+    <div style={{ padding: 30 }}>
+      <div style={beautyCardStyle}>
+        <div style={beautyCardHeaderStyle}>
+          <h1 style={beautyPageTitleStyle}>Statystyki</h1>
+          <p style={beautyMutedTextStyle}>{data ? headerInfo : '—'}</p>
         </div>
 
-        {/* Kontrolki NIE drukują się */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <DaysButton label="7 dni" active={days === 7} onClick={() => changeDays(7)} />
-          <DaysButton label="30 dni" active={days === 30} onClick={() => changeDays(30)} />
-          <DaysButton label="90 dni" active={days === 90} onClick={() => changeDays(90)} />
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="print-hide"
+        <div style={beautyCardBodyStyle}>
+          {/* kontrolki */}
+          <div
             style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid rgba(0,0,0,0.12)",
-              background: "white",
-              fontWeight: 650,
-              cursor: "pointer",
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              marginBottom: 14,
             }}
           >
-            Eksportuj do PDF
-          </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <DaysButton label="7 dni" active={days === 7} onClick={() => changeDays(7)} disabled={loading} />
+              <DaysButton label="30 dni" active={days === 30} onClick={() => changeDays(30)} disabled={loading} />
+              <DaysButton label="90 dni" active={days === 90} onClick={() => changeDays(90)} disabled={loading} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              style={{ ...beautyButtonSecondaryStyle, padding: '8px 12px', fontWeight: 800 }}
+              disabled={loading}
+            >
+              Eksportuj do PDF
+            </button>
+          </div>
+
+          {loading ? (
+            <div style={beautyMutedTextStyle}>Ładowanie statystyk…</div>
+          ) : !data || !summary ? (
+            <div style={beautyMutedTextStyle}>Brak danych do wyświetlenia.</div>
+          ) : (
+            <>
+              {/* KPI */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div style={kpiCardStyle}>
+                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Wizyty</div>
+                  <div>Łącznie: <strong>{summary.total_appointments}</strong></div>
+                  <div>Ukończone: <strong>{summary.completed_appointments}</strong></div>
+                  <div>Anulowane: <strong>{summary.cancelled_appointments}</strong></div>
+                  <div>No-show: <strong>{summary.no_show_appointments}</strong></div>
+                </div>
+
+                <div style={kpiCardStyle}>
+                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Klienci</div>
+                  <div>Łącznie: <strong>{summary.total_clients}</strong></div>
+                  <div>Nowi: <strong>{summary.new_clients}</strong></div>
+                </div>
+
+                <div style={kpiCardStyle}>
+                  <div style={{ fontWeight: 900, marginBottom: 8 }}>Przychód</div>
+                  <div>
+                    Łącznie: <strong>{formatCurrencyPLN(summary.total_revenue)}</strong>
+                  </div>
+                  <div style={{ ...beautyMutedTextStyle, marginTop: 8 }}>
+                    (wartość z backendu jako string)
+                  </div>
+                </div>
+              </div>
+
+              {/* Top services */}
+              <div style={{ ...kpiCardStyle, background: '#fff', marginBottom: 16 }}>
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>Top usługi</div>
+
+                {data.services.length === 0 ? (
+                  <div style={beautyMutedTextStyle}>Brak danych usług dla tego okresu.</div>
+                ) : (
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Usługa</th>
+                        <th style={thStyle}>Wizyty</th>
+                        <th style={thStyle}>Przychód</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.services.map((row: ServiceStatisticsItem) => (
+                        <tr key={row.service.id}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 800 }}>{row.service.name}</div>
+                            <div style={beautyMutedTextStyle}>ID: {row.service.id}</div>
+                          </td>
+                          <td style={tdStyle}>{row.total_appointments}</td>
+                          <td style={tdStyle}>{formatCurrencyPLN(row.total_revenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Employees */}
+              <div style={{ ...kpiCardStyle, background: '#fff' }}>
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>Pracownicy</div>
+
+                {data.employees.length === 0 ? (
+                  <div style={beautyMutedTextStyle}>Brak danych pracowników dla tego okresu.</div>
+                ) : (
+                  <table style={tableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Pracownik</th>
+                        <th style={thStyle}>Wizyty</th>
+                        <th style={thStyle}>Obłożenie</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.employees.map((row: EmployeeStatisticsItem) => (
+                        <tr key={row.employee.id}>
+                          <td style={tdStyle}>
+                            <div style={{ fontWeight: 800 }}>{row.employee.full_name}</div>
+                            <div style={beautyMutedTextStyle}>ID: {row.employee.id}</div>
+                          </td>
+                          <td style={tdStyle}>{row.total_appointments}</td>
+                          <td style={tdStyle}>{formatPercent(row.occupancy_percent)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      </div>
-
-      {/* KPI */}
-      <div
-        style={{
-          marginTop: 16,
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <div className="stat-card">
-          <h3>Wizyty</h3>
-          <p>
-            Łącznie: <b>{s.total_appointments}</b>
-          </p>
-          <p>
-            Ukończone: <b>{s.completed_appointments}</b>
-          </p>
-          <p>
-            Anulowane: <b>{s.cancelled_appointments}</b>
-          </p>
-          <p>
-            No-show: <b>{s.no_show_appointments}</b>
-          </p>
-        </div>
-
-        <div className="stat-card">
-          <h3>Klienci</h3>
-          <p>
-            Łącznie: <b>{s.total_clients}</b>
-          </p>
-          <p>
-            Nowi: <b>{s.new_clients}</b>
-          </p>
-        </div>
-
-        <div className="stat-card">
-          <h3>Przychód</h3>
-          <p>
-            Łącznie: <b>{s.total_revenue}</b>
-          </p>
-        </div>
-      </div>
-
-      {/* Top services */}
-      <div className="appointments-section" style={{ marginTop: 16 }}>
-        <h2>Top usługi</h2>
-
-        {data.services.length === 0 ? (
-          <p style={{ color: "#666" }}>Brak danych usług dla tego okresu.</p>
-        ) : (
-          <table className="print-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th style={{ padding: "8px 6px" }}>Usługa</th>
-                <th style={{ padding: "8px 6px" }}>Wizyty</th>
-                <th style={{ padding: "8px 6px" }}>Przychód</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.services.map((row: import("../types").ServiceStatisticsItem) => (
-                <tr key={row.service.id} style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
-                  <td style={{ padding: "10px 6px" }}>{row.service.name}</td>
-                  <td style={{ padding: "10px 6px" }}>{row.total_appointments}</td>
-                  <td style={{ padding: "10px 6px" }}>{row.total_revenue}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {/* Employees */}
-      <div className="appointments-section" style={{ marginTop: 16 }}>
-        <h2>Pracownicy</h2>
-
-        {data.employees.length === 0 ? (
-          <p style={{ color: "#666" }}>Brak danych pracowników dla tego okresu.</p>
-        ) : (
-          <table className="print-table" style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "left" }}>
-                <th style={{ padding: "8px 6px" }}>Pracownik</th>
-                <th style={{ padding: "8px 6px" }}>Wizyty</th>
-                <th style={{ padding: "8px 6px" }}>Obłożenie</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.employees.map((row: import("../types").EmployeeStatisticsItem) =>  (
-                <tr key={row.employee.id} style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
-                  <td style={{ padding: "10px 6px" }}>{row.employee.full_name}</td>
-                  <td style={{ padding: "10px 6px" }}>{row.total_appointments}</td>
-                  <td style={{ padding: "10px 6px" }}>{row.occupancy_percent}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
       </div>
     </div>
   );

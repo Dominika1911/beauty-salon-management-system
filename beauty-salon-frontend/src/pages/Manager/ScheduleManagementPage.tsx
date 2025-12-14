@@ -9,13 +9,12 @@ import type { Employee, TimeOff, ScheduleEntry, Weekday } from '../../types';
 import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
 import { ScheduleEditor } from '../../components/Schedule/ScheduleEditor';
 import { TimeOffForm } from '../../components/Schedule/TimeOffForm';
+import { WeeklySalonSchedule } from '../../components/Schedule/WeeklySalonSchedule';
 
 import { usePagination } from '../../hooks/usePagination';
 import { useNotification } from '../../components/UI/Notification';
 
-
 const SCHEDULE_PAGE_SIZE = 20;
-// ✅ stała referencja, żeby nie robić nowego [] na każdym renderze
 const EMPTY_SCHEDULE: ScheduleEntry[] = [];
 
 type BackendPeriod = { weekday: string; start_time: string; end_time: string };
@@ -39,20 +38,19 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // ✅ wybrany pracownik zawsze z DETAIL()
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-
-  // ✅ osobno trzymamy grafik (nie zakładamy, że employee.detail ma schedule)
   const [selectedSchedule, setSelectedSchedule] = useState<ScheduleEntry[]>(EMPTY_SCHEDULE);
-
   const [selectedLoading, setSelectedLoading] = useState<boolean>(false);
 
-  // Urlopy w modalu
+  const [employeeQuery, setEmployeeQuery] = useState<string>('');
+
   const [isTimeOffModalOpen, setIsTimeOffModalOpen] = useState<boolean>(false);
   const [timeOffToEdit, setTimeOffToEdit] = useState<TimeOff | undefined>(undefined);
 
   const { currentPage, totalPages, setTotalCount, handlePreviousPage, handleNextPage } =
     usePagination(SCHEDULE_PAGE_SIZE);
+
+  // ======= MEMO / CALLBACKI (ZAWSZE PRZED RETURN) =======
 
   const employeeMap = useMemo(() => {
     const m = new Map<number, Employee>();
@@ -80,7 +78,7 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
       setEmployeeList(empResponse.data.results);
       setTotalCount(empResponse.data.count);
 
-      const timeOffResponse = await scheduleAPI.listTimeOff();
+      const timeOffResponse = await scheduleAPI.listTimeOff({ page: 1, page_size: 200 });
       setAllTimeOff(timeOffResponse.data.results);
     } catch (err) {
       console.error('Błąd pobierania danych harmonogramu:', err);
@@ -127,6 +125,28 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, isManager]);
 
+  const pendingTimeOff = useMemo(() => allTimeOff.filter((t) => t.status === 'pending'), [allTimeOff]);
+  const approvedTimeOff = useMemo(() => allTimeOff.filter((t) => t.status === 'approved'), [allTimeOff]);
+  const rejectedTimeOff = useMemo(() => allTimeOff.filter((t) => t.status === 'rejected'), [allTimeOff]);
+
+  const filteredEmployeeList = useMemo(() => {
+    const q = employeeQuery.trim().toLowerCase();
+    if (!q) return employeeList;
+    return employeeList.filter((e) => {
+      const hay = `${e.first_name} ${e.last_name} ${e.phone ?? ''} ${e.user ?? ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [employeeList, employeeQuery]);
+
+  // ✅ dane do tygodniowego podglądu (na szybko: tylko wybrany pracownik ma wypełniony grafik)
+  const weeklySchedules = useMemo(() => {
+    const obj: Record<number, ScheduleEntry[]> = {};
+    employeeList.forEach((e) => {
+      obj[e.id] = selectedEmployee?.id === e.id ? selectedSchedule : [];
+    });
+    return obj;
+  }, [employeeList, selectedEmployee?.id, selectedSchedule]);
+
   const scrollToEditor = () => {
     setTimeout(() => {
       document.getElementById('schedule-editor-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -151,19 +171,25 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
 
     await fetchAllData(currentPage);
 
-    // ✅ po zapisie zawsze odśwież detail + schedule
     if (selectedEmployee?.id) {
       await fetchEmployeeDetail(selectedEmployee.id);
       await fetchEmployeeSchedule(selectedEmployee.id);
     }
   };
 
+  // ======= RETURNY WARUNKOWE (NA KOŃCU, PO HOOKACH) =======
   if (!isManager) return <div style={{ padding: 20, color: 'red' }}>Brak uprawnień.</div>;
   if (loading) return <div style={{ padding: 20 }}>Ładowanie danych harmonogramu.</div>;
   if (error) return <div style={{ padding: 20, color: 'red' }}>Błąd: {error}</div>;
 
+  // ======= KOLUMNY =======
+
   const employeeColumns: ColumnDefinition<Employee>[] = [
-    { header: 'Imię i Nazwisko', key: 'first_name', render: (item) => `${item.first_name} ${item.last_name}` },
+    {
+      header: 'Imię i Nazwisko',
+      key: 'first_name',
+      render: (item) => `${item.first_name} ${item.last_name}`,
+    },
     { header: 'Telefon', key: 'phone' },
     { header: 'ID Użytkownika', key: 'user' },
     {
@@ -182,7 +208,7 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
     },
   ];
 
-  const pendingTimeOffColumns: ColumnDefinition<TimeOff>[] = [
+  const timeOffColumns: ColumnDefinition<TimeOff>[] = [
     {
       header: 'Pracownik',
       key: 'employee',
@@ -206,7 +232,7 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
     },
   ];
 
-  const pendingTimeOff = allTimeOff.filter((t) => t.status === 'pending');
+  // ======= UI =======
 
   return (
     <div style={{ padding: 20 }}>
@@ -214,15 +240,23 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
       <p>Zarządzanie tygodniową dostępnością oraz urlopami wszystkich pracowników.</p>
 
       <h2 style={{ marginTop: 30 }}>Nieobecności Oczekujące ({pendingTimeOff.length})</h2>
-      <Table
-        data={pendingTimeOff}
-        columns={pendingTimeOffColumns}
-        loading={loading}
-        emptyMessage="Brak oczekujących zgłoszeń urlopowych."
-      />
+      <Table data={pendingTimeOff} columns={timeOffColumns} loading={false} emptyMessage="Brak oczekujących zgłoszeń urlopowych." />
 
       <h2 style={{ marginTop: 30 }}>Lista Pracowników</h2>
-      <Table data={employeeList} columns={employeeColumns} loading={loading} emptyMessage="Brak pracowników do zarządzania." />
+
+      <div style={{ marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={employeeQuery}
+          onChange={(e) => setEmployeeQuery(e.target.value)}
+          placeholder="Szukaj pracownika (imię, nazwisko, telefon, ID użytkownika)"
+          style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e6a1ad', minWidth: 320 }}
+        />
+        <span style={{ color: '#666' }}>
+          Wyniki: {filteredEmployeeList.length} / {employeeList.length}
+        </span>
+      </div>
+
+      <Table data={filteredEmployeeList} columns={employeeColumns} loading={false} emptyMessage="Brak pracowników do zarządzania." />
 
       {totalPages > 1 && (
         <div style={{ marginTop: 20, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
@@ -238,6 +272,24 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
         </div>
       )}
 
+      <div style={{ marginTop: 22 }}>
+        <h2>Nieobecności zatwierdzone ({approvedTimeOff.length})</h2>
+        <Table data={approvedTimeOff} columns={timeOffColumns} loading={false} emptyMessage="Brak zatwierdzonych nieobecności." />
+
+        <h2 style={{ marginTop: 22 }}>Nieobecności odrzucone ({rejectedTimeOff.length})</h2>
+        <Table data={rejectedTimeOff} columns={timeOffColumns} loading={false} emptyMessage="Brak odrzuconych nieobecności." />
+      </div>
+
+      {/* ✅ PODGLĄD TYGODNIOWY */}
+      <div style={{ marginTop: 40 }}>
+        <h2>Tygodniowy grafik salonu</h2>
+        <p style={{ color: '#666', marginTop: 4 }}>
+        </p>
+
+        <WeeklySalonSchedule employees={employeeList} schedules={weeklySchedules} timeOffs={allTimeOff} />
+      </div>
+
+      {/* ✅ EDYTOR GRAFIKU WYBRANEGO PRACOWNIKA */}
       {selectedEmployee && (
         <div id="schedule-editor-section" style={{ marginTop: 30 }}>
           <h2>
@@ -247,16 +299,12 @@ export const ScheduleManagementPage: React.FC = (): ReactElement => {
           {selectedLoading ? (
             <p>Ładowanie grafiku pracownika...</p>
           ) : (
-            <ScheduleEditor
-              employeeId={selectedEmployee.id}
-              initialSchedule={selectedSchedule}
-              onSuccess={handleSuccess}
-              isManager={true}
-            />
+            <ScheduleEditor employeeId={selectedEmployee.id} initialSchedule={selectedSchedule} onSuccess={handleSuccess} isManager={true} />
           )}
         </div>
       )}
 
+      {/* ✅ MODAL URLOPU */}
       {selectedEmployee && (
         <TimeOffForm
           isOpen={isTimeOffModalOpen}
