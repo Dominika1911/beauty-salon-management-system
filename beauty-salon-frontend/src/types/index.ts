@@ -18,12 +18,17 @@ export type UserRole = 'manager' | 'employee' | 'client';
 export interface User {
   id: number;
   email: string;
-  first_name: string;
-  last_name: string;
+  // Uwaga: backendowy UserDetailSerializer może nie zwracać imienia/nazwiska
+  // (zależnie od modelu User). Zostawiamy pola opcjonalne, żeby nie psuć typów.
+  first_name?: string;
+  last_name?: string;
   role: UserRole;
   role_display?: string; // Display name dla roli
   is_active: boolean;
   is_staff: boolean;
+  // Backend (UserDetailSerializer) zwraca też powiązania profili
+  employee_id?: number | null;
+  client_id?: number | null;
   created_at: string;
   updated_at: string;
 }
