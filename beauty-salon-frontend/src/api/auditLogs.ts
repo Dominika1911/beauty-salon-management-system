@@ -1,21 +1,36 @@
-import { api } from './axios';
+import { api } from "./axios";
+import type { AuditLog, PaginatedResponse } from "../types";
 
-export interface AuditLog {
-  id: number;
-  type: string;
-  level: string;
-  level_display?: string;
-  created_at: string;
-  user_email?: string | null;
-  message: string;
+export type { AuditLog } from "../types";
+
+function isPaginated<T>(x: unknown): x is PaginatedResponse<T> {
+  return typeof x === "object" && x !== null && "results" in x;
 }
 
-type DRFList<T> = { results: T[] };
+interface AuditLogListParams {
+  type?: string;
+  level?: string;
+  user?: number;
+  created_at?: string;
+  ordering?: string;
+  page?: number;
+  page_size?: number;
+}
+
+const ENDPOINTS = {
+  base: "/audit-logs/",
+  detail: (id: number) => `/audit-logs/${id}/`,
+} as const;
 
 export const auditLogsAPI = {
-  list: async (params?: { type?: string; level?: string; ordering?: string }): Promise<AuditLog[]> => {
-    const res = await api.get<AuditLog[] | DRFList<AuditLog>>('/audit-logs/', { params });
-    const payload = res.data as any;
-    return Array.isArray(payload) ? payload : (payload?.results ?? []);
+  list: async (params?: AuditLogListParams): Promise<AuditLog[]> => {
+    const res = await api.get<PaginatedResponse<AuditLog> | AuditLog[]>(ENDPOINTS.base, { params });
+    const data = res.data;
+    return isPaginated<AuditLog>(data) ? data.results : data;
+  },
+
+  detail: async (id: number): Promise<AuditLog> => {
+    const res = await api.get<AuditLog>(ENDPOINTS.detail(id));
+    return res.data;
   },
 };

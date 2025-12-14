@@ -1,65 +1,35 @@
-// src/api/schedule.ts
-import { api } from './axios';
-import type { AxiosResponse } from 'axios';
-import type { TimeOff, TimeOffCreateUpdateData, PaginatedResponse } from '../types';
+import { api } from "./axios";
+import type { AxiosResponse } from "axios";
+import type { PaginatedResponse, ScheduleDetail, ScheduleUpdateData } from "../types";
 
-// ====== Schedule (availability) payload types ======
-export interface AvailabilityPeriodPayload {
-  weekday: string;
-  start_time: string; // "09:00:00"
-  end_time: string;   // "17:00:00"
-}
-
-export interface ScheduleUpdatePayload {
-  status: 'active' | 'inactive' | string;
-  breaks: any[];
-  availability_periods: AvailabilityPeriodPayload[];
-}
-
-export interface EmployeeScheduleResponse {
-  id?: number;
+interface ScheduleListParams {
+  employee?: number;
   status?: string;
-  breaks?: any[];
-  availability_periods?: AvailabilityPeriodPayload[];
+  ordering?: string;
+  page?: number;
+  page_size?: number;
 }
 
-interface ScheduleApi {
-  // --- time off ---
-  listTimeOff: (employeeId?: number) => Promise<AxiosResponse<PaginatedResponse<TimeOff>>>;
-  createTimeOff: (data: TimeOffCreateUpdateData) => Promise<AxiosResponse<TimeOff>>;
-  updateTimeOff: (
-    id: number,
-    data: Partial<TimeOffCreateUpdateData & { is_approved?: boolean; status?: any }>
-  ) => Promise<AxiosResponse<TimeOff>>;
-  deleteTimeOff: (id: number) => Promise<AxiosResponse<void>>;
-
-  // --- employee schedule ---
-  getEmployeeSchedule: (employeeId: number) => Promise<AxiosResponse<EmployeeScheduleResponse>>;
-  updateEmployeeSchedule: (employeeId: number, data: ScheduleUpdatePayload) => Promise<AxiosResponse<EmployeeScheduleResponse>>;
+interface SchedulesApi {
+  list: (params?: ScheduleListParams) => Promise<AxiosResponse<PaginatedResponse<ScheduleDetail>>>;
+  detail: (id: number) => Promise<AxiosResponse<ScheduleDetail>>;
+  create: (data: ScheduleUpdateData & { employee: number }) => Promise<AxiosResponse<ScheduleDetail>>;
+  update: (id: number, data: ScheduleUpdateData) => Promise<AxiosResponse<ScheduleDetail>>;
+  delete: (id: number) => Promise<AxiosResponse<void>>;
 }
 
 const ENDPOINTS = {
-  timeOff: '/time-offs/',
-  timeOffDetail: (id: number) => `/time-offs/${id}/`,
-  employeeSchedule: (employeeId: number) => `/employees/${employeeId}/schedule/`,
+  base: "/schedules/",
+  detail: (id: number) => `/schedules/${id}/`,
 } as const;
 
-export const scheduleAPI: ScheduleApi = {
-  // ====== TIME OFF ======
-  listTimeOff: (employeeId) => {
-    const params = employeeId ? { employee: employeeId } : {};
-    return api.get<PaginatedResponse<TimeOff>>(ENDPOINTS.timeOff, { params });
-  },
-
-  createTimeOff: (data) => api.post<TimeOff>(ENDPOINTS.timeOff, data),
-
-  updateTimeOff: (id, data) => api.patch<TimeOff>(ENDPOINTS.timeOffDetail(id), data),
-
-  deleteTimeOff: (id) => api.delete<void>(ENDPOINTS.timeOffDetail(id)),
-
-  // ====== EMPLOYEE SCHEDULE ======
-  getEmployeeSchedule: (employeeId) => api.get<EmployeeScheduleResponse>(ENDPOINTS.employeeSchedule(employeeId)),
-
-  updateEmployeeSchedule: (employeeId, data) =>
-    api.patch<EmployeeScheduleResponse>(ENDPOINTS.employeeSchedule(employeeId), data),
+export const schedulesAPI: SchedulesApi = {
+  list: (params?: ScheduleListParams) => api.get(ENDPOINTS.base, { params }),
+  detail: (id: number) => api.get(ENDPOINTS.detail(id)),
+  create: (data: ScheduleUpdateData & { employee: number }) => api.post(ENDPOINTS.base, data),
+  update: (id: number, data: ScheduleUpdateData) => api.patch(ENDPOINTS.detail(id), data),
+  delete: (id: number) => api.delete(ENDPOINTS.detail(id)),
 };
+
+// ✅ alias pod stare importy:
+export const scheduleAPI = schedulesAPI;

@@ -1,251 +1,313 @@
-import React, { useState, useEffect, useMemo, useCallback, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { clientsAPI } from '../../api/clients';
 import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
 import { ClientFormModal } from '../../components/Manager/ClientFormModal';
-import { usePagination } from '../../hooks/usePagination';
 import type { Client, PaginatedResponse } from '../../types';
 
 import '../../components/UI/Table/Table.css';
 import { useAuth } from '../../hooks/useAuth';
+import {
+  beautyButtonDangerStyle,
+  beautyButtonSecondaryStyle,
+  beautyButtonStyle,
+  beautyCardBodyStyle,
+  beautyCardHeaderStyle,
+  beautyCardStyle,
+  beautyInputStyle,
+  beautyMutedTextStyle,
+  beautyPageTitleStyle,
+} from '../../utils/ui';
 
-const CLIENTS_PAGE_SIZE: number = 20;
+const CLIENTS_PAGE_SIZE = 20;
 
-export const ClientsManagementPage: React.FC = (): ReactElement => {
-    const { user } = useAuth();
-    const [clients, setClients] = useState<Client[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+type Msg = { type: 'success' | 'error'; text: string };
 
-    const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-    //  STAN DLA EDYCJI KLIENTA
-    const [clientToEdit, setClientToEdit] = useState<Client | undefined>(undefined);
+export function ClientsManagementPage(): ReactElement {
+  const navigate = useNavigate();
 
-    const {
-        currentPage,
-        totalPages,
-        totalCount,
-        pageSize,
-        setTotalCount,
-        setCurrentPage,
-        handlePreviousPage,
-        handleNextPage,
-    } = usePagination(CLIENTS_PAGE_SIZE);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
 
-    const isManager: boolean = user?.role === 'manager';
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [clientToEdit, setClientToEdit] = useState<Client | undefined>(undefined);
 
-    const fetchClients = async (page: number, size: number): Promise<void> => {
-        try {
-            setLoading(true);
-            setError(null);
+  const [message, setMessage] = useState<Msg | null>(null);
 
-            const response = await clientsAPI.list({
-                page: page,
-                page_size: size,
-            });
+  const [search, setSearch] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
 
-            const data: PaginatedResponse<Client> = response.data as PaginatedResponse<Client>;
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-            setClients(data.results);
-            setTotalCount(data.count);
-        } catch (err) {
-            console.error('Błąd pobierania listy klientów:', err, user);
-            setError('Nie udało się załadować listy klientów. Sprawdź backend i uprawnienia.');
-        } finally {
-            setLoading(false);
-        }
-    };
+  const { user } = useAuth();
+  const isManager = user?.role === 'manager';
 
-    const handleCreationSuccess = (): void => {
-        //  CZYŚCI STANY PO ZAPISIE
-        setClientToEdit(undefined);
-        setCurrentPage(1);
-        void fetchClients(1, pageSize);
-        setIsModalOpen(false);
-    };
+  const fetchClients = async (): Promise<void> => {
+    setLoading(true);
+    setMessage(null);
+    setConfirmDeleteId(null);
 
-    // FUNKCJA USUWANIA (SOFT DELETE)
-    const handleSoftDelete = useCallback(
-        async (clientId: number): Promise<void> => {
-            if (
-                !window.confirm(
-                    'UWAGA GDPR: Czy na pewno chcesz usunąć tego klienta? Spowoduje to Soft Delete w bazie danych.'
-                )
-            ) {
-                return;
-            }
-            try {
-                //  Soft Delete klienta przez akcję POST /clients/soft_delete/
-                await clientsAPI.softDelete(clientId);
-
-                // Po sukcesie odświeżamy bieżącą stronę
-                void fetchClients(currentPage, pageSize);
-            } catch (err) {
-                console.error('Błąd podczas usuwania klienta:', err);
-                setError('Nie udało się usunąć klienta.');
-            }
-        },
-        [currentPage, pageSize]
-    );
-
-    useEffect(() => {
-        void fetchClients(currentPage, pageSize);
-    }, [currentPage]);
-
-    // DEFINICJA KOLUMN Z EDYCJĄ I SOFT DELETE
-    const columns: ColumnDefinition<Client>[] = useMemo(
-        () => [
-            { header: 'ID', key: 'id', width: '5%' },
-            {
-                header: 'Klient',
-                key: 'first_name',
-                render: (item: Client) => `${item.first_name} ${item.last_name}`,
-            },
-            { header: 'Email', key: 'email', render: (item: Client) => item.email ?? '-' },
-            { header: 'Telefon', key: 'phone', render: (item: Client) => item.phone ?? '-' },
-            { header: 'Wizyt', key: 'visits_count', width: '8%' },
-            { header: 'Wydano', key: 'total_spent_amount', width: '10%' },
-            {
-                header: 'Status',
-                key: 'deleted_at',
-                render: (item: Client) => (
-                    <span style={{ color: item.deleted_at ? 'red' : 'green' }}>
-                        {item.deleted_at ? 'Usunięty (GDPR)' : 'Aktywny'}
-                    </span>
-                ),
-                width: '15%',
-            },
-            {
-                header: 'Akcje',
-                key: 'actions',
-                width: '15%',
-                render: (item: Client) => (
-                    <>
-                        <button
-                            onClick={() => {
-                                setClientToEdit(item); // 🚨 Ustaw klienta do edycji
-                                setIsModalOpen(true); // Otwórz modal
-                            }}
-                            style={{ marginRight: '5px' }}
-                            disabled={!!item.deleted_at} // Nie edytuj usuniętego
-                        >
-                            Edytuj
-                        </button>
-                        {' | '}
-                        <button
-                            onClick={() => void handleSoftDelete(item.id)}
-                            style={{ color: 'red' }}
-                            disabled={!!item.deleted_at} // Nie usuwaj już usuniętego
-                        >
-                            Usuń (GDPR)
-                        </button>
-                    </>
-                ),
-            },
-        ],
-        [handleSoftDelete]
-    );
-
-    const sortedClients: Client[] = useMemo(() => [...clients].sort((a, b) => a.id - b.id), [clients]);
-
-    if (loading && clients.length === 0) {
-        return (
-            <div style={{ padding: 20 }}>
-                <h1>Zarządzanie Klientami</h1>
-                <p>Ładowanie listy klientów...</p>
-            </div>
-        );
+    try {
+      if (showDeleted) {
+        const res = await clientsAPI.softDeleted({
+          search: search.trim().length ? search.trim() : undefined,
+        });
+        const sorted = [...res.data].sort((a, b) => a.id - b.id);
+        setClients(sorted);
+        setTotalCount(sorted.length);
+      } else {
+        const res = await clientsAPI.list({
+          page: 1,
+          page_size: CLIENTS_PAGE_SIZE,
+          search: search.trim().length ? search.trim() : undefined,
+        });
+        const data: PaginatedResponse<Client> = res.data;
+        const sorted = [...data.results].sort((a, b) => a.id - b.id);
+        setClients(sorted);
+        setTotalCount(data.count);
+      }
+    } catch {
+      setClients([]);
+      setTotalCount(0);
+      setMessage({ type: 'error', text: 'Nie udało się pobrać listy klientów.' });
+    } finally {
+      setLoading(false);
     }
+  };
 
-    if (error) {
-        return (
-            <div style={{ padding: 20, color: 'red' }}>
-                <h1>Zarządzanie Klientami</h1>
-                <p>Błąd: {error}</p>
-            </div>
-        );
+  useEffect(() => {
+    void fetchClients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDeleted]);
+
+  const requestSoftDelete = (id: number): void => {
+    setMessage(null);
+    setConfirmDeleteId(id);
+  };
+
+  const cancelSoftDelete = (): void => {
+    setConfirmDeleteId(null);
+  };
+
+  const doSoftDelete = async (id: number): Promise<void> => {
+    setDeletingId(id);
+    setMessage(null);
+    try {
+      await clientsAPI.softDelete(id);
+      setMessage({ type: 'success', text: 'Klient został oznaczony jako usunięty (soft delete).' });
+      setConfirmDeleteId(null);
+      await fetchClients();
+    } catch {
+      setMessage({ type: 'error', text: 'Nie udało się usunąć klienta (soft delete).' });
+    } finally {
+      setDeletingId(null);
     }
+  };
 
-    return (
-        <div className="clients-management-page" style={{ padding: 20 }}>
-            <h1>Zarządzanie Klientami</h1>
+  const columns: ColumnDefinition<Client>[] = useMemo(
+    () => [
+      { header: 'ID', key: 'id', width: '60px' },
+      {
+        header: 'Imię',
+        key: 'first_name',
+        width: '140px',
+        render: (c) => (
+          <Link to={`/clients/${c.id}`} style={{ color: '#8b2c3b', textDecoration: 'underline' }}>
+            {c.first_name}
+          </Link>
+        ),
+      },
+      {
+        header: 'Nazwisko',
+        key: 'last_name',
+        width: '160px',
+        render: (c) => (
+          <Link to={`/clients/${c.id}`} style={{ color: '#8b2c3b', textDecoration: 'underline' }}>
+            {c.last_name}
+          </Link>
+        ),
+      },
+      { header: 'Email', key: 'email', width: '260px' },
+      { header: 'Telefon', key: 'phone', width: '160px' },
+      {
+        header: 'Wizyty',
+        key: 'visits_count',
+        width: '80px',
+        render: (c) => c.visits_count,
+      },
+      {
+        header: 'Suma',
+        key: 'total_spent_amount',
+        width: '120px',
+        render: (c) => `${c.total_spent_amount} zł`,
+      },
+      {
+        header: 'Status',
+        key: 'deleted_at',
+        width: '110px',
+        render: (c) => (c.deleted_at ? 'Usunięty' : 'Aktywny'),
+      },
+      {
+        header: 'Akcje',
+        key: 'actions',
+        width: '360px',
+        render: (c): ReactElement => {
+          const isConfirming = confirmDeleteId === c.id;
+          const isDeleting = deletingId === c.id;
 
-            {isManager && (
-                <div style={{ marginBottom: 20, textAlign: 'right' }}>
-                    <button
-                        onClick={() => {
-                            setClientToEdit(undefined); // W trybie tworzenia, upewnij się, że stan edycji jest pusty
-                            setIsModalOpen(true);
-                        }}
-                        style={{
-                            padding: '10px 15px',
-                            backgroundColor: '#4CAF50',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '5px',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        Dodaj Nowego Klienta
-                    </button>
-                </div>
-            )}
-
-            <p>Lista wszystkich klientów salonu. (Łącznie: {totalCount})</p>
-
-            <div style={{ marginTop: 20 }}>
-                <Table
-                    data={sortedClients}
-                    columns={columns}
-                    loading={loading}
-                    emptyMessage="Brak klientów do wyświetlenia."
-                />
-            </div>
-
-            {/* Paginacja */}
-            {totalPages > 1 && (
-                <div
-                    style={{
-                        marginTop: 20,
-                        display: 'flex',
-                        gap: 10,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, whiteSpace: 'nowrap', flexWrap: 'wrap' }}>
+                <button
+                  style={{ ...beautyButtonSecondaryStyle, padding: '6px 12px' }}
+                  onClick={() => {
+                    setClientToEdit(c);
+                    setIsModalOpen(true);
+                  }}
+                  disabled={loading}
                 >
-                    <button
-                        type="button"
-                        onClick={handlePreviousPage}
-                        disabled={currentPage === 1}
-                        style={{ padding: '8px 16px' }}
-                    >
-                        Poprzednia
-                    </button>
-                    <span>
-                        Strona {currentPage} z {totalPages}
-                    </span>
-                    <button
-                        type="button"
-                        onClick={handleNextPage}
-                        disabled={currentPage === totalPages}
-                        style={{ padding: '8px 16px' }}
-                    >
-                        Następna
-                    </button>
-                </div>
-            )}
+                  Edytuj
+                </button>
 
-            {/* RENDEROWANIE MODALA KLIENTA */}
-            {isManager && (
-                <ClientFormModal
-                    isOpen={isModalOpen}
-                    onClose={() => {
-                        setIsModalOpen(false);
-                        setClientToEdit(undefined);
-                    }}
-                    onSuccess={handleCreationSuccess}
-                    clientToEdit={clientToEdit} // PRZEKAZYWANIE OBIEKTU DO EDYCJI
-                />
-            )}
+                <button
+                  style={{ ...beautyButtonSecondaryStyle, padding: '6px 12px' }}
+                  onClick={() => navigate(`/clients/${c.id}`)}
+                  disabled={loading}
+                >
+                  Szczegóły
+                </button>
+
+                {!c.deleted_at ? (
+                  <button
+                    style={{ ...beautyButtonDangerStyle, padding: '6px 12px' }}
+                    onClick={() => requestSoftDelete(c.id)}
+                    disabled={loading || isDeleting}
+                  >
+                    Usuń
+                  </button>
+                ) : null}
+              </div>
+
+              {isConfirming ? (
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    border: '1px solid #e6a1ad',
+                    backgroundColor: '#ffe6ec',
+                    color: '#5a2a35',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>
+                    Potwierdź soft delete klienta: {c.first_name} {c.last_name}
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button
+                      style={{ ...beautyButtonSecondaryStyle, padding: '6px 12px' }}
+                      onClick={cancelSoftDelete}
+                      disabled={isDeleting}
+                    >
+                      Wróć
+                    </button>
+                    <button
+                      style={{ ...beautyButtonDangerStyle, padding: '6px 12px' }}
+                      onClick={() => void doSoftDelete(c.id)}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? 'Usuwanie…' : 'Tak, usuń'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+    ],
+    [confirmDeleteId, deletingId, loading, navigate]
+  );
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={beautyCardStyle}>
+        <div style={beautyCardHeaderStyle}>
+          <h1 style={beautyPageTitleStyle}>Klienci</h1>
+          <p style={beautyMutedTextStyle}>Łącznie: {totalCount}</p>
+
+          {message ? (
+            <div
+              style={{
+                marginTop: 10,
+                padding: 10,
+                borderRadius: 10,
+                border: '1px solid',
+                borderColor: message.type === 'success' ? '#9ad5b3' : '#f2a6b3',
+                backgroundColor: message.type === 'success' ? '#e9fff1' : '#fff1f3',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <span>{message.text}</span>
+              <button
+                style={{ ...beautyButtonSecondaryStyle, padding: '6px 10px' }}
+                onClick={() => setMessage(null)}
+              >
+                ✕
+              </button>
+            </div>
+          ) : null}
         </div>
-    );
-};
+
+        <div style={beautyCardBodyStyle}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+            <input
+              style={{ ...beautyInputStyle, width: 320 }}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Szukaj (imię, nazwisko, email, tel...)"
+            />
+
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+              <span>Pokaż usuniętych</span>
+            </label>
+
+            <button style={beautyButtonSecondaryStyle} onClick={() => void fetchClients()} disabled={loading}>
+              Szukaj / Odśwież
+            </button>
+
+            {isManager ? (
+              <button
+                style={beautyButtonStyle}
+                onClick={() => {
+                  setClientToEdit(undefined);
+                  setIsModalOpen(true);
+                }}
+              >
+                Dodaj klienta
+              </button>
+            ) : null}
+          </div>
+
+          <Table<Client> data={clients} columns={columns} loading={loading} emptyMessage="Brak klientów" />
+
+          {isManager ? (
+            <ClientFormModal
+              isOpen={isModalOpen}
+              onClose={() => setIsModalOpen(false)}
+              onSuccess={fetchClients}
+              clientToEdit={clientToEdit}
+            />
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

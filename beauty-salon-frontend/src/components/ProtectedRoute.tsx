@@ -1,44 +1,31 @@
-import React from 'react';
-import type { ReactNode, ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import type { UserRole } from '../types';
 
 interface ProtectedRouteProps {
   children: ReactNode;
-  allowedRoles?: ('manager' | 'employee' | 'client')[];
+  allowedRoles: UserRole[];
 }
 
-/**
- * Komponent chroniący trasy przed nieautoryzowanym dostępem
- */
-export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }: ProtectedRouteProps): ReactElement => {
+export function ProtectedRoute({
+  children,
+  allowedRoles,
+}: ProtectedRouteProps): ReactElement {
   const { user, loading } = useAuth();
 
-  // Czekaj na sprawdzenie statusu auth
   if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="spinner"></div>
-        <p>Ładowanie...</p>
-      </div>
-    );
+    return <div style={{ padding: 20 }}>Ładowanie…</div>;
   }
 
-  // Nie zalogowany - przekieruj na login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // Sprawdź role jeśli są określone
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return (
-      <div className="access-denied">
-        <h2>Brak dostępu</h2>
-        <p>Nie masz uprawnień do tej strony.</p>
-        <p>Twoja rola: <strong>{user.role_display}</strong></p>
-      </div>
-    );
+  if (!allowedRoles.includes(user.role)) {
+    window.alert('Brak dostępu do tej sekcji.');
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;
-};
+}

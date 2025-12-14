@@ -26,6 +26,7 @@ from .views import (
     PopularServicesView,
 
     AvailabilitySlotsAPIView,
+    BookingCreateAPIView,
 )
 
 router = DefaultRouter()
@@ -63,6 +64,8 @@ urlpatterns = [
         AvailabilitySlotsAPIView.as_view(),
         name="availability-slots",
     ),
+
+    path("bookings/", BookingCreateAPIView.as_view(), name="booking-create"),
 
     path('settings/', SystemSettingsView.as_view(), name='system-settings'),
 

@@ -18,19 +18,56 @@ export type UserRole = 'manager' | 'employee' | 'client';
 export interface User {
   id: number;
   email: string;
-  // Uwaga: backendowy UserDetailSerializer może nie zwracać imienia/nazwiska
-  // (zależnie od modelu User). Zostawiamy pola opcjonalne, żeby nie psuć typów.
   first_name?: string;
   last_name?: string;
   role: UserRole;
-  role_display?: string; // Display name dla roli
+  role_display?: string;
   is_active: boolean;
   is_staff: boolean;
-  // Backend (UserDetailSerializer) zwraca też powiązania profili
   employee_id?: number | null;
   client_id?: number | null;
   created_at: string;
   updated_at: string;
+}
+
+// ============================================================================
+// USER MANAGEMENT (dla managera) + hasła
+// ============================================================================
+
+export type UserAccountStatus = 'locked' | 'warning' | 'active' | 'inactive';
+
+export interface UserListItem {
+  id: number;
+  email: string;
+  role: UserRole;
+  role_display?: string;
+  is_active: boolean;
+  is_staff: boolean;
+  account_status: UserAccountStatus;
+  created_at: string;
+}
+
+export interface UserCreateData {
+  email: string;
+  password?: string;
+  role: UserRole;
+  is_active?: boolean;
+  is_staff?: boolean;
+}
+
+export interface UserUpdateData {
+  role?: UserRole;
+  is_active?: boolean;
+  is_staff?: boolean;
+}
+
+export interface PasswordResetData {
+  new_password: string;
+}
+
+export interface PasswordChangeData {
+  old_password: string;
+  new_password: string;
 }
 
 export interface LoginCredentials {
@@ -42,7 +79,7 @@ export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  loading: boolean; // Alias dla isLoading
+  loading: boolean;
   error: string | null;
   isManager: boolean;
   isEmployee: boolean;
@@ -97,7 +134,7 @@ export interface Service {
   duration: string;
   category: string;
   is_published: boolean;
-  promotion: Record<string, any> | string; // Może być obiekt lub JSON string
+  promotion: Record<string, unknown> | string;
   image_url: string;
   reservations_count: number;
   created_at: string;
@@ -112,7 +149,7 @@ export interface ServiceCreateUpdateData {
   duration: string;
   category?: string;
   is_published?: boolean;
-  promotion?: Record<string, any> | string; // Może być obiekt lub JSON string
+  promotion?: Record<string, unknown> | string;
   image_url?: string;
 }
 
@@ -153,6 +190,13 @@ export interface EmployeeCreateData {
   hired_at?: string;
 }
 
+/** Minimalny employee wg EmployeeSimpleSerializer */
+export interface EmployeeSimple {
+  id: number;
+  number: string;
+  full_name: string;
+}
+
 // ============================================================================
 // APPOINTMENT
 // ============================================================================
@@ -165,13 +209,6 @@ export type AppointmentStatus =
   | 'cancelled'
   | 'no_show';
 
-/**
- * To zwraca backend w listach:
- * - GET /appointments/
- * - GET /appointments/my_appointments/
- * - GET /appointments/today/
- * - GET /appointments/upcoming/
- */
 export interface AppointmentListItem {
   id: number;
   client: number | null;
@@ -185,7 +222,6 @@ export interface AppointmentListItem {
   start: string;
   end: string;
 
-  // extra z list serializer
   timespan?: string;
   booking_channel?: string;
   client_notes?: string;
@@ -194,10 +230,6 @@ export interface AppointmentListItem {
   reminder_sent_at?: string | null;
 }
 
-/**
- * To zwraca backend w detalu:
- * - GET /appointments/{id}/
- */
 export interface AppointmentDetail {
   id: number;
   client: Client | null;
@@ -229,18 +261,10 @@ export interface AppointmentDetail {
   updated_at: string;
 }
 
-/**
- * Create/Update payload:
- * Backend przyjmuje slugowe pola biznesowe:
- * - client: Client.number (np. "CLI-0001")
- * - employee: Employee.number (np. "EMP-0001")
- * - service: Service.name (np. "Manicure")
- * oraz start/end (end może być pominięte -> backend policzy z duration)
- */
 export interface AppointmentCreateData {
-  client?: string | null;      // Client.number
-  employee: string;            // Employee.number
-  service: string;             // Service.name
+  client?: string | null;
+  employee: string;
+  service: string;
   start: string;
   end?: string | null;
   booking_channel?: string;
@@ -248,24 +272,12 @@ export interface AppointmentCreateData {
   internal_notes?: string;
 }
 
-/**
- * Zmiana statusu:
- * - POST /appointments/{id}/change_status/
- */
 export interface AppointmentStatusUpdateData {
   status: AppointmentStatus;
   cancellation_reason?: string;
 }
 
-/**
- * Jeśli chcesz mieć dalej "Appointment" jako jeden typ, to najbezpieczniej:
- * - listy -> AppointmentListItem
- * - detail -> AppointmentDetail
- *
- * Ale żeby nie psuć istniejących importów, możesz używać union:
- */
 export type Appointment = AppointmentListItem | AppointmentDetail;
-
 
 // ============================================================================
 // DASHBOARD
@@ -285,7 +297,7 @@ export interface DashboardAppointment {
 export interface DashboardData {
   role: UserRole;
   user: User;
-  stats?: Record<string, any>;
+  stats?: Record<string, unknown>;
   upcoming_appointments?: DashboardAppointment[];
   recent_appointments?: DashboardAppointment[];
 }
@@ -309,7 +321,7 @@ export interface EmployeeDashboardData extends DashboardData {
   role: 'employee';
   stats: {
     today_appointments?: number;
-    today_appointments_count?: number; // Alias
+    today_appointments_count?: number;
     week_appointments?: number;
     upcoming_appointments_count?: number;
     completed_this_month?: number;
@@ -335,6 +347,8 @@ export interface ManagerDashboardData extends DashboardData {
   };
 }
 
+export type DashboardResponse = ClientDashboardData | EmployeeDashboardData | ManagerDashboardData;
+
 // ============================================================================
 // TIME OFF
 // ============================================================================
@@ -344,15 +358,20 @@ export type TimeOffType = 'vacation' | 'sick_leave' | 'other';
 
 export interface TimeOff {
   id: number;
-  employee: number;     // ID pracownika
-  date_from: string;    // YYYY-MM-DD
-  date_to: string;      // YYYY-MM-DD
+  employee: number;
+  employee_full_name?: string;
+  date_from: string;
+  date_to: string;
   status: TimeOffStatus;
+  status_display?: string;
   type: TimeOffType;
+  type_display?: string;
   reason: string;
 
   approved_by?: number | null;
   approved_at?: string | null;
+
+  days?: number | null;
 
   created_at?: string;
   updated_at?: string;
@@ -365,6 +384,10 @@ export interface TimeOffCreateUpdateData {
   type?: TimeOffType;
   reason?: string;
   status?: TimeOffStatus;
+}
+
+export interface TimeOffApproveData {
+  time_off: number;
 }
 
 // ============================================================================
@@ -387,8 +410,336 @@ export interface ScheduleEntry {
   end_time: string;   // HH:MM:SS
 }
 
+export type ScheduleBreak =
+  | { start: string; end: string }
+  | { weekday: number; start_time: string; end_time: string };
+
 export interface Schedule {
   status: 'active' | 'inactive';
   availability_periods: ScheduleEntry[];
-  breaks: any[];
+  breaks: ScheduleBreak[];
 }
+
+/** Schedule z backendowego ScheduleSerializer */
+export interface ScheduleDetail extends Schedule {
+  id: number;
+  employee: number;
+  employee_full_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Update wg ScheduleUpdateSerializer */
+export interface ScheduleUpdateData {
+  status?: 'active' | 'inactive';
+  breaks?: ScheduleBreak[];
+  availability_periods?: ScheduleEntry[];
+}
+
+// ============================================================================
+// NOTES
+// ============================================================================
+
+export interface Note {
+  id: number;
+  appointment: number;
+  author: number;
+  author_email?: string;
+  content: string;
+  visible_for_client: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NoteCreateUpdateData {
+  appointment: number;
+  content: string;
+  visible_for_client?: boolean;
+}
+
+// ============================================================================
+// MEDIA
+// ============================================================================
+
+export type MediaAssetType = 'image' | 'document' | 'other' | string;
+
+export interface MediaAsset {
+  id: number;
+  employee: number;
+  employee_full_name?: string;
+  file_url: string;
+  type: MediaAssetType;
+  file_name: string;
+  size_bytes: number;
+  is_active: boolean;
+  description: string;
+  mime_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaAssetCreateUpdateData {
+  employee: number;
+  file_url: string;
+  type: MediaAssetType;
+  file_name: string;
+  size_bytes: number;
+  is_active?: boolean;
+  description?: string;
+  mime_type?: string;
+}
+
+// ============================================================================
+// PAYMENTS
+// ============================================================================
+
+export type PaymentStatus = 'pending' | 'paid' | 'deposit' | 'cancelled' | string;
+
+export interface Payment {
+  id: number;
+  appointment: number;
+  client_name: string | null;
+  amount: string;
+  status: PaymentStatus;
+  status_display?: string;
+  paid_at: string | null;
+  method: string;
+  type: string;
+  reference: string;
+  appointment_start: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentCreateData {
+  client_number: string;
+  appointment_start: string; // ISO
+  amount: number;
+  method?: string;
+  type?: string;
+  reference?: string;
+}
+
+export interface PaymentMarkAsPaidData {
+  payment: number;
+}
+
+export interface PaymentMarkAsPaidResponse {
+  detail: string;
+  payment: Payment;
+}
+
+// ============================================================================
+// INVOICES
+// ============================================================================
+
+export interface Invoice {
+  id: number;
+  number: string;
+  client: number;
+  client_name: string;
+  appointment: number | null;
+  issue_date: string;
+  net_amount: string;
+  vat_rate: string;
+  vat_amount: string;
+  gross_amount: string;
+  is_paid: boolean;
+  sale_date: string | null;
+  due_date: string | null;
+  paid_date: string | null;
+  pdf_file: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+export type NotificationStatus = 'pending' | 'sent' | 'failed' | 'cancelled' | string;
+
+export interface Notification {
+  id: number;
+  client: number | null;
+  client_name?: string | null;
+  appointment: number | null;
+  appointment_start?: string | null;
+  type: string;
+  channel: string;
+  status: NotificationStatus;
+  scheduled_at: string;
+  subject: string;
+  content: string;
+  sent_at: string | null;
+  error_message: string | null;
+  attempts_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationCreateData {
+  client: number | null;
+  appointment: number | null;
+  type: string;
+  channel: string;
+  scheduled_at: string;
+  subject: string;
+  content: string;
+}
+
+// ============================================================================
+// REPORTS (PDF)
+// ============================================================================
+
+export interface ReportPDF {
+  id: number;
+  type: string;
+  title: string;
+  file_path: string;
+  data_od: string | null;
+  data_do: string | null;
+  file_size: number;
+  generated_by: number | null;
+  generated_by_email?: string | null;
+  parameters: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+export type AuditLogLevel = 'info' | 'warning' | 'error' | string;
+
+export interface AuditLog {
+  id: number;
+  type: string;
+  level: AuditLogLevel;
+  level_display?: string;
+  created_at: string;
+  user: number | null;
+  user_email?: string | null;
+  message: string;
+  adres_ip: string | null;
+  user_agent: string;
+  entity_type: string;
+  entity_id: string;
+  metadata: Record<string, unknown>;
+}
+
+// ============================================================================
+// SYSTEM SETTINGS
+// ============================================================================
+
+export interface SystemSettings {
+  id: number;
+  slot_minutes: number;
+  buffer_minutes: number;
+  deposit_policy: Record<string, unknown> | string;
+  opening_hours: Record<string, unknown> | string;
+  salon_name: string;
+  address: string;
+  phone: string;
+  contact_email: string;
+  default_vat_rate: string;
+  maintenance_mode: boolean;
+  maintenance_message: string;
+  last_modified_by: number | null;
+  last_modified_by_email?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SystemSettingsPatchData {
+  slot_minutes?: number;
+  buffer_minutes?: number;
+  deposit_policy?: Record<string, unknown> | string;
+  opening_hours?: Record<string, unknown> | string;
+  salon_name?: string;
+  address?: string;
+  phone?: string;
+  contact_email?: string;
+  default_vat_rate?: string;
+  maintenance_mode?: boolean;
+  maintenance_message?: string;
+}
+
+// ============================================================================
+// STATS SNAPSHOTS
+// ============================================================================
+
+export interface StatsSnapshot {
+  id: number;
+  period: string;
+  total_visits: number;
+  date_from: string;
+  date_to: string;
+  completed_visits: number;
+  cancellations: number;
+  no_shows: number;
+  revenue_total: string;
+  revenue_deposits: string;
+  new_clients: number;
+  returning_clients: number;
+  employees_occupancy_avg: string;
+  extra_metrics: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============================================================================
+// STATISTICS (GET /statistics/)
+// ============================================================================
+
+export interface StatisticsPeriod {
+  days: number;
+  from: string;
+  to: string;
+}
+
+export interface StatisticsSummary {
+  total_clients: number;
+  new_clients: number;
+  total_appointments: number;
+  completed_appointments: number;
+  cancelled_appointments: number;
+  no_show_appointments: number;
+  total_revenue: string;
+}
+
+export interface ServiceStatisticsItem {
+  service: Service;
+  total_appointments: number;
+  total_revenue: string;
+}
+
+export interface EmployeeStatisticsItem {
+  employee: EmployeeSimple;
+  total_appointments: number;
+  occupancy_percent: string;
+}
+
+export interface StatisticsResponse {
+  period: StatisticsPeriod;
+  summary: StatisticsSummary;
+  services: ServiceStatisticsItem[];
+  employees: EmployeeStatisticsItem[];
+}
+// ============================================================================
+// BOOKING (POST /bookings/)
+// ============================================================================
+
+export interface BookingCreateData {
+  employee: number;
+  service: number;
+  start: string; // ISO datetime
+  notes?: string;
+}
+
+export interface BookingCreateResponse {
+  detail: string;
+  appointment: AppointmentDetail;
+}
+

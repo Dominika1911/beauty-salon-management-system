@@ -10,11 +10,14 @@ import { LoginPage } from '../pages/LoginPage';
 // === KOMPONENTY STRON ===
 import { DashboardPage } from '../pages/DashboardPage';
 import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
+import { ClientDetailsPage } from '../pages/Manager/ClientDetailsPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
 import StatisticsPage from '../pages/StatisticsPage';
 import SettingsPage from '../pages/SettingsPage';
+import { ServicesCatalogPage } from '../pages/ServicesCatalogPage';
+import { BookAppointmentPage } from '../pages/BookAppointmentPage';
 
 // Manager: raporty + logi
 import ReportsPage from '../pages/Manager/ReportsPage';
@@ -26,9 +29,18 @@ import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage'
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
-import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
-import { BookAppointmentPage } from '../pages/Client/BookAppointmentPage';
+import { MyAppointmentsPage } from '../pages/MyAppointmentsPage.tsx';
 
+// Payments
+import { PaymentsPage } from '../pages/Manager/PaymentsPage';
+import { PaymentDetailsPage } from '../pages/Manager/PaymentDetailsPage';
+
+// ✅ Invoices
+import { InvoicesPage } from '../pages/Manager/InvoicesPage';
+import { InvoiceDetailsPage } from '../pages/Manager/InvoiceDetailsPage';
+
+// ✅ Notifications
+import { NotificationsPage } from '../pages/Manager/NotificationsPage';
 
 // Tymczasowe/Placeholdery
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
@@ -57,32 +69,100 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
+      // === MANAGER ONLY ===
       {
         path: 'clients',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+          <ProtectedRoute allowedRoles={['manager']}>
             <ClientsManagementPage />
           </ProtectedRoute>
         ),
       },
+
+      // ✅ DOPIĘTE: SZCZEGÓŁY KLIENTA (bo /clients/:id było używane, ale nie miało route)
+      {
+        path: 'clients/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ClientDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ MANAGER: PAYMENTS
+      {
+        path: 'payments',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <PaymentsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'payments/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <PaymentDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ MANAGER: INVOICES
+      {
+        path: 'invoices',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <InvoicesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'invoices/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <InvoiceDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ MANAGER: NOTIFICATIONS
+      {
+        path: 'notifications',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <NotificationsPage />
+          </ProtectedRoute>
+        ),
+      },
+
       {
         path: 'appointments',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+          <ProtectedRoute allowedRoles={['manager']}>
             <AppointmentsManagementPage />
           </ProtectedRoute>
         ),
       },
       {
+        path: 'my-appointments',
+        element: (
+          <ProtectedRoute allowedRoles={['client', 'employee']}>
+            <MyAppointmentsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      {
         path: 'appointments-calendar',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+          <ProtectedRoute allowedRoles={['manager']}>
             <AppointmentsCalendarPage />
           </ProtectedRoute>
         ),
       },
 
-      // Employee: mój grafik
+      // === EMPLOYEE ONLY ===
       {
         path: 'my-schedule',
         element: (
@@ -92,6 +172,7 @@ const router = createBrowserRouter([
         ),
       },
 
+      // === WSPÓLNE ===
       {
         path: 'services',
         element: (
@@ -101,7 +182,7 @@ const router = createBrowserRouter([
         ),
       },
 
-      // Manager: zarządzanie grafikami wszystkich
+      // === MANAGER ONLY ===
       {
         path: 'schedule',
         element: (
@@ -110,8 +191,6 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      //  Manager-only: raporty + logi
       {
         path: 'reports',
         element: (
@@ -129,28 +208,30 @@ const router = createBrowserRouter([
         ),
       },
 
+      // === CLIENT ONLY ===
       {
-        path: 'my-appointments',
+        path: 'book',
         element: (
           <ProtectedRoute allowedRoles={['client']}>
-            <MyAppointmentsPage />
+            <BookAppointmentPage />
           </ProtectedRoute>
         ),
       },
 
-        {
-            path: 'book',
-            element: (
-                <ProtectedRoute allowedRoles={['client']}>
-                    <BookAppointmentPage />
-                </ProtectedRoute>
-  ),
-},
+      {
+        path: 'services',
+        element: (
+          <ProtectedRoute allowedRoles={['client']}>
+            <ServicesCatalogPage />
+          </ProtectedRoute>
+        ),
+      },
 
+      // === MANAGER ONLY ===
       {
         path: 'employees',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+          <ProtectedRoute allowedRoles={['manager']}>
             <EmployeesManagementPage />
           </ProtectedRoute>
         ),
@@ -158,7 +239,7 @@ const router = createBrowserRouter([
       {
         path: 'statistics',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+          <ProtectedRoute allowedRoles={['manager']}>
             <StatisticsPage />
           </ProtectedRoute>
         ),
@@ -171,6 +252,7 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
       {
         path: 'profile',
         element: <ProfilePage />,

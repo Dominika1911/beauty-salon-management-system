@@ -188,7 +188,7 @@ export default function StatisticsPage(): ReactElement {
               </tr>
             </thead>
             <tbody>
-              {data.services.map((row) => (
+              {data.services.map((row: import("../types").ServiceStatisticsItem) => (
                 <tr key={row.service.id} style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
                   <td style={{ padding: "10px 6px" }}>{row.service.name}</td>
                   <td style={{ padding: "10px 6px" }}>{row.total_appointments}</td>
@@ -216,7 +216,7 @@ export default function StatisticsPage(): ReactElement {
               </tr>
             </thead>
             <tbody>
-              {data.employees.map((row) => (
+              {data.employees.map((row: import("../types").EmployeeStatisticsItem) =>  (
                 <tr key={row.employee.id} style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
                   <td style={{ padding: "10px 6px" }}>{row.employee.full_name}</td>
                   <td style={{ padding: "10px 6px" }}>{row.total_appointments}</td>

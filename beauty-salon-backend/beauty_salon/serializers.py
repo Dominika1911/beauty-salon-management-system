@@ -907,6 +907,23 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
         return Appointment.objects.create(**validated_data)
 
 
+class BookingCreateSerializer(serializers.Serializer):
+    """Serializer dla klienta do tworzenia rezerwacji przez endpoint /api/bookings/.
+
+    Używa stabilnych ID obiektów (employee/service) i daty startu.
+    Backend weryfikuje dostępność na podstawie wyliczonych slotów.
+    """
+    employee = serializers.IntegerField()
+    service = serializers.IntegerField()
+    start = serializers.DateTimeField()
+    client_notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    def validate_start(self, value: datetime) -> datetime:
+        if value < timezone.now():
+            raise serializers.ValidationError("Nie można umawiać wizyt w przeszłości.")
+        return value
+
+
 class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment

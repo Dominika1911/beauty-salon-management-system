@@ -5,6 +5,7 @@ import type {
   AppointmentListItem,
   AppointmentStatusUpdateData,
   PaginatedResponse,
+  BookingCreateData,
 } from '../types';
 import type { AxiosResponse } from 'axios';
 
@@ -36,6 +37,9 @@ interface AppointmentsApi {
   cancelMy: (id: number, reason?: string) => Promise<AxiosResponse<AppointmentDetail>>;
   update: (id: number, data: Partial<AppointmentCreateData>) => Promise<AxiosResponse<AppointmentDetail>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
+
+  // client booking:
+  book: (data: BookingCreateData) => Promise<AxiosResponse<AppointmentDetail>>;
 }
 
 // Endpointy API
@@ -47,7 +51,11 @@ const ENDPOINTS = {
   detail: (id: number) => `/appointments/${id}/`,
   changeStatus: (id: number) => `/appointments/${id}/change_status/`,
   cancelMy: (id: number) => `/appointments/${id}/cancel_my/`,
+  bookings: '/bookings/',
 } as const;
+
+// Client booking endpoint
+// POST /bookings/
 
 /**
  * API do zarządzania wizytami
@@ -90,25 +98,22 @@ export const appointmentsAPI: AppointmentsApi = {
   },
 
   /**
-   * Utwórz wizytę
+   * Utwórz wizytę (manager/employee – backend może blokować client)
    */
   create: (data: AppointmentCreateData): Promise<AxiosResponse<AppointmentDetail>> => {
     return api.post<AppointmentDetail>(ENDPOINTS.base, data);
   },
 
   /**
-   * Zmiana statusu wizyty (np. anulowanie, no-show)
+   * Zmiana statusu wizyty
    */
-  changeStatus: (
-    id: number,
-    data: AppointmentStatusUpdateData
-  ): Promise<AxiosResponse<AppointmentDetail>> => {
+  changeStatus: (id: number, data: AppointmentStatusUpdateData): Promise<AxiosResponse<AppointmentDetail>> => {
     if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
     return api.post<AppointmentDetail>(ENDPOINTS.changeStatus(id), data);
   },
 
   /**
-   * Anulowanie wizyty przez klienta (tylko swojej) - backend endpoint: /appointments/{id}/cancel_my/
+   * Anulowanie wizyty przez klienta (tylko swojej)
    */
   cancelMy: (id: number, reason?: string): Promise<AxiosResponse<AppointmentDetail>> => {
     if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
@@ -118,10 +123,7 @@ export const appointmentsAPI: AppointmentsApi = {
   },
 
   /**
-   * Aktualizuj wizytę (PATCH)
-   *
-   * Backend do PATCH używa serializer-a jak do create,
-   * więc wysyłamy pola z AppointmentCreateData (lub ich część).
+   * Aktualizacja wizyty (PATCH)
    */
   update: (id: number, data: Partial<AppointmentCreateData>): Promise<AxiosResponse<AppointmentDetail>> => {
     if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
@@ -129,10 +131,27 @@ export const appointmentsAPI: AppointmentsApi = {
   },
 
   /**
-   * Usuń wizytę
+   * Usunięcie wizyty
    */
   delete: (id: number): Promise<AxiosResponse<void>> => {
     if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
     return api.delete<void>(ENDPOINTS.detail(id));
+  },
+
+  /**
+   * Rezerwacja klienta: POST /bookings/
+   * Backend waliduje dostępność; frontend wybiera start ze slotów z /availability/slots/
+   */
+  book: (data: BookingCreateData): Promise<AxiosResponse<AppointmentDetail>> => {
+    if (!data.employee || data.employee <= 0) {
+      return Promise.reject(new Error('Invalid employee ID'));
+    }
+    if (!data.service || data.service <= 0) {
+      return Promise.reject(new Error('Invalid service ID'));
+    }
+    if (!data.start) {
+      return Promise.reject(new Error('Invalid start datetime'));
+    }
+    return api.post<AppointmentDetail>(ENDPOINTS.bookings, data);
   },
 };

@@ -1,13 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { NotificationToast, type NotificationType } from './NotificationToast';
-import { registerNotificationHandler } from "../../../utils/notificationService";
-
-interface NotificationMessage {
-  id: number;
-  message: string;
-  type: NotificationType;
-}
+import React, { createContext, useContext, useCallback, useEffect, type ReactNode } from 'react';
+import type { NotificationType } from './NotificationToast';
+import { registerNotificationHandler } from '../../../utils/notificationService';
 
 interface NotificationContextType {
   showNotification: (message: string, type: NotificationType) => void;
@@ -25,41 +19,29 @@ interface NotificationProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Zgodnie z wymaganiami projektu: window.alert/confirm/prompt.
+ * Notyfikacje są realizowane przez window.alert (bez toastów).
+ */
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
-  const [notifications, setNotifications] = useState<NotificationMessage[]>([]);
-
   const showNotification = useCallback((message: string, type: NotificationType) => {
-    const id = Date.now();
-    const newNotification: NotificationMessage = { id, message, type };
+    // NotificationType w Twoim projekcie nie musi mieć "warning".
+    // Żeby nie robić niemożliwych porównań na unionie (TS2367),
+    // operujemy na stringu (runtime dalej działa).
+    const t = String(type);
+    let prefix = '';
+    if (t === 'error') prefix = 'Błąd: ';
+    else if (t === 'success') prefix = 'OK: ';
+    else if (t === 'warning') prefix = 'Uwaga: ';
+    else if (t === 'info') prefix = '';
 
-    setNotifications((prev) => [...prev, newNotification]);
-
-    setTimeout(() => {
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    }, 5000);
+    window.alert(`${prefix}${message}`);
   }, []);
 
-  // ✅ rejestrujemy handler dopiero gdy istnieje funkcja showNotification
+  // Rejestrujemy handler, żeby notify() działało w całej aplikacji.
   useEffect(() => {
     registerNotificationHandler(showNotification);
   }, [showNotification]);
 
-  return (
-    <NotificationContext.Provider value={{ showNotification }}>
-      {children}
-      <div
-        style={{
-          position: 'fixed',
-          top: '20px',
-          right: '20px',
-          zIndex: 9999,
-          pointerEvents: 'none',
-        }}
-      >
-        {notifications.map((n) => (
-          <NotificationToast key={n.id} message={n.message} type={n.type} />
-        ))}
-      </div>
-    </NotificationContext.Provider>
-  );
+  return <NotificationContext.Provider value={{ showNotification }}>{children}</NotificationContext.Provider>;
 };

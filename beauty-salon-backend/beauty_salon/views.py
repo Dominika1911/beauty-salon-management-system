@@ -95,6 +95,7 @@ from .serializers import (
     AppointmentListSerializer,
     AppointmentDetailSerializer,
     AppointmentCreateSerializer,
+    BookingCreateSerializer,
     AppointmentStatusUpdateSerializer,
     # NOTES & MEDIA
     NoteSerializer,
@@ -1487,6 +1488,221 @@ def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: date
     return a_start < b_end and a_end > b_start
 
 
+
+def _compute_availability_slots_payload(
+    *,
+    request_user: Any,
+    employee_id: int,
+    service_id: int,
+    d_from: date,
+    d_to: date,
+    ignore_timeoff_requested: bool,
+) -> tuple[Optional[dict[str, Any]], Optional[dict[str, str]], Optional[int]]:
+    """Wylicza payload slotów w formacie zgodnym z AvailabilitySlotsAPIView.
+
+    Zwraca (payload, error_body, error_status).
+    Jeśli error_body != None -> należy zwrócić Response(error_body, status=error_status).
+    """
+    if d_to < d_from:
+        return None, {"detail": "date_to must be >= date_from"}, status.HTTP_400_BAD_REQUEST
+
+    user = request_user
+    is_staff_user = (
+        getattr(user, "is_authenticated", False) and (
+            (hasattr(user, "is_manager") and bool(getattr(user, "is_manager"))) or
+            (hasattr(user, "is_employee") and bool(getattr(user, "is_employee"))) or
+            bool(getattr(user, "is_staff", False))
+        )
+    )
+    ignore_timeoff = bool(ignore_timeoff_requested and is_staff_user)
+
+    # 2) Pobranie obiektów
+    try:
+        employee = Employee.objects.get(pk=employee_id, is_active=True)
+    except Employee.DoesNotExist:
+        return None, {"detail": "Employee not found or inactive"}, status.HTTP_404_NOT_FOUND
+
+    try:
+        service = Service.objects.get(pk=service_id, is_published=True)
+    except Service.DoesNotExist:
+        return None, {"detail": "Service not found or unpublished"}, status.HTTP_404_NOT_FOUND
+
+    schedule = Schedule.objects.filter(employee=employee, status="active").order_by("-updated_at").first()
+
+    settings = SystemSettings.objects.first()
+    slot_minutes = int(getattr(settings, "slot_minutes", 15) or 15)
+    buffer_minutes = int(getattr(settings, "buffer_minutes", 0) or 0)
+    duration_minutes = int(service.duration.total_seconds() // 60)
+
+    if not schedule or schedule.status != "active":
+        return {
+            "employee": employee_id,
+            "service": service_id,
+            "slot_minutes": slot_minutes,
+            "buffer_minutes": buffer_minutes,
+            "duration_minutes": duration_minutes,
+            "slots": [],
+        }, None, None
+
+    if duration_minutes <= 0:
+        return None, {"detail": "Invalid service duration"}, status.HTTP_400_BAD_REQUEST
+
+    # 3) Urlopy / time off w zakresie
+    timeoffs: list[TimeOff] = []
+    if not ignore_timeoff:
+        timeoffs = list(
+            TimeOff.objects.filter(
+                employee=employee,
+                status=TimeOff.Status.APPROVED,
+                date_to__gte=d_from,
+                date_from__lte=d_to,
+            )
+        )
+
+    # 4) Wizyty w zakresie (kolizje)
+    tz = timezone.get_current_timezone()
+    day_start_dt = timezone.make_aware(datetime.combine(d_from, time.min), tz)
+    day_end_dt = timezone.make_aware(datetime.combine(d_to, time.max), tz)
+
+    active_statuses = [
+        Appointment.Status.PENDING,
+        Appointment.Status.CONFIRMED,
+        Appointment.Status.IN_PROGRESS,
+    ]
+
+    appts = list(
+        Appointment.objects.filter(
+            employee=employee,
+            status__in=active_statuses,
+            start__lt=day_end_dt,
+            end__gt=day_start_dt,
+        ).only("start", "end")
+    )
+
+    # 5) availability_periods z grafiku
+    periods = getattr(schedule, "availability_periods", None) or []
+    if not isinstance(periods, list):
+        periods = []
+
+    periods_by_weekday: dict[int, list[tuple[time, time]]] = {}
+    for p in periods:
+        try:
+            if not isinstance(p, dict):
+                continue
+            wd_key = str(p.get("weekday", "")).strip().lower()
+            wd = WEEKDAY_MAP.get(wd_key)
+            if wd is None:
+                continue
+            st = _parse_hhmm(str(p.get("start_time")))
+            en = _parse_hhmm(str(p.get("end_time")))
+            if en <= st:
+                continue
+            periods_by_weekday.setdefault(wd, []).append((st, en))
+        except Exception:
+            continue
+
+    # 6) breaks – best effort (dwie formy)
+    breaks_raw = getattr(schedule, "breaks", None) or []
+    parsed_breaks: list[tuple[datetime, datetime]] = []
+
+    def _try_add_break(start_dt: datetime, end_dt: datetime) -> None:
+        if end_dt > start_dt:
+            parsed_breaks.append((start_dt, end_dt))
+
+    # datowe breaks: {"start": "...iso...", "end": "...iso..."}
+    for b in breaks_raw if isinstance(breaks_raw, list) else []:
+        try:
+            if isinstance(b, dict) and "start" in b and "end" in b:
+                bs = datetime.fromisoformat(str(b["start"]))
+                be = datetime.fromisoformat(str(b["end"]))
+                if timezone.is_naive(bs):
+                    bs = timezone.make_aware(bs, tz)
+                if timezone.is_naive(be):
+                    be = timezone.make_aware(be, tz)
+                _try_add_break(bs, be)
+        except Exception:
+            continue
+
+    # weekly breaks: {weekday, start_time, end_time}
+    weekly_breaks_by_weekday: dict[int, list[tuple[time, time]]] = {}
+    for b in breaks_raw if isinstance(breaks_raw, list) else []:
+        try:
+            if not (isinstance(b, dict) and "weekday" in b and "start_time" in b and "end_time" in b):
+                continue
+            bwd_key = str(b.get("weekday", "")).strip().lower()
+            bwd = WEEKDAY_MAP.get(bwd_key)
+            if bwd is None:
+                continue
+            bst = _parse_hhmm(str(b.get("start_time")))
+            ben = _parse_hhmm(str(b.get("end_time")))
+            if ben <= bst:
+                continue
+            weekly_breaks_by_weekday.setdefault(bwd, []).append((bst, ben))
+        except Exception:
+            continue
+
+    # 7) Liczenie slotów
+    slots: list[dict[str, str]] = []
+    now = timezone.now()
+    step = timedelta(minutes=slot_minutes)
+    dur = timedelta(minutes=duration_minutes)
+    buf = timedelta(minutes=buffer_minutes)
+
+    for day in _daterange(d_from, d_to):
+        # jeśli urlop obejmuje ten dzień → skip
+        if any(to.date_from <= day <= to.date_to for to in timeoffs):
+            continue
+
+        wd = day.weekday()
+        day_periods = periods_by_weekday.get(wd, [])
+        if not day_periods:
+            continue
+
+        for st_t, en_t in day_periods:
+            start_dt = timezone.make_aware(datetime.combine(day, st_t), tz)
+            end_dt = timezone.make_aware(datetime.combine(day, en_t), tz)
+
+            cursor = start_dt
+            while cursor + dur <= end_dt:
+                slot_start = cursor
+                slot_end = cursor + dur
+
+                if slot_start < now:
+                    cursor += step
+                    continue
+
+                has_appt_collision = any(
+                    _overlaps(slot_start, slot_end, a.start - buf, a.end + buf) for a in appts
+                )
+
+                has_break_collision = any(
+                    _overlaps(slot_start, slot_end, b_start, b_end) for (b_start, b_end) in parsed_breaks
+                )
+
+                has_weekly_break_collision = False
+                for bst, ben in weekly_breaks_by_weekday.get(wd, []):
+                    b_start = timezone.make_aware(datetime.combine(day, bst), tz)
+                    b_end = timezone.make_aware(datetime.combine(day, ben), tz)
+                    if _overlaps(slot_start, slot_end, b_start, b_end):
+                        has_weekly_break_collision = True
+                        break
+
+                if not (has_appt_collision or has_break_collision or has_weekly_break_collision):
+                    slots.append({"start": slot_start.isoformat(), "end": slot_end.isoformat()})
+
+                cursor += step
+
+    slots.sort(key=lambda s: s["start"])
+    payload = {
+        "employee": employee_id,
+        "service": service_id,
+        "slot_minutes": slot_minutes,
+        "buffer_minutes": buffer_minutes,
+        "duration_minutes": duration_minutes,
+        "slots": slots,
+    }
+    return payload, None, None
+
 class AvailabilitySlotsAPIView(APIView):
     """
     GET /availability/slots/?employee=<id>&service=<id>&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
@@ -1732,6 +1948,100 @@ class AvailabilitySlotsAPIView(APIView):
                 "slots": slots,
             }
         )
+
+
+class BookingCreateAPIView(APIView):
+    """Rezerwacja wizyty przez klienta.
+
+    POST /api/bookings/
+    Body: { employee: <id>, service: <id>, start: <iso>, client_notes?: <str> }
+
+    - nie daje klientowi dostępu do CRUD /appointments/
+    - weryfikuje dostępność, korzystając z tej samej logiki co /availability/slots/
+    """
+    permission_classes = [permissions.IsAuthenticated, IsClient]
+
+    def post(self, request: Request) -> Response:
+        ser = BookingCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        employee_id = int(ser.validated_data["employee"])
+        service_id = int(ser.validated_data["service"])
+        start_dt: datetime = ser.validated_data["start"]
+        client_notes: str = ser.validated_data.get("client_notes", "")
+
+        # Profil klienta
+        try:
+            client = request.user.client_profile
+        except Exception:
+            return Response(
+                {"detail": "Konto nie jest powiązane z klientem."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Walidacje biznesowe: pracownik aktywny + usługa publikowana + skill
+        try:
+            employee = Employee.objects.get(pk=employee_id, is_active=True)
+        except Employee.DoesNotExist:
+            return Response({"detail": "Employee not found or inactive"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            service = Service.objects.get(pk=service_id, is_published=True)
+        except Service.DoesNotExist:
+            return Response({"detail": "Service not found or unpublished"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Pracownik musi mieć skill do tej usługi
+        try:
+            has_skill = employee.skills.filter(pk=service.pk).exists()
+        except Exception:
+            has_skill = False
+        if not has_skill:
+            return Response(
+                {"detail": "Employee is not qualified for this service."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Dostępność sprawdzamy na dzień startu
+        day = timezone.localdate(start_dt)
+        payload, err, err_status = _compute_availability_slots_payload(
+            request_user=request.user,
+            employee_id=employee_id,
+            service_id=service_id,
+            d_from=day,
+            d_to=day,
+            ignore_timeoff_requested=False,
+        )
+        if err:
+            return Response(err, status=err_status)
+
+        slots = payload.get("slots", []) if payload else []
+        requested_iso = start_dt.isoformat()
+        slot_starts = {s.get("start") for s in slots if isinstance(s, dict)}
+        if requested_iso not in slot_starts:
+            return Response(
+                {"detail": "Selected time is not available."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        duration_minutes = int(payload.get("duration_minutes") or 0)
+        if duration_minutes <= 0:
+            return Response({"detail": "Invalid service duration"}, status=status.HTTP_400_BAD_REQUEST)
+
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        appointment = Appointment.objects.create(
+            client=client,
+            employee=employee,
+            service=service,
+            start=start_dt,
+            end=end_dt,
+            status=Appointment.Status.PENDING,
+            client_notes=client_notes,
+        )
+
+        data = AppointmentDetailSerializer(appointment).data
+        return Response(data, status=status.HTTP_201_CREATED)
+
 # ==================== OCCUPANCY HELPERS (IDEAL) ====================
 
 def _clip_interval(s: datetime, e: datetime, win_s: datetime, win_e: datetime):
