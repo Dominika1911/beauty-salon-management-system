@@ -27,6 +27,8 @@ import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
 import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
+import { BookAppointmentPage } from '../pages/Client/BookAppointmentPage';
+
 
 // Tymczasowe/Placeholdery
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
@@ -135,6 +137,16 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
+        {
+            path: 'book',
+            element: (
+                <ProtectedRoute allowedRoles={['client']}>
+                    <BookAppointmentPage />
+                </ProtectedRoute>
+  ),
+},
+
       {
         path: 'employees',
         element: (

@@ -31,6 +31,7 @@ const navItems: NavLinkItem[] = [
   { to: 'my-schedule', label: 'Mój Grafik', roles: ['employee'] },
 
   // === CLIENT ===
+    { to: 'book', label: 'Umów wizytę', roles: ['client'] },
   { to: 'my-appointments', label: 'Moje Rezerwacje', roles: ['client'] },
 ];
 

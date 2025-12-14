@@ -740,7 +740,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 
 # ==================== APPOINTMENT VIEWS ====================
 
-
 class AppointmentViewSet(viewsets.ModelViewSet):
     """
     Wizyty w salonie.
@@ -767,6 +766,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return AppointmentCreateSerializer
         if self.action == "change_status":
             return AppointmentStatusUpdateSerializer
+        # (opcjonalnie) tu nie musisz nic dodawać, bo cancel_my zwraca detail serializer
         return AppointmentDetailSerializer
 
     def get_permissions(self) -> List[permissions.BasePermission]:
@@ -774,7 +774,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return [IsManagerOrEmployee()]
         if self.action in ["create", "update", "partial_update"]:
             return [IsManagerOrEmployee()]
-        if self.action in ["my_appointments", "today", "upcoming"]:
+        if self.action in ["my_appointments", "today", "upcoming", "cancel_my"]:
             return [permissions.IsAuthenticated()]
         return [permissions.IsAuthenticated()]
 
@@ -801,11 +801,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         # Manager/pracownik – wszystkie wizyty
         if (
-                hasattr(user, "is_manager")
-                and getattr(user, "is_manager", False)
+            hasattr(user, "is_manager") and getattr(user, "is_manager", False)
         ) or (
-                hasattr(user, "is_employee")
-                and getattr(user, "is_employee", False)
+            hasattr(user, "is_employee") and getattr(user, "is_employee", False)
         ):
             return qs
 
@@ -854,6 +852,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = Appointment.objects.filter(client=client).order_by("id")
+
         elif hasattr(user, "is_employee") and getattr(user, "is_employee", False):
             try:
                 employee = user.employee
@@ -863,11 +862,85 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = Appointment.objects.filter(employee=employee).order_by("id")
+
         else:
             qs = Appointment.objects.none()
 
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def cancel_my(self, request: Request, pk: Optional[int] = None) -> Response:
+        """
+        Anulowanie wizyty przez klienta (tylko swojej).
+
+        Zasady:
+        - musi być zalogowany klient
+        - może anulować tylko własną wizytę
+        - może anulować tylko wizytę w przyszłości
+        """
+        appointment: Appointment = self.get_object()
+        user = request.user
+
+        if not user.is_authenticated:
+            return Response(
+                {"detail": "Authentication credentials were not provided."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # tylko klient
+        if not (hasattr(user, "is_client") and getattr(user, "is_client", False)):
+            return Response(
+                {"detail": "Tylko klient może anulować wizytę."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # tylko własna wizyta
+        try:
+            client = user.client_profile
+        except Client.DoesNotExist:
+            return Response(
+                {"detail": "Konto nie jest powiązane z klientem."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appointment.client_id != client.id:
+            return Response(
+                {"detail": "Nie masz dostępu do tej wizyty."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # tylko przyszłe wizyty
+        if appointment.start <= timezone.now():
+            return Response(
+                {"detail": "Nie można anulować wizyty, która już się rozpoczęła lub minęła."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appointment.status == Appointment.Status.CANCELLED:
+            return Response(
+                {"detail": "Wizyta jest już anulowana."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        old_status = appointment.status
+
+        # UWAGA: nie używamy AppointmentStatusUpdateSerializer, bo może blokować klienta
+        appointment.status = Appointment.Status.CANCELLED
+        appointment.cancellation_reason = request.data.get(
+            "cancellation_reason", "Anulowane przez klienta"
+        )
+        appointment.save(update_fields=["status", "cancellation_reason"])
+
+        create_audit_log(
+            user=request.user,
+            type="appointment.cancel_by_client",
+            message=f"Klient anulował wizytę ID={appointment.id} ({old_status} -> CANCELLED).",
+            entity=appointment,
+            request=request,
+        )
+
+        return Response(AppointmentDetailSerializer(appointment).data)
 
     @action(detail=True, methods=["post"])
     def change_status(self, request: Request, pk: Optional[int] = None) -> Response:
@@ -909,9 +982,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     deposit_count = deposits.count()
 
                     if deposit_count > 0:
-                        deposit: Optional[Payment] = deposits.order_by(
-                            "-created_at"
-                        ).first()
+                        deposit: Optional[Payment] = deposits.order_by("-created_at").first()
 
                         if deposit is not None:
                             deposit.status = Payment.Status.FORFEITED
@@ -949,29 +1020,24 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                     create_audit_log(
                         user=request.user,
                         type="payment.forfeit_error",
-                        message=(
-                            f"Błąd utraty zaliczki dla wizyty {appointment.id}: {str(e)}"
-                        ),
+                        message=f"Błąd utraty zaliczki dla wizyty {appointment.id}: {str(e)}",
                         level=AuditLog.Level.ERROR,
                         entity=appointment,
                         request=request,
                     )
 
-        # Zapisujemy nowy status wizyty (niezależnie od zaliczki)
         appointment = serializer.save()
 
         create_audit_log(
             user=request.user,
             type="appointment.change_status",
-            message=(
-                f"Zmiana statusu wizyty ID={appointment.id} "
-                f"z {old_status} na {new_status}"
-            ),
+            message=f"Zmiana statusu wizyty ID={appointment.id} z {old_status} na {new_status}",
             entity=appointment,
             request=request,
         )
 
         return Response(AppointmentDetailSerializer(appointment).data)
+
 
 
 # ==================== NOTE & MEDIA VIEWS ====================

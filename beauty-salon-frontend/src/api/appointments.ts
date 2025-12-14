@@ -33,6 +33,7 @@ interface AppointmentsApi {
   detail: (id: number) => Promise<AxiosResponse<AppointmentDetail>>;
   create: (data: AppointmentCreateData) => Promise<AxiosResponse<AppointmentDetail>>;
   changeStatus: (id: number, data: AppointmentStatusUpdateData) => Promise<AxiosResponse<AppointmentDetail>>;
+  cancelMy: (id: number, reason?: string) => Promise<AxiosResponse<AppointmentDetail>>;
   update: (id: number, data: Partial<AppointmentCreateData>) => Promise<AxiosResponse<AppointmentDetail>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
 }
@@ -45,6 +46,7 @@ const ENDPOINTS = {
   upcoming: '/appointments/upcoming/',
   detail: (id: number) => `/appointments/${id}/`,
   changeStatus: (id: number) => `/appointments/${id}/change_status/`,
+  cancelMy: (id: number) => `/appointments/${id}/cancel_my/`,
 } as const;
 
 /**
@@ -103,6 +105,16 @@ export const appointmentsAPI: AppointmentsApi = {
   ): Promise<AxiosResponse<AppointmentDetail>> => {
     if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
     return api.post<AppointmentDetail>(ENDPOINTS.changeStatus(id), data);
+  },
+
+  /**
+   * Anulowanie wizyty przez klienta (tylko swojej) - backend endpoint: /appointments/{id}/cancel_my/
+   */
+  cancelMy: (id: number, reason?: string): Promise<AxiosResponse<AppointmentDetail>> => {
+    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
+    return api.post<AppointmentDetail>(ENDPOINTS.cancelMy(id), {
+      cancellation_reason: reason ?? '',
+    });
   },
 
   /**
