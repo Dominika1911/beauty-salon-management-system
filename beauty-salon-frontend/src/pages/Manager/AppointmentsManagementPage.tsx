@@ -141,6 +141,136 @@ function Modal(props: {
   );
 }
 
+function ReasonModal(props: {
+  open: boolean;
+  title: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  loading?: boolean;
+  onChange: (v: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}): ReactElement | null {
+  if (!props.open) return null;
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  };
+
+  const boxStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 560,
+    background: "#fff",
+    borderRadius: 14,
+    border: `1px solid ${beautyColors.border}`,
+    boxShadow: "0 14px 40px rgba(0,0,0,0.25)",
+    overflow: "hidden",
+  };
+
+  const headerStyle: React.CSSProperties = {
+    padding: "14px 16px",
+    background: beautyColors.bg,
+    borderBottom: `1px solid ${beautyColors.border}`,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  };
+
+  const titleStyle: React.CSSProperties = {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 800,
+    color: beautyColors.primaryDarker,
+  };
+
+  const bodyStyle: React.CSSProperties = {
+    padding: 16,
+    color: beautyColors.text,
+  };
+
+  const footerStyle: React.CSSProperties = {
+    padding: "12px 16px",
+    borderTop: `1px solid ${beautyColors.border}`,
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 8,
+    background: "#fff",
+  };
+
+  const xBtnStyle: React.CSSProperties = {
+    border: `1px solid ${beautyColors.border}`,
+    background: "#fff",
+    borderRadius: 10,
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontWeight: 800,
+    color: beautyColors.text,
+  };
+
+  return (
+    <div
+      style={overlayStyle}
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) props.onClose();
+      }}
+    >
+      <div style={boxStyle}>
+        <div style={headerStyle}>
+          <h3 style={titleStyle}>{props.title}</h3>
+          <button type="button" style={xBtnStyle} onClick={props.onClose} aria-label="Zamknij">
+            ✕
+          </button>
+        </div>
+
+        <div style={bodyStyle}>
+          <label style={{ display: "block" }}>
+            <div style={{ marginBottom: 8, fontWeight: 700 }}>{props.label}</div>
+            <textarea
+              style={{
+                ...beautyInputStyle,
+                width: "100%",
+                minHeight: 110,
+                resize: "vertical",
+                fontFamily: "inherit",
+              }}
+              value={props.value}
+              placeholder={props.placeholder ?? ""}
+              onChange={(e) => props.onChange(e.target.value)}
+              disabled={Boolean(props.loading)}
+            />
+          </label>
+          <div style={{ marginTop: 8, ...beautyMutedTextStyle }}>Wymagane podanie powodu przy anulowaniu.</div>
+        </div>
+
+        <div style={footerStyle}>
+          <button
+            type="button"
+            style={beautyButtonSecondaryStyle}
+            onClick={props.onClose}
+            disabled={Boolean(props.loading)}
+          >
+            Anuluj
+          </button>
+          <button type="button" style={beautyButtonStyle} onClick={props.onConfirm} disabled={Boolean(props.loading)}>
+            {props.loading ? "Zapisywanie…" : "Zapisz"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function safeString(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   if (typeof v === "string") return v;
@@ -185,6 +315,70 @@ function DetailsModal(props: {
   data: unknown;
   onClose: () => void;
 }): ReactElement | null {
+  if (!props.open) return null;
+
+  const overlayStyle: React.CSSProperties = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.45)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    zIndex: 9999,
+  };
+
+  const boxStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 760,
+    background: "#fff",
+    borderRadius: 14,
+    border: `1px solid ${beautyColors.border}`,
+    boxShadow: "0 14px 40px rgba(0,0,0,0.25)",
+    overflow: "hidden",
+  };
+
+  const headerStyle: React.CSSProperties = {
+    padding: "14px 16px",
+    background: beautyColors.bg,
+    borderBottom: `1px solid ${beautyColors.border}`,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  };
+
+  const titleStyle: React.CSSProperties = {
+    margin: 0,
+    fontSize: 18,
+    fontWeight: 800,
+    color: beautyColors.primaryDarker,
+  };
+
+  const bodyStyle: React.CSSProperties = {
+    padding: 16,
+    color: beautyColors.text,
+  };
+
+  const footerStyle: React.CSSProperties = {
+    padding: "12px 16px",
+    borderTop: `1px solid ${beautyColors.border}`,
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: 8,
+    background: "#fff",
+  };
+
+  const xBtnStyle: React.CSSProperties = {
+    border: `1px solid ${beautyColors.border}`,
+    background: "#fff",
+    borderRadius: 10,
+    padding: "6px 10px",
+    cursor: "pointer",
+    fontWeight: 800,
+    color: beautyColors.text,
+  };
+
   const obj = safeObj(props.data);
 
   const clientObj = safeObj(obj?.client);
@@ -221,80 +415,12 @@ function DetailsModal(props: {
 
   const clientEmail = safeString(clientObj?.email) ?? safeString(clientObj?.user_email) ?? null;
   const clientPhone = safeString(clientObj?.phone) ?? null;
-  const clientNumber = safeString(clientObj?.number) ?? null;
 
-  if (!props.open) return null;
+  const employeeNumber = safeString(employeeObj?.number) ?? null;
+  const employeeEmail = safeString(employeeObj?.user_email) ?? null;
 
-  const overlayStyle: React.CSSProperties = {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.45)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    zIndex: 9999,
-  };
-
-  const boxStyle: React.CSSProperties = {
-    width: "100%",
-    maxWidth: 920,
-    background: "#fff",
-    borderRadius: 14,
-    border: `1px solid ${beautyColors.border}`,
-    boxShadow: "0 14px 40px rgba(0,0,0,0.25)",
-    overflow: "hidden",
-  };
-
-  const headerStyle: React.CSSProperties = {
-    padding: "14px 16px",
-    background: beautyColors.bg,
-    borderBottom: `1px solid ${beautyColors.border}`,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  };
-
-  const titleStyle: React.CSSProperties = {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 800,
-    color: beautyColors.primaryDarker,
-  };
-
-  const xBtnStyle: React.CSSProperties = {
-    border: `1px solid ${beautyColors.border}`,
-    background: "#fff",
-    borderRadius: 10,
-    padding: "6px 10px",
-    cursor: "pointer",
-    fontWeight: 800,
-    color: beautyColors.text,
-  };
-
-  const bodyStyle: React.CSSProperties = {
-    padding: 16,
-    color: beautyColors.text,
-    maxHeight: "78vh",
-    overflowY: "auto",
-  };
-
-  const cardStyle: React.CSSProperties = {
-    border: `1px solid ${beautyColors.border}`,
-    borderRadius: 12,
-    padding: 12,
-    background: "#fff",
-  };
-
-  const footerStyle: React.CSSProperties = {
-    padding: "12px 16px",
-    borderTop: `1px solid ${beautyColors.border}`,
-    display: "flex",
-    justifyContent: "flex-end",
-    gap: 8,
-    background: "#fff",
-  };
+  const bookingCreatedAt = formatDateTime(safeString(obj?.created_at) ?? null);
+  const bookingUpdatedAt = formatDateTime(safeString(obj?.updated_at) ?? null);
 
   return (
     <div
@@ -314,99 +440,113 @@ function DetailsModal(props: {
         </div>
 
         <div style={bodyStyle}>
-          {props.loading ? (
-            <div style={beautyMutedTextStyle}>Ładowanie szczegółów…</div>
-          ) : props.error ? (
-            <div style={{ padding: 10, borderRadius: 12, background: "#ffe3ef", whiteSpace: "pre-line" }}>
+          {props.loading ? <div style={{ padding: 8 }}>Ładowanie…</div> : null}
+
+          {!props.loading && props.error ? (
+            <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: "#ffe3ef", whiteSpace: "pre-line" }}>
               <strong>Błąd:</strong> {props.error}
             </div>
-          ) : (
+          ) : null}
+
+          {!props.loading && !props.error ? (
             <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Podstawowe</div>
-                  <div>
-                    <strong>Status:</strong> {statusDisplay ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Start:</strong> {formatDateTime(startISO) ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Koniec:</strong> {formatDateTime(endISO) ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Czas:</strong> {timespan ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Kanał:</strong> {bookingChannel ?? "—"}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Wizyta</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", rowGap: 8, columnGap: 10 }}>
+                    <div style={beautyMutedTextStyle as any}>Status:</div>
+                    <div>
+                      <strong>{statusDisplay ?? "—"}</strong>
+                    </div>
+
+                    <div style={beautyMutedTextStyle as any}>Start:</div>
+                    <div>{formatDateTime(startISO) ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Koniec:</div>
+                    <div>{formatDateTime(endISO) ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Czas trwania:</div>
+                    <div>{timespan ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Kanał:</div>
+                    <div>{bookingChannel ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Utworzono:</div>
+                    <div>{bookingCreatedAt ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Aktualizacja:</div>
+                    <div>{bookingUpdatedAt ?? "—"}</div>
                   </div>
                 </div>
 
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Klient</div>
-                  <div>
-                    <strong>Imię i nazwisko:</strong> {clientName ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Email:</strong> {clientEmail ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Telefon:</strong> {clientPhone ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Numer:</strong> {clientNumber ?? "—"}
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Usługa</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", rowGap: 8, columnGap: 10 }}>
+                    <div style={beautyMutedTextStyle as any}>Nazwa:</div>
+                    <div>{serviceName ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Kategoria:</div>
+                    <div>{serviceCategory ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Cena:</div>
+                    <div>{servicePrice ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Czas:</div>
+                    <div>{serviceDuration ?? "—"}</div>
                   </div>
                 </div>
 
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Pracownik / usługa</div>
-                  <div>
-                    <strong>Pracownik:</strong> {employeeName ?? "—"}
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Klient</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", rowGap: 8, columnGap: 10 }}>
+                    <div style={beautyMutedTextStyle as any}>Imię i nazwisko:</div>
+                    <div>{clientName ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Email:</div>
+                    <div>{clientEmail ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Telefon:</div>
+                    <div>{clientPhone ?? "—"}</div>
                   </div>
-                  <div>
-                    <strong>Usługa:</strong> {serviceName ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Kategoria:</strong> {serviceCategory ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Cena:</strong> {servicePrice ?? "—"}
-                  </div>
-                  <div>
-                    <strong>Czas usługi:</strong> {serviceDuration ?? "—"}
+                </div>
+
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Pracownik</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", rowGap: 8, columnGap: 10 }}>
+                    <div style={beautyMutedTextStyle as any}>Imię i nazwisko:</div>
+                    <div>{employeeName ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Numer:</div>
+                    <div>{employeeNumber ?? "—"}</div>
+
+                    <div style={beautyMutedTextStyle as any}>Email:</div>
+                    <div>{employeeEmail ?? "—"}</div>
                   </div>
                 </div>
               </div>
 
-              <div style={{ height: 12 }} />
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Notatki</div>
-                  <div>
-                    <strong>Klient:</strong>
-                  </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12, marginTop: 12 }}>
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Notatki klienta</div>
                   <div style={{ whiteSpace: "pre-line" }}>{clientNotes ?? "—"}</div>
-                  <div style={{ height: 10 }} />
-                  <div>
-                    <strong>Wewnętrzne:</strong>
-                  </div>
+                </div>
+                <div style={{ border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Notatki wewnętrzne</div>
                   <div style={{ whiteSpace: "pre-line" }}>{internalNotes ?? "—"}</div>
                 </div>
+              </div>
 
-                <div style={cardStyle}>
-                  <div style={{ fontWeight: 900, marginBottom: 6 }}>Anulowanie</div>
-                  <div>
-                    <strong>Powód:</strong>
-                  </div>
+              <div style={{ marginTop: 12, border: `1px solid ${beautyColors.border}`, borderRadius: 12, padding: 12 }}>
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>Anulowanie</div>
+                <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", rowGap: 8, columnGap: 10 }}>
+                  <div style={beautyMutedTextStyle as any}>Powód:</div>
                   <div style={{ whiteSpace: "pre-line" }}>{cancellationReason ?? "—"}</div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, ...beautyMutedTextStyle }}>
-              </div>
+              <div style={{ marginTop: 12, ...beautyMutedTextStyle }}></div>
             </>
-          )}
+          ) : null}
         </div>
 
         <div style={footerStyle}>
@@ -429,8 +569,7 @@ const statusOptions: { value: "" | AppointmentStatus; label: string }[] = [
   { value: "no_show", label: "Nieobecność" },
 ];
 
-const formatDT = (iso: string): string =>
-  new Date(iso).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" });
+const formatDT = (iso: string): string => new Date(iso).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "short" });
 
 function extractError(err: unknown): string {
   if (!isAxiosError(err)) return "Nieznany błąd";
@@ -486,6 +625,12 @@ export function AppointmentsManagementPage(): ReactElement {
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [detailsTitle, setDetailsTitle] = useState<string>("");
   const [detailsData, setDetailsData] = useState<unknown>(null);
+  const [detailsAppointmentId, setDetailsAppointmentId] = useState<number | null>(null);
+
+  const [reasonOpen, setReasonOpen] = useState(false);
+  const [reasonText, setReasonText] = useState<string>("");
+  const [reasonLoading, setReasonLoading] = useState(false);
+  const [reasonTarget, setReasonTarget] = useState<{ id: number; label: string } | null>(null);
 
   const openInfo = useCallback((title: string, message: string) => {
     setModalVariant("info");
@@ -578,13 +723,28 @@ export function AppointmentsManagementPage(): ReactElement {
   };
 
   const changeStatus = useCallback(
-    async (appointmentId: number, newStatus: AppointmentStatus): Promise<void> => {
+    async (appointmentId: number, newStatus: AppointmentStatus, cancellationReason?: string): Promise<void> => {
       setBusyId(appointmentId);
       setError(null);
 
       try {
-        await appointmentsAPI.changeStatus(appointmentId, { status: newStatus });
+        await appointmentsAPI.changeStatus(appointmentId, {
+          status: newStatus,
+          ...(cancellationReason !== undefined ? { cancellation_reason: cancellationReason } : {}),
+        });
         await loadAppointments();
+
+        // Jeśli otwarty jest modal szczegółów tej samej wizyty, odświeżamy szczegóły.
+        if (detailsOpen && detailsAppointmentId === appointmentId) {
+          try {
+            const res = await appointmentsAPI.detail(appointmentId);
+            setDetailsData(res.data);
+            setDetailsError(null);
+          } catch (e: unknown) {
+            setDetailsError(extractError(e));
+          }
+        }
+
         openInfo("Gotowe", "Status zapisany.");
       } catch (e: unknown) {
         console.error(e);
@@ -595,10 +755,18 @@ export function AppointmentsManagementPage(): ReactElement {
         setBusyId(null);
       }
     },
-    [loadAppointments, openError, openInfo]
+    [detailsAppointmentId, detailsOpen, loadAppointments, openError, openInfo]
   );
 
   const askChangeStatus = (a: AppointmentListItem, newStatus: AppointmentStatus, label: string): void => {
+    // Backend może wymagać powodu przy anulowaniu – zbieramy go w osobnym modalu.
+    if (newStatus === "cancelled") {
+      setReasonText("");
+      setReasonTarget({ id: a.id, label });
+      setReasonOpen(true);
+      return;
+    }
+
     openConfirm(
       "Zmienić status?",
       `Czy na pewno chcesz ustawić status wizyty #${a.id} na: ${label}?`,
@@ -613,6 +781,7 @@ export function AppointmentsManagementPage(): ReactElement {
     setDetailsLoading(true);
     setDetailsError(null);
     setDetailsData(null);
+    setDetailsAppointmentId(a.id);
 
     try {
       const res = await appointmentsAPI.detail(a.id);
@@ -624,6 +793,26 @@ export function AppointmentsManagementPage(): ReactElement {
       setDetailsLoading(false);
     }
   }, []);
+
+  const confirmCancelWithReason = useCallback(async (): Promise<void> => {
+    if (!reasonTarget) return;
+
+    const trimmed = reasonText.trim();
+    if (!trimmed) {
+      openError("Brak powodu", "Podaj powód anulowania (wymagane przez backend).");
+      return;
+    }
+
+    setReasonLoading(true);
+    try {
+      await changeStatus(reasonTarget.id, "cancelled", trimmed);
+      setReasonOpen(false);
+      setReasonTarget(null);
+      setReasonText("");
+    } finally {
+      setReasonLoading(false);
+    }
+  }, [changeStatus, openError, reasonTarget, reasonText]);
 
   const results = data?.results ?? [];
   const total = data?.count ?? 0;
@@ -658,7 +847,12 @@ export function AppointmentsManagementPage(): ReactElement {
 
             <label style={{ display: "block" }}>
               <div style={{ marginBottom: 6 }}>Pracownik ID</div>
-              <input style={beautyInputStyle} value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="np. 3" />
+              <input
+                style={beautyInputStyle}
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="np. 3"
+              />
             </label>
 
             <label style={{ display: "block" }}>
@@ -749,16 +943,31 @@ export function AppointmentsManagementPage(): ReactElement {
                       <td style={{ padding: 10 }}>{a.status_display ?? a.status}</td>
                       <td style={{ padding: 10 }}>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          <button type="button" style={beautyButtonSecondaryStyle} disabled={busyId === a.id} onClick={() => void openDetails(a)}>
+                          <button
+                            type="button"
+                            style={beautyButtonSecondaryStyle}
+                            disabled={busyId === a.id}
+                            onClick={() => void openDetails(a)}
+                          >
                             Szczegóły
                           </button>
 
                           {a.status === "pending" ? (
                             <>
-                              <button type="button" style={beautyButtonStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "confirmed", "Potwierdzona")}>
+                              <button
+                                type="button"
+                                style={beautyButtonStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "confirmed", "Potwierdzona")}
+                              >
                                 {busyId === a.id ? "…" : "Potwierdź"}
                               </button>
-                              <button type="button" style={beautyButtonSecondaryStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "cancelled", "Anulowana")}>
+                              <button
+                                type="button"
+                                style={beautyButtonSecondaryStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "cancelled", "Anulowana")}
+                              >
                                 {busyId === a.id ? "…" : "Anuluj"}
                               </button>
                             </>
@@ -766,13 +975,28 @@ export function AppointmentsManagementPage(): ReactElement {
 
                           {a.status === "confirmed" ? (
                             <>
-                              <button type="button" style={beautyButtonStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "in_progress", "W trakcie")}>
+                              <button
+                                type="button"
+                                style={beautyButtonStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "in_progress", "W trakcie")}
+                              >
                                 {busyId === a.id ? "…" : "Rozpocznij"}
                               </button>
-                              <button type="button" style={beautyButtonSecondaryStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "no_show", "Nieobecność")}>
+                              <button
+                                type="button"
+                                style={beautyButtonSecondaryStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "no_show", "Nieobecność")}
+                              >
                                 {busyId === a.id ? "…" : "No-show"}
                               </button>
-                              <button type="button" style={beautyButtonSecondaryStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "cancelled", "Anulowana")}>
+                              <button
+                                type="button"
+                                style={beautyButtonSecondaryStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "cancelled", "Anulowana")}
+                              >
                                 {busyId === a.id ? "…" : "Anuluj"}
                               </button>
                             </>
@@ -780,10 +1004,20 @@ export function AppointmentsManagementPage(): ReactElement {
 
                           {a.status === "in_progress" ? (
                             <>
-                              <button type="button" style={beautyButtonStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "completed", "Zrealizowana")}>
+                              <button
+                                type="button"
+                                style={beautyButtonStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "completed", "Zrealizowana")}
+                              >
                                 {busyId === a.id ? "…" : "Zakończ"}
                               </button>
-                              <button type="button" style={beautyButtonSecondaryStyle} disabled={busyId === a.id} onClick={() => askChangeStatus(a, "no_show", "Nieobecność")}>
+                              <button
+                                type="button"
+                                style={beautyButtonSecondaryStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askChangeStatus(a, "no_show", "Nieobecność")}
+                              >
                                 {busyId === a.id ? "…" : "No-show"}
                               </button>
                             </>
@@ -802,10 +1036,20 @@ export function AppointmentsManagementPage(): ReactElement {
           )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, alignItems: "center" }}>
-            <button type="button" style={beautyButtonSecondaryStyle} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <button
+              type="button"
+              style={beautyButtonSecondaryStyle}
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
               Poprzednia
             </button>
-            <button type="button" style={beautyButtonSecondaryStyle} disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            <button
+              type="button"
+              style={beautyButtonSecondaryStyle}
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
               Następna
             </button>
             <div style={{ ...beautyMutedTextStyle, marginLeft: "auto" }}>
@@ -827,6 +1071,23 @@ export function AppointmentsManagementPage(): ReactElement {
           modalOnConfirm?.();
         }}
         onClose={() => setModalOpen(false)}
+      />
+
+      <ReasonModal
+        open={reasonOpen}
+        title={`Anulowanie wizyty #${reasonTarget?.id ?? ""}`}
+        label="Powód anulowania"
+        value={reasonText}
+        placeholder="Np. prośba klienta / brak dostępności / błąd rezerwacji…"
+        loading={reasonLoading}
+        onChange={setReasonText}
+        onConfirm={() => void confirmCancelWithReason()}
+        onClose={() => {
+          if (reasonLoading) return;
+          setReasonOpen(false);
+          setReasonTarget(null);
+          setReasonText("");
+        }}
       />
 
       <DetailsModal
