@@ -1,5 +1,7 @@
 import random
+import io
 import logging
+
 from datetime import timedelta, datetime
 from decimal import Decimal
 from typing import Any, Optional, List, Dict, Tuple, Iterable
@@ -28,6 +30,18 @@ except ImportError:
         """Implementacja zastępcza gdy tqdm nie jest dostępny."""
         return iterable
 
+
+
+# Opcjonalna zależność do generowania PDF (raporty demonstracyjne)
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    REPORTLAB_AVAILABLE = True
+except Exception:  # pragma: no cover
+    REPORTLAB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -1579,14 +1593,23 @@ class Command(BaseCommand):
             )
         )
 
-    def _seeduj_raporty_pdf(self) -> None:
-        """
-        Generuje przykładowe raporty PDF.
 
-        Tworzy demonstracyjne raporty finansowe z symulowaną zawartością.
-        W rzeczywistym systemie byłyby to prawdziwe dokumenty PDF.
+    def _seeduj_raporty_pdf(self) -> None:
+        """Generuje przykładowe raporty PDF.
+
+        Tworzy demonstracyjne raporty finansowe jako prawdziwe dokumenty PDF (ReportLab).
+        Jeśli ReportLab nie jest dostępny, metoda zakończy się bez generowania raportu.
         """
         if not self.manager:
+            return
+
+        if not REPORTLAB_AVAILABLE:
+            # Nie przerywamy całego seedowania – raporty PDF są opcjonalne.
+            self.stdout.write(
+                self.style.WARNING(
+                    " ⚠ ReportLab nie jest dostępny – pomijam generowanie raportów PDF."
+                )
+            )
             return
 
         self.stdout.write(" Generowanie raportów PDF...")
@@ -1594,21 +1617,161 @@ class Command(BaseCommand):
         data_koncowa = self.now.date()
         data_poczatkowa = data_koncowa - timedelta(days=30)
 
-        # Symulacja zawartości PDF
-        pdf_content = (
-            b"%PDF-1.4\n"
-            b"% Simulated PDF report for demonstration purposes\n"
-            b"% System: Beauty Excellence Studio\n"
-            b"% Type: Monthly financial report\n"
-            b"% Generated: Automatically by seed_database\n"
+        # Podsumowanie podstawowych metryk (na podstawie już zseedowanych danych)
+        suma_przychodow = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa,
+                paid_at__date__lte=data_koncowa,
+                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
         )
+
+        suma_zaliczki = (
+            Payment.objects.filter(
+                paid_at__date__gte=data_poczatkowa,
+                paid_at__date__lte=data_koncowa,
+                status=Payment.Status.DEPOSIT,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        liczba_wizyt = Appointment.objects.filter(
+            start__date__gte=data_poczatkowa,
+            start__date__lte=data_koncowa,
+        ).count()
+
+        liczba_zakonczonych = Appointment.objects.filter(
+            status=Appointment.Status.COMPLETED,
+            start__date__gte=data_poczatkowa,
+            start__date__lte=data_koncowa,
+        ).count()
+
+        liczba_anulowanych = Appointment.objects.filter(
+            status=Appointment.Status.CANCELLED,
+            start__date__gte=data_poczatkowa,
+            start__date__lte=data_koncowa,
+        ).count()
+
+        liczba_noshow = Appointment.objects.filter(
+            status=Appointment.Status.NO_SHOW,
+            start__date__gte=data_poczatkowa,
+            start__date__lte=data_koncowa,
+        ).count()
+
+        # Generowanie PDF
+        buf = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buf,
+            pagesize=A4,
+            title="Raport finansowy",
+            author="Beauty Salon Management System",
+        )
+
+        # --- Font z polskimi znakami (DejaVuSans) ---
+
+
+        from django.conf import settings
+
+
+        import os
+
+
+        from reportlab.pdfbase import pdfmetrics
+
+
+        from reportlab.pdfbase.ttfonts import TTFont
+
+
+        
+
+
+        font_path = os.path.join(settings.BASE_DIR, 'static', 'fonts', 'DejaVuSans.ttf')
+
+
+        if not os.path.exists(font_path):
+
+
+            raise FileNotFoundError('Brak fontu: ' + str(font_path))
+
+
+        pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+
+
+        # ----------------------------------------------
+
+
+        styles = getSampleStyleSheet()
+
+
+        # Wymuś DejaVuSans w ParagraphStyle (bez tego bywa Helvetica)
+
+
+        for _k in ('Title', 'Heading1', 'Heading2', 'Heading3', 'Normal', 'BodyText', 'Italic'):
+
+
+            if _k in styles:
+
+
+                styles[_k].fontName = 'DejaVuSans'
+        story = [
+            Paragraph("Beauty Salon Management System", styles["Title"]),
+            Spacer(1, 10),
+            Paragraph(
+                f"Raport finansowy – okres: {data_poczatkowa} do {data_koncowa}",
+                styles["Heading2"],
+            ),
+            Spacer(1, 14),
+        ]
+
+        tabela = [
+            ["Metryka", "Wartość"],
+            ["Okres", f"{data_poczatkowa} → {data_koncowa}"],
+            ["Wygenerowano", self.now.strftime("%d.%m.%Y %H:%M")],
+            ["Łączny przychód (płatności + zaliczki)", f"{suma_przychodow} PLN"],
+            ["Przychód z zaliczek", f"{suma_zaliczki} PLN"],
+            ["Liczba wizyt (wszystkie statusy)", str(liczba_wizyt)],
+            ["Wizyty zakończone", str(liczba_zakonczonych)],
+            ["Wizyty anulowane", str(liczba_anulowanych)],
+            ["No-show", str(liczba_noshow)],
+        ]
+
+        tbl = Table(tabela, hAlign="LEFT", colWidths=[260, 260])
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                    ("FONTNAME", (0, 0), (-1, -1), "DejaVuSans"),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("PADDING", (0, 0), (-1, -1), 6),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+        story.extend(
+            [
+                tbl,
+                Spacer(1, 14),
+                Paragraph(
+                    "Uwaga: raport wygenerowany w ramach danych demonstracyjnych (seed).",
+                    styles["Italic"],
+                ),
+            ]
+        )
+
+        doc.build(story)
+        pdf_content = buf.getvalue()
+        buf.close()
 
         pdf_file = ContentFile(
             pdf_content,
-            name="raport_miesieczny_demo.pdf",
+            name=(
+                f"raport_{data_poczatkowa.strftime('%Y%m%d')}_"
+                f"{data_koncowa.strftime('%Y%m%d')}.pdf"
+            ),
         )
 
-        ReportPDF.objects.create(
+        report = ReportPDF.objects.create(
             type=ReportPDF.Type.FINANCIAL,
             title=f"Raport finansowy - {data_poczatkowa} do {data_koncowa}",
             date_from=data_poczatkowa,
@@ -1617,7 +1780,6 @@ class Command(BaseCommand):
             data_do=data_koncowa,
             generated_by=self.manager,
             file=pdf_file,
-            file_path="reports/raport_miesieczny_demo.pdf",
             file_size=len(pdf_content),
             parameters={
                 "period": "last_30_days",
@@ -1632,9 +1794,12 @@ class Command(BaseCommand):
             ),
         )
 
-        self.stdout.write(
-            self.style.SUCCESS("Utworzono przykładowy raport PDF")
-        )
+        # ZAWSZE zapisuj faktyczną ścieżkę pliku nadaną przez storage (zgodną z upload_to)
+        report.file_path = report.file.name
+        report.save(update_fields=["file_path"])
+
+        self.stdout.write(self.style.SUCCESS("Utworzono przykładowy raport PDF"))
+
 
     def _seeduj_logi_audytu(self) -> None:
         """

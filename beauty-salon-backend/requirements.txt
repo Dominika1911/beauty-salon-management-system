@@ -22,4 +22,4 @@ types-django-filter
 types-tqdm
 
 pyright
-
+reportlab==4.2.2

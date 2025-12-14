@@ -37,3 +37,24 @@
 .custom-table tbody tr:last-child td {
     border-bottom: none;
 }
+
+/* === FIX: przyciski w tabeli nie mogą się łamać / nakładać === */
+.btn-nowrap {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  line-height: 1;
+}
+
+/* === FIX: komórki tabeli nie powinny ściskać treści do zera === */
+.custom-table tbody td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* opcjonalnie: wyrównanie pionowe do góry dla długich opisów */
+.custom-table tbody td {
+  vertical-align: top;
+}

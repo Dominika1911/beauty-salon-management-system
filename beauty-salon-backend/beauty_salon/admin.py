@@ -906,14 +906,21 @@ class ReportPDFAdmin(admin.ModelAdmin[ReportPDF]):
     id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
     def size_display(self, obj: ReportPDF) -> str:
-        if not obj.file_size:
+        size = obj.file_size or 0
+        try:
+            size = int(size)
+        except (TypeError, ValueError):
+            size = 0
+
+        if size <= 0:
             return format_html("{}", '-')
-        if obj.file_size < 1024:
-            return format_html("{} B", obj.file_size)
-        elif obj.file_size < 1024 * 1024:
-            return format_html("{:.1f} KB", obj.file_size / 1024)
-        else:
-            return format_html("{:.1f} MB", obj.file_size / (1024 * 1024))
+        if size < 1024:
+            return format_html("{} B", size)
+        if size < 1024 * 1024:
+            kb = size / 1024
+            return format_html("{} KB", f"{kb:.1f}")
+        mb = size / (1024 * 1024)
+        return format_html("{} MB", f"{mb:.1f}")
 
     size_display.short_description = 'Rozmiar'  # type: ignore[attr-defined]
 
@@ -1065,14 +1072,21 @@ class MediaAssetAdmin(admin.ModelAdmin[MediaAsset]):
     id_short.short_description = 'ID'  # type: ignore[attr-defined]
 
     def size_display(self, obj: MediaAsset) -> str:
-        if not obj.file_size:
+        size = obj.file_size or 0
+        try:
+            size = int(size)
+        except (TypeError, ValueError):
+            size = 0
+
+        if size <= 0:
             return format_html("{}", '-')
-        if obj.file_size < 1024:
-            return format_html("{} B", obj.file_size)
-        elif obj.file_size < 1024 * 1024:
-            return format_html("{:.1f} KB", obj.file_size / 1024)
-        else:
-            return format_html("{:.1f} MB", obj.file_size / (1024 * 1024))
+        if size < 1024:
+            return format_html("{} B", size)
+        if size < 1024 * 1024:
+            kb = size / 1024
+            return format_html("{} KB", f"{kb:.1f}")
+        mb = size / (1024 * 1024)
+        return format_html("{} MB", f"{mb:.1f}")
 
     size_display.short_description = 'Rozmiar'  # type: ignore[attr-defined]
 

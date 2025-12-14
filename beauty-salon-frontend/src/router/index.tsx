@@ -13,22 +13,23 @@ import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
-import StatisticsPage from "../pages/StatisticsPage";
-import SettingsPage from "../pages/SettingsPage";
+import StatisticsPage from '../pages/StatisticsPage';
+import SettingsPage from '../pages/SettingsPage';
 
+// Manager: raporty + logi
+import ReportsPage from '../pages/Manager/ReportsPage';
+import AuditLogsPage from '../pages/Manager/AuditLogsPage';
 
-// DODANO: Strona dla Managera do zarządzania wszystkimi grafikami
+// Manager: grafiki wszystkich
 import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
-// DODANO: Strona dla Pracownika (wcześniej placeholder)
+// Employee: mój grafik
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
 import { MyAppointmentsPage } from '../pages/Client/MyAppointmentsPage';
 
-
 // Tymczasowe/Placeholdery
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
-
 
 const router = createBrowserRouter([
   // PUBLICZNE
@@ -70,16 +71,16 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-        {
+      {
         path: 'appointments-calendar',
         element: (
-            <ProtectedRoute allowedRoles={['manager', 'employee']}>
-                 <AppointmentsCalendarPage />
-            </ProtectedRoute>
+          <ProtectedRoute allowedRoles={['manager', 'employee']}>
+            <AppointmentsCalendarPage />
+          </ProtectedRoute>
         ),
       },
 
-      // 🚨 ZMIENIONO: Użycie pełnej strony Pracownika dla Mój Grafik
+      // Employee: mój grafik
       {
         path: 'my-schedule',
         element: (
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
       {
         path: 'services',
         element: (
@@ -96,7 +98,8 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      // 🚨 DODANO: Nowa ścieżka dla Managera do zarządzania grafikami wszystkich
+
+      // Manager: zarządzanie grafikami wszystkich
       {
         path: 'schedule',
         element: (
@@ -105,6 +108,25 @@ const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
+      //  Manager-only: raporty + logi
+      {
+        path: 'reports',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ReportsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'audit-logs',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <AuditLogsPage />
+          </ProtectedRoute>
+        ),
+      },
+
       {
         path: 'my-appointments',
         element: (
@@ -124,7 +146,7 @@ const router = createBrowserRouter([
       {
         path: 'statistics',
         element: (
-          <ProtectedRoute allowedRoles={['manager','employee']}>
+          <ProtectedRoute allowedRoles={['manager', 'employee']}>
             <StatisticsPage />
           </ProtectedRoute>
         ),

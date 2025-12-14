@@ -16,6 +16,7 @@ const DaysButton: React.FC<DaysButtonProps> = ({ label, active, onClick }): Reac
     <button
       onClick={onClick}
       type="button"
+      className="print-hide"
       style={{
         padding: "8px 12px",
         borderRadius: 8,
@@ -35,19 +36,18 @@ export default function StatisticsPage(): ReactElement {
   const [data, setData] = useState<StatisticsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const changeDays: (v: Days) => void = (v) => {
+  const changeDays = (v: Days): void => {
     setDays(v);
-    setLoading(true); // poza useEffect
+    setLoading(true);
   };
 
-  useEffect((): (() => void) => {
+  useEffect(() => {
     let cancelled = false;
 
-    const fetchStats: () => Promise<void> = async () => {
+    const fetchStats = async (): Promise<void> => {
       try {
-        const result: StatisticsResponse = await getStatistics(days);
+        const result = await getStatistics(days);
         if (cancelled) return;
-
         setData(result);
       } catch {
         notify("Nie udało się pobrać statystyk.", "error");
@@ -56,14 +56,14 @@ export default function StatisticsPage(): ReactElement {
       }
     };
 
-    fetchStats();
+    void fetchStats();
 
     return () => {
       cancelled = true;
     };
   }, [days]);
 
-  const periodLabel: string = useMemo((): string => {
+  const periodLabel = useMemo((): string => {
     if (!data) return "";
     return `Okres: ostatnie ${data.period.days} dni`;
   }, [data]);
@@ -89,17 +89,43 @@ export default function StatisticsPage(): ReactElement {
   const s = data.summary;
 
   return (
-    <div style={{ padding: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div className="print-root" style={{ padding: "1.5rem" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+        }}
+      >
         <div>
           <h2 style={{ margin: 0 }}>Statystyki</h2>
           <p style={{ marginTop: 6, color: "#666" }}>{periodLabel}</p>
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        {/* Kontrolki NIE drukują się */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <DaysButton label="7 dni" active={days === 7} onClick={() => changeDays(7)} />
           <DaysButton label="30 dni" active={days === 30} onClick={() => changeDays(30)} />
           <DaysButton label="90 dni" active={days === 90} onClick={() => changeDays(90)} />
+
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="print-hide"
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid rgba(0,0,0,0.12)",
+              background: "white",
+              fontWeight: 650,
+              cursor: "pointer",
+            }}
+          >
+            Eksportuj do PDF
+          </button>
         </div>
       </div>
 
@@ -114,21 +140,35 @@ export default function StatisticsPage(): ReactElement {
       >
         <div className="stat-card">
           <h3>Wizyty</h3>
-          <p>Łącznie: <b>{s.total_appointments}</b></p>
-          <p>Ukończone: <b>{s.completed_appointments}</b></p>
-          <p>Anulowane: <b>{s.cancelled_appointments}</b></p>
-          <p>No-show: <b>{s.no_show_appointments}</b></p>
+          <p>
+            Łącznie: <b>{s.total_appointments}</b>
+          </p>
+          <p>
+            Ukończone: <b>{s.completed_appointments}</b>
+          </p>
+          <p>
+            Anulowane: <b>{s.cancelled_appointments}</b>
+          </p>
+          <p>
+            No-show: <b>{s.no_show_appointments}</b>
+          </p>
         </div>
 
         <div className="stat-card">
           <h3>Klienci</h3>
-          <p>Łącznie: <b>{s.total_clients}</b></p>
-          <p>Nowi: <b>{s.new_clients}</b></p>
+          <p>
+            Łącznie: <b>{s.total_clients}</b>
+          </p>
+          <p>
+            Nowi: <b>{s.new_clients}</b>
+          </p>
         </div>
 
         <div className="stat-card">
           <h3>Przychód</h3>
-          <p>Łącznie: <b>{s.total_revenue}</b></p>
+          <p>
+            Łącznie: <b>{s.total_revenue}</b>
+          </p>
         </div>
       </div>
 
@@ -139,7 +179,7 @@ export default function StatisticsPage(): ReactElement {
         {data.services.length === 0 ? (
           <p style={{ color: "#666" }}>Brak danych usług dla tego okresu.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="print-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left" }}>
                 <th style={{ padding: "8px 6px" }}>Usługa</th>
@@ -167,7 +207,7 @@ export default function StatisticsPage(): ReactElement {
         {data.employees.length === 0 ? (
           <p style={{ color: "#666" }}>Brak danych pracowników dla tego okresu.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table className="print-table" style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ textAlign: "left" }}>
                 <th style={{ padding: "8px 6px" }}>Pracownik</th>

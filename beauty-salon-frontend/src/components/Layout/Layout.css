@@ -134,3 +134,24 @@
     padding: 30px;
     overflow-y: auto;
 }
+
+/* ===== FIX DRUKOWANIA / PDF ===== */
+@media print {
+  /* zdejmujemy ograniczenia wysokości */
+  .app-layout {
+    height: auto !important;
+    min-height: auto !important;
+  }
+
+  /* KLUCZ: zdejmujemy overflow */
+  .layout-content {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  /* sidebar już ukrywasz, ale na wszelki wypadek */
+  .sidebar {
+    display: none !important;
+  }
+}
