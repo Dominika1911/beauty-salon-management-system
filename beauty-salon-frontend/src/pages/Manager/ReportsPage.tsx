@@ -13,7 +13,70 @@ import {
   beautySelectStyle,
 } from '../../utils/ui';
 
-type Banner = { type: 'success' | 'error'; text: string };
+type ModalVariant = 'info' | 'success' | 'error';
+
+function Modal(props: {
+  open: boolean;
+  title: string;
+  message: string;
+  variant: ModalVariant;
+  confirmText?: string;
+  onClose: () => void;
+}): ReactElement | null {
+  const { open, title, message, variant, confirmText = 'OK', onClose } = props;
+  if (!open) return null;
+
+  const borderColor = variant === 'error' ? 'rgba(244, 67, 54, 0.35)' : 'rgba(233, 30, 99, 0.25)';
+  const bg = variant === 'error' ? '#fff1f3' : variant === 'success' ? '#e9fff1' : '#fff5fa';
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        style={{
+          width: 'min(760px, 100%)',
+          background: bg,
+          borderRadius: 16,
+          border: `1px solid ${borderColor}`,
+          boxShadow: '0 8px 28px rgba(0,0,0,0.18)',
+          padding: 16,
+        }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>{title}</div>
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{message}</div>
+          </div>
+          <button type="button" style={{ ...beautyButtonSecondaryStyle, padding: '6px 10px' }} onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" style={beautyButtonSecondaryStyle} onClick={onClose}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
@@ -38,6 +101,19 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = bytes;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u += 1;
+  }
+  const out = u === 0 ? String(Math.round(v)) : v.toFixed(1);
+  return `${out} ${units[u]}`;
+}
+
 function extractErrorMessage(err: unknown): string {
   if (isAxiosError(err)) {
     const status = err.response?.status;
@@ -57,28 +133,50 @@ function extractErrorMessage(err: unknown): string {
   return 'Nieznany błąd.';
 }
 
+function buildPdfUrl(filePathRaw: string): string {
+  const fp = filePathRaw.trim();
+
+  // 1) backend typowo serwuje MEDIA: /media/...
+  if (fp.startsWith('/media/')) return fp;
+
+  // 2) jeśli serializer zwraca "reports/....pdf" (bez /media), to dopinamy /media/
+  if (fp.startsWith('reports/')) return `/media/${fp}`;
+
+  // 3) jeśli ktoś zwrócił np. "media/reports/..." bez slasha
+  if (fp.startsWith('media/')) return `/${fp}`;
+
+  // 4) fallback do istniejącego helpera
+  return reportsAPI.mediaUrl(fp);
+}
+
 export default function ReportsPage(): ReactElement {
   const [items, setItems] = useState<ReportPDF[]>([]);
   const [loading, setLoading] = useState(false);
-  const [banner, setBanner] = useState<Banner | null>(null);
 
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
-
-  // per-row loader (żeby nie blokować całej strony przy otwieraniu PDF)
   const [openingId, setOpeningId] = useState<number | null>(null);
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalVariant, setModalVariant] = useState<ModalVariant>('info');
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+
+  const showModal = (variant: ModalVariant, title: string, message: string): void => {
+    setModalVariant(variant);
+    setModalTitle(title);
+    setModalMessage(message);
+    setModalOpen(true);
+  };
 
   const load = async (): Promise<void> => {
     setLoading(true);
-    setBanner(null);
     try {
-      // Nie zgadujemy filtrów backendowych; ładujemy listę i filtrujemy client-side.
       const list = await reportsAPI.list();
-      const sorted = [...list].sort((a, b) => a.id - b.id);
-      setItems(sorted);
+      setItems([...list].sort((a, b) => a.id - b.id));
     } catch (e) {
       setItems([]);
-      setBanner({ type: 'error', text: `Nie udało się pobrać raportów. ${extractErrorMessage(e)}` });
+      showModal('error', 'Nie udało się pobrać raportów', extractErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -96,11 +194,10 @@ export default function ReportsPage(): ReactElement {
 
   const filtered = useMemo(() => {
     const q = normalize(search);
-
     return items.filter((r) => {
       if (typeFilter !== 'all' && r.type !== typeFilter) return false;
-
       if (!q) return true;
+
       const hay = [
         String(r.id),
         r.type,
@@ -109,6 +206,7 @@ export default function ReportsPage(): ReactElement {
         r.generated_by_email ?? '',
         formatDate(r.data_od),
         formatDate(r.data_do),
+        formatBytes(r.file_size),
       ]
         .join(' ')
         .toLowerCase();
@@ -118,41 +216,21 @@ export default function ReportsPage(): ReactElement {
   }, [items, search, typeFilter]);
 
   const openPdf = async (report: ReportPDF): Promise<void> => {
-    const url = reportsAPI.mediaUrl(report.file_path);
-    if (!url) {
-      setBanner({ type: 'error', text: 'Brak ścieżki do pliku PDF (file_path jest puste).' });
+    const rawPath = (report.file_path ?? '').trim();
+    if (!rawPath) {
+      showModal('error', 'Brak pliku', 'Pole file_path jest puste — nie da się otworzyć PDF.');
       return;
     }
 
     setOpeningId(report.id);
-    setBanner(null);
 
     try {
-      // Próba pobrania – jeśli to demo/fikcyjny plik, dostaniemy np. 404 i pokażemy czytelny komunikat.
-      const res = await fetch(url, { credentials: 'include' });
-
-      if (!res.ok) {
-        setBanner({
-          type: 'error',
-          text: `PDF niedostępny (status: ${res.status}). Jeśli to środowisko demo — to normalne.`,
-        });
-        return;
-      }
-
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-
-      window.open(blobUrl, '_blank', 'noopener,noreferrer');
-
-      // sprzątanie po chwili, żeby karta zdążyła się otworzyć
-      window.setTimeout(() => {
-        URL.revokeObjectURL(blobUrl);
-      }, 30_000);
-    } catch {
-      setBanner({
-        type: 'error',
-        text: 'Nie udało się otworzyć PDF (błąd pobierania). Jeśli to demo — plik może nie istnieć.',
-      });
+      // ✅ otwieramy bezpośrednio /media/... (Vite proxy już masz)
+      const url = buildPdfUrl(rawPath);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      showModal('success', 'Gotowe', 'Otworzyłem raport PDF w nowej karcie.');
+    } catch (e) {
+      showModal('error', 'Błąd', extractErrorMessage(e));
     } finally {
       setOpeningId(null);
     }
@@ -160,50 +238,18 @@ export default function ReportsPage(): ReactElement {
 
   return (
     <div style={{ padding: 30 }}>
+      <Modal open={modalOpen} title={modalTitle} message={modalMessage} variant={modalVariant} onClose={() => setModalOpen(false)} />
+
       <div style={beautyCardStyle}>
         <div style={beautyCardHeaderStyle}>
           <h1 style={beautyPageTitleStyle}>Raporty (PDF)</h1>
           <p style={beautyMutedTextStyle}>
-            Rekordów: {items.length} • Po filtrach: {filtered.length}
+            Backend udostępnia listę wygenerowanych raportów pod <code>/api/reports/</code>. Rekordów: {items.length} • Po filtrach: {filtered.length}
           </p>
-
-          {banner ? (
-            <div
-              style={{
-                marginTop: 10,
-                padding: 10,
-                borderRadius: 12,
-                border: '1px solid',
-                borderColor: banner.type === 'success' ? '#9ad5b3' : '#f2a6b3',
-                backgroundColor: banner.type === 'success' ? '#e9fff1' : '#fff1f3',
-                fontWeight: 800,
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 10,
-              }}
-            >
-              <span style={{ wordBreak: 'break-word' }}>{banner.text}</span>
-              <button
-                style={{ ...beautyButtonSecondaryStyle, padding: '6px 10px' }}
-                onClick={() => setBanner(null)}
-                disabled={loading}
-              >
-                ✕
-              </button>
-            </div>
-          ) : null}
         </div>
 
         <div style={beautyCardBodyStyle}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 260px auto',
-              gap: 12,
-              alignItems: 'end',
-              marginBottom: 14,
-            }}
-          >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 260px auto', gap: 12, alignItems: 'end', marginBottom: 14 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={{ fontWeight: 800 }}>Szukaj</span>
               <input
@@ -217,12 +263,7 @@ export default function ReportsPage(): ReactElement {
 
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={{ fontWeight: 800 }}>Typ</span>
-              <select
-                style={beautySelectStyle}
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                disabled={loading}
-              >
+              <select style={beautySelectStyle} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} disabled={loading}>
                 <option value="all">Wszystkie</option>
                 {typeOptions.map((t) => (
                   <option key={t} value={t}>
@@ -250,6 +291,7 @@ export default function ReportsPage(): ReactElement {
                   <th style={{ padding: '10px 8px' }}>Typ</th>
                   <th style={{ padding: '10px 8px' }}>Tytuł</th>
                   <th style={{ padding: '10px 8px' }}>Zakres</th>
+                  <th style={{ padding: '10px 8px' }}>Rozmiar</th>
                   <th style={{ padding: '10px 8px' }}>PDF</th>
                 </tr>
               </thead>
@@ -269,6 +311,7 @@ export default function ReportsPage(): ReactElement {
                       <td style={{ padding: '10px 8px' }}>
                         {formatDate(r.data_od)} – {formatDate(r.data_do)}
                       </td>
+                      <td style={{ padding: '10px 8px' }}>{formatBytes(r.file_size)}</td>
                       <td style={{ padding: '10px 8px' }}>
                         <button
                           type="button"
@@ -283,9 +326,6 @@ export default function ReportsPage(): ReactElement {
                         >
                           {openingId === r.id ? 'Otwieranie…' : 'Otwórz PDF'}
                         </button>
-
-                        {/* Opcjonalnie: podgląd ścieżki (debug UX w demo) */}
-                        <div style={{ ...beautyMutedTextStyle, marginTop: 6 }}>{r.file_path}</div>
                       </td>
                     </tr>
                   ))}
@@ -293,9 +333,9 @@ export default function ReportsPage(): ReactElement {
             </table>
           )}
 
-          {banner && banner.type === 'error' ? (
+          {!loading && items.length === 0 ? (
             <div style={{ marginTop: 12 }}>
-              <button style={beautyButtonDangerStyle} onClick={() => void load()} disabled={loading}>
+              <button style={beautyButtonDangerStyle} onClick={() => void load()}>
                 Spróbuj ponownie
               </button>
             </div>

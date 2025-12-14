@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { isAxiosError } from "axios";
+
 import { appointmentsAPI } from "../api/appointments";
-import type { AppointmentListItem, AppointmentStatus } from "../types";
+import { availabilityAPI, type AvailabilitySlot } from "../api/availability";
+import { employeesAPI } from "../api/employees";
+import { clientsAPI } from "../api/clients";
+
+import type { AppointmentCreateData, AppointmentListItem, AppointmentStatus, Client, Employee, Service } from "../types";
 import { useAuth } from "../hooks/useAuth";
 import {
   beautyButtonSecondaryStyle,
@@ -13,9 +18,29 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautyColors,
+  beautySelectStyle,
 } from "../utils/ui";
 
 type Tab = "client" | "employee-today" | "employee-upcoming";
+
+// ===== helpers dat/slots (kopiowane jak w BookAppointmentPage – bez refactoru) =====
+const yyyyMmDd = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const addDays = (date: Date, days: number): Date => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+};
+
+const parseYyyyMmDdLocal = (s: string): Date => {
+  const [y, m, d] = s.split("-").map((x) => Number(x));
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0);
+};
 
 const formatDT = (iso: string): string =>
   new Date(iso).toLocaleString("pl-PL", {
@@ -29,16 +54,20 @@ const formatTime = (iso: string): string =>
     minute: "2-digit",
   });
 
+const formatTimePL = (iso: string): string => {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("pl-PL", { hour: "2-digit", minute: "2-digit" }).format(d);
+};
+
 const statusLabel = (a: AppointmentListItem): string => a.status_display ?? a.status;
 
-const canClientCancel = (a: AppointmentListItem): boolean =>
-  a.status === "pending" || a.status === "confirmed";
+const canClientCancel = (a: AppointmentListItem): boolean => a.status === "pending" || a.status === "confirmed";
 
+// Employee flow:
 const canEmployeeAccept = (a: AppointmentListItem): boolean => a.status === "pending";
-const canEmployeeFinish = (a: AppointmentListItem): boolean =>
-  a.status === "confirmed" || a.status === "in_progress";
-const canEmployeeNoShow = (a: AppointmentListItem): boolean =>
-  a.status === "confirmed" || a.status === "in_progress";
+const canEmployeeStart = (a: AppointmentListItem): boolean => a.status === "confirmed";
+const canEmployeeFinish = (a: AppointmentListItem): boolean => a.status === "in_progress";
+const canEmployeeNoShow = (a: AppointmentListItem): boolean => a.status === "confirmed" || a.status === "in_progress";
 
 function extractError(err: unknown): string {
   if (!isAxiosError(err)) return "Nieznany błąd";
@@ -167,11 +196,7 @@ function Modal(props: {
         <div style={footerStyle}>
           {isConfirm ? (
             <>
-              <button
-                type="button"
-                style={beautyButtonSecondaryStyle}
-                onClick={props.onClose}
-              >
+              <button type="button" style={beautyButtonSecondaryStyle} onClick={props.onClose}>
                 {props.cancelText ?? "Anuluj"}
               </button>
               <button
@@ -195,6 +220,8 @@ function Modal(props: {
   );
 }
 
+type DayKey = string; // YYYY-MM-DD
+
 export function MyAppointmentsPage(): ReactElement {
   const { user, isClient, isEmployee, isManager } = useAuth();
 
@@ -210,6 +237,28 @@ export function MyAppointmentsPage(): ReactElement {
 
   const [cancelReason, setCancelReason] = useState<string>("");
 
+  // ====== Employee: tworzenie wizyty ======
+  const [employeeMe, setEmployeeMe] = useState<Employee | null>(null);
+  const [employeeServices, setEmployeeServices] = useState<Service[]>([]);
+  const [employeeServicesLoading, setEmployeeServicesLoading] = useState<boolean>(false);
+
+  const [clientSearch, setClientSearch] = useState<string>("");
+  const [clientSearchLoading, setClientSearchLoading] = useState<boolean>(false);
+  const [clientResults, setClientResults] = useState<Client[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<number | "">("");
+
+  const [serviceId, setServiceId] = useState<number | "">("");
+
+  // zakres 7 dni jak w rezerwacji klienta
+  const [dateFromStr, setDateFromStr] = useState<string>(yyyyMmDd(new Date()));
+  const [activeDayStr, setActiveDayStr] = useState<string>(yyyyMmDd(new Date()));
+  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState<boolean>(false);
+  const [selectedStart, setSelectedStart] = useState<string>("");
+
+  const [internalNotes, setInternalNotes] = useState<string>("");
+
+  // modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modalVariant, setModalVariant] = useState<ModalVariant>("info");
   const [modalTitle, setModalTitle] = useState<string>("");
@@ -238,15 +287,18 @@ export function MyAppointmentsPage(): ReactElement {
     setModalOpen(true);
   }, []);
 
-  const openConfirm = useCallback((title: string, message: string, onConfirm: () => void, confirmText?: string) => {
-    setModalVariant("confirm");
-    setModalTitle(title);
-    setModalMessage(message);
-    setModalConfirmText(confirmText ?? "Potwierdź");
-    setModalCancelText("Anuluj");
-    setModalOnConfirm(() => onConfirm);
-    setModalOpen(true);
-  }, []);
+  const openConfirm = useCallback(
+    (title: string, message: string, onConfirm: () => void, confirmText?: string) => {
+      setModalVariant("confirm");
+      setModalTitle(title);
+      setModalMessage(message);
+      setModalConfirmText(confirmText ?? "Potwierdź");
+      setModalCancelText("Anuluj");
+      setModalOnConfirm(() => onConfirm);
+      setModalOpen(true);
+    },
+    []
+  );
 
   useEffect(() => {
     if (isEmployee) setTab("employee-today");
@@ -268,6 +320,25 @@ export function MyAppointmentsPage(): ReactElement {
     setUpcomingAppointments(res.data ?? []);
   }, []);
 
+  const loadEmployeeMeAndServices = useCallback(async (): Promise<void> => {
+    setEmployeeServicesLoading(true);
+    try {
+      const meRes = await employeesAPI.me();
+      const me = meRes.data;
+      setEmployeeMe(me);
+
+      const servicesRes = await employeesAPI.services(me.id);
+      setEmployeeServices(servicesRes.data ?? []);
+    } catch (e: unknown) {
+      console.error(e);
+      openError("Błąd", extractError(e));
+      setEmployeeMe(null);
+      setEmployeeServices([]);
+    } finally {
+      setEmployeeServicesLoading(false);
+    }
+  }, [openError]);
+
   const loadAll = useCallback(async (): Promise<void> => {
     setLoading(true);
     setError(null);
@@ -276,7 +347,7 @@ export function MyAppointmentsPage(): ReactElement {
       if (isClient) {
         await loadClient();
       } else if (isEmployee) {
-        await Promise.all([loadEmployeeToday(), loadEmployeeUpcoming()]);
+        await Promise.all([loadEmployeeToday(), loadEmployeeUpcoming(), loadEmployeeMeAndServices()]);
       } else if (isManager) {
         await loadClient();
       } else {
@@ -288,17 +359,100 @@ export function MyAppointmentsPage(): ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [isClient, isEmployee, isManager, loadClient, loadEmployeeToday, loadEmployeeUpcoming]);
+  }, [isClient, isEmployee, isManager, loadClient, loadEmployeeToday, loadEmployeeUpcoming, loadEmployeeMeAndServices]);
 
   useEffect(() => {
     void loadAll();
-  }, [loadAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const visibleList = useMemo(() => {
     if (tab === "client") return clientAppointments;
     if (tab === "employee-today") return todayAppointments;
     return upcomingAppointments;
   }, [tab, clientAppointments, todayAppointments, upcomingAppointments]);
+
+  const dateRange = useMemo(() => {
+    const from = parseYyyyMmDdLocal(dateFromStr);
+    const days: { key: DayKey; date: Date }[] = [];
+    for (let i = 0; i < 7; i += 1) {
+      const d = addDays(from, i);
+      days.push({ key: yyyyMmDd(d), date: d });
+    }
+    const toStr = days[days.length - 1]?.key ?? dateFromStr;
+    return { fromStr: dateFromStr, toStr, days };
+  }, [dateFromStr]);
+
+  const refreshSlots = useCallback(async (): Promise<void> => {
+    if (!employeeMe) return;
+    if (serviceId === "") return;
+
+    setLoadingSlots(true);
+    setSelectedStart("");
+    setSlots([]);
+
+    try {
+      const res = await availabilityAPI.getSlots({
+        employee: employeeMe.id,
+        service: serviceId,
+        date_from: dateRange.fromStr,
+        date_to: dateRange.toStr,
+      });
+
+      const newSlots = res.data?.slots ?? [];
+      setSlots(newSlots);
+
+      // pilnujemy, żeby activeDay był w zakresie i miał sloty (jeśli nie ma – przeskok na pierwszy dzień z terminami)
+      const inRange = dateRange.days.some((d) => d.key === activeDayStr);
+      if (!inRange) {
+        setActiveDayStr(dateRange.fromStr);
+      } else {
+        const anyForActive = newSlots.some((s) => yyyyMmDd(new Date(s.start)) === activeDayStr);
+        if (!anyForActive) {
+          const firstDayWithSlots = dateRange.days.find((d) => newSlots.some((s) => yyyyMmDd(new Date(s.start)) === d.key));
+          if (firstDayWithSlots) setActiveDayStr(firstDayWithSlots.key);
+        }
+      }
+    } catch (e: unknown) {
+      console.error(e);
+      openError("Błąd", extractError(e));
+      setSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, [activeDayStr, dateRange.fromStr, dateRange.toStr, employeeMe, openError, serviceId]);
+
+  // odśwież sloty gdy zmienia się usługa / zakres
+  useEffect(() => {
+    if (!isEmployee) return;
+    if (!employeeMe) return;
+    if (serviceId === "") return;
+    void refreshSlots();
+  }, [isEmployee, employeeMe, serviceId, dateFromStr, refreshSlots]);
+
+  const slotsForActiveDay = useMemo(() => {
+    return slots.filter((s) => yyyyMmDd(new Date(s.start)) === activeDayStr);
+  }, [slots, activeDayStr]);
+
+  const searchClients = useCallback(async (): Promise<void> => {
+    const q = clientSearch.trim();
+    if (!q) {
+      setClientResults([]);
+      return;
+    }
+
+    setClientSearchLoading(true);
+    try {
+      const res = await clientsAPI.list({ search: q, page: 1, page_size: 10 });
+      setClientResults(res.data?.results ?? []);
+    } catch (e: unknown) {
+      console.error(e);
+      openError("Błąd", extractError(e));
+      setClientResults([]);
+    } finally {
+      setClientSearchLoading(false);
+    }
+  }, [clientSearch, openError]);
 
   const cancelAppointment = async (id: number): Promise<void> => {
     setBusyId(id);
@@ -338,12 +492,7 @@ export function MyAppointmentsPage(): ReactElement {
   };
 
   const askCancel = (id: number): void => {
-    openConfirm(
-      "Anulować wizytę?",
-      "Czy na pewno chcesz anulować tę wizytę?",
-      () => void cancelAppointment(id),
-      "Anuluj wizytę"
-    );
+    openConfirm("Anulować wizytę?", "Czy na pewno chcesz anulować tę wizytę?", () => void cancelAppointment(id), "Anuluj wizytę");
   };
 
   const askAccept = (id: number): void => {
@@ -352,6 +501,15 @@ export function MyAppointmentsPage(): ReactElement {
       "Czy na pewno chcesz zaakceptować wizytę i oznaczyć ją jako „Potwierdzona”?",
       () => void changeStatus(id, "confirmed"),
       "Akceptuj"
+    );
+  };
+
+  const askStart = (id: number): void => {
+    openConfirm(
+      "Rozpocząć wizytę?",
+      "Czy na pewno chcesz oznaczyć tę wizytę jako „W trakcie”?",
+      () => void changeStatus(id, "in_progress"),
+      "Rozpocznij"
     );
   };
 
@@ -373,6 +531,58 @@ export function MyAppointmentsPage(): ReactElement {
     );
   };
 
+  const createEmployeeAppointment = useCallback(async (): Promise<void> => {
+    if (!employeeMe) {
+      openError("Błąd", "Nie udało się wczytać profilu pracownika.");
+      return;
+    }
+    if (serviceId === "") {
+      openError("Brak danych", "Wybierz usługę.");
+      return;
+    }
+    if (selectedClientId === "") {
+      openError("Brak danych", "Wybierz klienta.");
+      return;
+    }
+    if (!selectedStart) {
+      openError("Brak danych", "Wybierz termin (slot).");
+      return;
+    }
+
+    const payload: AppointmentCreateData = {
+      employee: String(employeeMe.id),
+      service: String(serviceId),
+      client: String(selectedClientId),
+      start: selectedStart,
+      ...(internalNotes.trim() ? { internal_notes: internalNotes.trim() } : {}),
+    };
+
+    openConfirm(
+      "Dodać wizytę?",
+      `Klient ID: ${selectedClientId}\nUsługa ID: ${serviceId}\nStart: ${formatDT(selectedStart)}\n\nPotwierdzić utworzenie wizyty?`,
+      async () => {
+        setBusyId(-1);
+        setError(null);
+        try {
+          await appointmentsAPI.create(payload);
+          await loadAll();
+          openInfo("Gotowe", "Wizyta została dodana.");
+          // reset wyborów (zostawiamy usługę)
+          setSelectedStart("");
+          setInternalNotes("");
+        } catch (e: unknown) {
+          console.error(e);
+          const msg = extractError(e);
+          setError(msg);
+          openError("Błąd", msg);
+        } finally {
+          setBusyId(null);
+        }
+      },
+      "Utwórz"
+    );
+  }, [employeeMe, internalNotes, loadAll, openConfirm, openError, openInfo, selectedClientId, selectedStart, serviceId]);
+
   if (loading) {
     return <div style={{ padding: 20 }}>Ładowanie wizyt…</div>;
   }
@@ -382,39 +592,188 @@ export function MyAppointmentsPage(): ReactElement {
       <h1 style={beautyPageTitleStyle}>{isEmployee ? "Wizyty pracownika" : "Moje wizyty"}</h1>
 
       {error ? (
-        <div
-          style={{
-            marginBottom: 14,
-            padding: 10,
-            borderRadius: 10,
-            background: "#ffe3ef",
-            whiteSpace: "pre-line",
-          }}
-        >
+        <div style={{ marginBottom: 14, padding: 10, borderRadius: 10, background: "#ffe3ef", whiteSpace: "pre-line" }}>
           <strong>Błąd:</strong> {error}
         </div>
       ) : null}
 
       {isEmployee ? (
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <button
-            type="button"
-            style={tab === "employee-today" ? beautyButtonStyle : beautyButtonSecondaryStyle}
-            onClick={() => setTab("employee-today")}
-          >
-            Dzisiaj ({todayAppointments.length})
-          </button>
-          <button
-            type="button"
-            style={tab === "employee-upcoming" ? beautyButtonStyle : beautyButtonSecondaryStyle}
-            onClick={() => setTab("employee-upcoming")}
-          >
-            Nadchodzące ({upcomingAppointments.length})
-          </button>
-          <button type="button" style={beautyButtonSecondaryStyle} onClick={() => void loadAll()}>
-            Odśwież
-          </button>
-        </div>
+        <>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              style={tab === "employee-today" ? beautyButtonStyle : beautyButtonSecondaryStyle}
+              onClick={() => setTab("employee-today")}
+            >
+              Dzisiaj ({todayAppointments.length})
+            </button>
+            <button
+              type="button"
+              style={tab === "employee-upcoming" ? beautyButtonStyle : beautyButtonSecondaryStyle}
+              onClick={() => setTab("employee-upcoming")}
+            >
+              Nadchodzące ({upcomingAppointments.length})
+            </button>
+            <button type="button" style={beautyButtonSecondaryStyle} onClick={() => void loadAll()}>
+              Odśwież
+            </button>
+          </div>
+
+          <div style={{ ...beautyCardStyle, marginBottom: 12 }}>
+            <div style={beautyCardHeaderStyle}>Dodaj wizytę (pracownik)</div>
+            <div style={beautyCardBodyStyle}>
+              {employeeServicesLoading ? <div style={beautyMutedTextStyle}>Ładowanie danych pracownika…</div> : null}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                <label style={{ display: "block" }}>
+                  <div style={{ marginBottom: 6, fontWeight: 700 }}>Klient (wyszukaj)</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      style={{ ...beautyInputStyle, flex: 1 }}
+                      value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                      placeholder="np. Kowalski / email / telefon"
+                    />
+                    <button
+                      type="button"
+                      style={beautyButtonSecondaryStyle}
+                      onClick={() => void searchClients()}
+                      disabled={clientSearchLoading}
+                    >
+                      {clientSearchLoading ? "…" : "Szukaj"}
+                    </button>
+                  </div>
+
+                  {clientResults.length > 0 ? (
+                    <div style={{ marginTop: 8 }}>
+                      <select
+                        style={beautySelectStyle}
+                        value={selectedClientId}
+                        onChange={(e) => setSelectedClientId(e.target.value ? Number(e.target.value) : "")}
+                      >
+                        <option value="">Wybierz klienta…</option>
+                        {clientResults.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            #{c.id} • {c.first_name} {c.last_name} {c.email ? `• ${c.email}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 8, ...beautyMutedTextStyle }}>Wpisz frazę i kliknij „Szukaj”.</div>
+                  )}
+                </label>
+
+                <label style={{ display: "block" }}>
+                  <div style={{ marginBottom: 6, fontWeight: 700 }}>Usługa</div>
+                  <select
+                    style={beautySelectStyle}
+                    value={serviceId}
+                    onChange={(e) => setServiceId(e.target.value ? Number(e.target.value) : "")}
+                  >
+                    <option value="">Wybierz usługę…</option>
+                    {employeeServices.map((s: Service) => (
+                      <option key={s.id} value={s.id}>
+                        #{s.id} • {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ marginTop: 8, ...beautyMutedTextStyle }}>
+                    Lista usług pochodzi z: <strong>/employees/me/</strong> + <strong>/employees/{`{id}`}/services/</strong>
+                  </div>
+                </label>
+
+                <label style={{ display: "block" }}>
+                  <div style={{ marginBottom: 6, fontWeight: 700 }}>Zakres dni (7 dni)</div>
+                  <input
+                    style={beautyInputStyle}
+                    type="date"
+                    value={dateFromStr}
+                    onChange={(e) => setDateFromStr(e.target.value)}
+                  />
+                  <div style={{ marginTop: 8, ...beautyMutedTextStyle }}>
+                    Sloty pobierane z <strong>/availability/slots/</strong>
+                  </div>
+                </label>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={{ marginBottom: 6, fontWeight: 700 }}>Dostępne terminy</div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                  {dateRange.days.map((d) => (
+                    <button
+                      key={d.key}
+                      type="button"
+                      style={d.key === activeDayStr ? beautyButtonStyle : beautyButtonSecondaryStyle}
+                      onClick={() => setActiveDayStr(d.key)}
+                      disabled={loadingSlots || serviceId === "" || !employeeMe}
+                    >
+                      {d.key}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    style={beautyButtonSecondaryStyle}
+                    onClick={() => void refreshSlots()}
+                    disabled={loadingSlots || serviceId === "" || !employeeMe}
+                  >
+                    {loadingSlots ? "Pobieranie…" : "Odśwież sloty"}
+                  </button>
+                </div>
+
+                {serviceId === "" ? <div style={beautyMutedTextStyle}>Wybierz usługę, żeby zobaczyć terminy.</div> : null}
+                {serviceId !== "" && loadingSlots ? <div style={beautyMutedTextStyle}>Ładowanie terminów…</div> : null}
+
+                {serviceId !== "" && !loadingSlots ? (
+                  slotsForActiveDay.length > 0 ? (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {slotsForActiveDay.map((s) => (
+                        <button
+                          key={s.start}
+                          type="button"
+                          style={selectedStart === s.start ? beautyButtonStyle : beautyButtonSecondaryStyle}
+                          onClick={() => setSelectedStart(s.start)}
+                        >
+                          {formatTimePL(s.start)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={beautyMutedTextStyle}>Brak wolnych slotów w tym dniu.</div>
+                  )
+                ) : null}
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block" }}>
+                  <div style={{ marginBottom: 6, fontWeight: 700 }}>Notatka wewnętrzna (opcjonalnie)</div>
+                  <input
+                    style={beautyInputStyle}
+                    value={internalNotes}
+                    onChange={(e) => setInternalNotes(e.target.value)}
+                    placeholder="np. dopisek od pracownika"
+                  />
+                </label>
+              </div>
+
+              <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  style={beautyButtonStyle}
+                  onClick={() => void createEmployeeAppointment()}
+                  disabled={busyId === -1 || !employeeMe || serviceId === "" || selectedClientId === "" || !selectedStart}
+                >
+                  {busyId === -1 ? "Tworzenie…" : "Dodaj wizytę"}
+                </button>
+                <div style={beautyMutedTextStyle}>
+                  Wybrany start: <strong>{selectedStart ? formatDT(selectedStart) : "—"}</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       ) : (
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <button type="button" style={beautyButtonSecondaryStyle} onClick={() => void loadAll()}>
@@ -433,9 +792,7 @@ export function MyAppointmentsPage(): ReactElement {
               onChange={(e) => setCancelReason(e.target.value)}
               placeholder="Powód anulowania (może być pusty)"
             />
-            <div style={beautyMutedTextStyle}>
-              Przycisk „Anuluj” pojawia się tylko dla statusów: pending/confirmed.
-            </div>
+            <div style={beautyMutedTextStyle}>Przycisk „Anuluj” pojawia się tylko dla statusów: pending/confirmed.</div>
           </div>
         </div>
       ) : null}
@@ -467,9 +824,7 @@ export function MyAppointmentsPage(): ReactElement {
 
                   return (
                     <tr key={a.id} style={{ borderBottom: "1px solid rgba(233, 30, 99, 0.10)" }}>
-                      <td style={{ padding: 10 }}>
-                        {isEmployee && tab === "employee-today" ? formatTime(a.start) : formatDT(a.start)}
-                      </td>
+                      <td style={{ padding: 10 }}>{isEmployee && tab === "employee-today" ? formatTime(a.start) : formatDT(a.start)}</td>
                       <td style={{ padding: 10 }}>{a.service_name}</td>
                       <td style={{ padding: 10 }}>{isEmployee ? a.client_name ?? "—" : a.employee_name}</td>
                       <td style={{ padding: 10 }}>{statusLabel(a)}</td>
@@ -487,7 +842,7 @@ export function MyAppointmentsPage(): ReactElement {
 
                         {isEmployee ? (
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {/* UPCOMING: tylko Akceptuj (bo nie powinno być Zrealizowana/Nieobecność) */}
+                            {/* UPCOMING: tylko Akceptuj */}
                             {showEmployeeUpcomingActions && canEmployeeAccept(a) ? (
                               <button
                                 type="button"
@@ -499,7 +854,7 @@ export function MyAppointmentsPage(): ReactElement {
                               </button>
                             ) : null}
 
-                            {/* TODAY: Akceptuj + Zrealizowana + Nieobecność */}
+                            {/* TODAY: pełny flow */}
                             {showEmployeeTodayActions && canEmployeeAccept(a) ? (
                               <button
                                 type="button"
@@ -508,6 +863,17 @@ export function MyAppointmentsPage(): ReactElement {
                                 onClick={() => askAccept(a.id)}
                               >
                                 {busyId === a.id ? "…" : "Akceptuj"}
+                              </button>
+                            ) : null}
+
+                            {showEmployeeTodayActions && canEmployeeStart(a) ? (
+                              <button
+                                type="button"
+                                style={beautyButtonStyle}
+                                disabled={busyId === a.id}
+                                onClick={() => askStart(a.id)}
+                              >
+                                {busyId === a.id ? "…" : "Rozpocznij"}
                               </button>
                             ) : null}
 

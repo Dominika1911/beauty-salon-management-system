@@ -16,6 +16,35 @@ interface ClientProps { data: ClientDashboardData; }
 interface EmployeeProps { data: EmployeeDashboardData; }
 interface ManagerProps { data: ManagerDashboardData; }
 
+// ==================== HELPERY ====================
+
+const toNumber = (v: unknown): number => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const n = Number(v.replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+};
+
+const toMoney = (v: unknown): string => {
+  if (v === null || v === undefined) return '0.00';
+  if (typeof v === 'number' && Number.isFinite(v)) return v.toFixed(2);
+  if (typeof v === 'string') return v;
+  return '0.00';
+};
+
+const pickStat = (data: ManagerDashboardData, key: keyof ManagerDashboardData['stats']): unknown => {
+  // Backend powinien zwracać to w data.stats, ale czasem pola mogą trafić na root (albo stats może być null/undefined).
+  const statsAny = (data as unknown as { stats?: Record<string, unknown> }).stats ?? {};
+  const rootAny = data as unknown as Record<string, unknown>;
+  const fromStats = statsAny[String(key)];
+  if (fromStats !== undefined && fromStats !== null) return fromStats;
+  const fromRoot = rootAny[String(key)];
+  if (fromRoot !== undefined && fromRoot !== null) return fromRoot;
+  return undefined;
+};
+
 // ==================== DASHBOARD KLIENTA ====================
 
 const ClientDashboard: React.FC<ClientProps> = ({ data }: ClientProps): ReactElement => (
@@ -148,12 +177,19 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): Re
 // ==================== DASHBOARD MANAGERA ====================
 
 const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): ReactElement => {
-  const formatMoney = (value?: string): string => {
-    if (!value) return '0.00';
-    return value;
-  };
+  const totalAppointments = toNumber(pickStat(data, 'total_appointments'));
+  const pendingAppointments = toNumber(pickStat(data, 'pending_appointments'));
+  const completedToday = toNumber(pickStat(data, 'completed_today'));
+  const revenueToday = toMoney(pickStat(data, 'revenue_today'));
+  const revenueThisMonth = toMoney(pickStat(data, 'revenue_this_month'));
+  const totalClients = toNumber(pickStat(data, 'total_clients'));
+  const totalEmployees = toNumber(pickStat(data, 'total_employees'));
+  const activeEmployees = toNumber(pickStat(data, 'active_employees'));
 
-  const stats = data.stats;
+  const todayTotal = toNumber(data.today?.total_appointments);
+
+  const statsMissing =
+    (data as unknown as { stats?: unknown }).stats === undefined || (data as unknown as { stats?: unknown }).stats === null;
 
   return (
     <div className="manager-dashboard">
@@ -162,7 +198,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">📅</div>
           <div className="stat-content">
             <h3>Wizyty dzisiaj</h3>
-            <p className="stat-value">{data.today?.total_appointments ?? 0}</p>
+            <p className="stat-value">{todayTotal}</p>
           </div>
         </div>
 
@@ -170,7 +206,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">📋</div>
           <div className="stat-content">
             <h3>Wszystkie wizyty</h3>
-            <p className="stat-value">{stats?.total_appointments ?? 0}</p>
+            <p className="stat-value">{totalAppointments}</p>
           </div>
         </div>
 
@@ -178,7 +214,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">⏳</div>
           <div className="stat-content">
             <h3>Oczekujące</h3>
-            <p className="stat-value">{stats?.pending_appointments ?? 0}</p>
+            <p className="stat-value">{pendingAppointments}</p>
           </div>
         </div>
 
@@ -186,7 +222,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">✅</div>
           <div className="stat-content">
             <h3>Zakończone dzisiaj</h3>
-            <p className="stat-value">{stats?.completed_today ?? 0}</p>
+            <p className="stat-value">{completedToday}</p>
           </div>
         </div>
 
@@ -194,7 +230,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">💵</div>
           <div className="stat-content">
             <h3>Przychód dzisiaj</h3>
-            <p className="stat-value">{formatMoney(stats?.revenue_today)} PLN</p>
+            <p className="stat-value">{revenueToday} PLN</p>
           </div>
         </div>
 
@@ -202,7 +238,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">📈</div>
           <div className="stat-content">
             <h3>Przychód w tym miesiącu</h3>
-            <p className="stat-value">{formatMoney(stats?.revenue_this_month)} PLN</p>
+            <p className="stat-value">{revenueThisMonth} PLN</p>
           </div>
         </div>
 
@@ -210,7 +246,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">👥</div>
           <div className="stat-content">
             <h3>Klienci</h3>
-            <p className="stat-value">{stats?.total_clients ?? 0}</p>
+            <p className="stat-value">{totalClients}</p>
           </div>
         </div>
 
@@ -218,7 +254,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">🧑‍💼</div>
           <div className="stat-content">
             <h3>Pracownicy</h3>
-            <p className="stat-value">{stats?.total_employees ?? 0}</p>
+            <p className="stat-value">{totalEmployees}</p>
           </div>
         </div>
 
@@ -226,10 +262,16 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           <div className="stat-icon">🟢</div>
           <div className="stat-content">
             <h3>Aktywni pracownicy</h3>
-            <p className="stat-value">{stats?.active_employees ?? 0}</p>
+            <p className="stat-value">{activeEmployees}</p>
           </div>
         </div>
       </div>
+
+      {statsMissing ? (
+        <div className="no-data">
+          <p>⚠️ Backend nie zwrócił pola <strong>stats</strong> – dlatego część liczników może być 0.</p>
+        </div>
+      ) : null}
 
       <div className="appointments-section">
         <h2>📆 Nadchodzące wizyty</h2>
@@ -237,9 +279,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           {data.upcoming_appointments && data.upcoming_appointments.length > 0 ? (
             data.upcoming_appointments.slice(0, 10).map((apt: DashboardAppointment) => (
               <div key={apt.id} className="appointment-row">
-                <div className="apt-time-col">
-                  {new Date(apt.start).toLocaleString('pl-PL')}
-                </div>
+                <div className="apt-time-col">{new Date(apt.start).toLocaleString('pl-PL')}</div>
                 <div className="apt-service-col">{apt.service_name}</div>
                 <div className="apt-client-col">👤 {apt.client_name}</div>
                 <div className="apt-employee-col">👨‍💼 {apt.employee_name}</div>
@@ -258,9 +298,7 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
           {data.recent_appointments && data.recent_appointments.length > 0 ? (
             data.recent_appointments.slice(0, 10).map((apt: DashboardAppointment) => (
               <div key={apt.id} className="appointment-row">
-                <div className="apt-time-col">
-                  {new Date(apt.start).toLocaleString('pl-PL')}
-                </div>
+                <div className="apt-time-col">{new Date(apt.start).toLocaleString('pl-PL')}</div>
                 <div className="apt-service-col">{apt.service_name}</div>
                 <div className="apt-client-col">👤 {apt.client_name}</div>
                 <div className="apt-employee-col">👨‍💼 {apt.employee_name}</div>
@@ -330,7 +368,7 @@ export const DashboardPage: React.FC = (): ReactElement => {
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <p className="user-welcome">Dzień dobry, {user?.email} ({user?.role_display})</p>
+        <p className="user-welcome">Witaj, {user?.email} ({user?.role_display})</p>
       </div>
 
       {isClient && dashboardData && <ClientDashboard data={clientData} />}
