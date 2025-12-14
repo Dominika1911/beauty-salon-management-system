@@ -103,7 +103,7 @@ const footer: CSSProperties = {
 export function PublicHomePage(): ReactElement {
   const { user } = useAuth();
 
-  // ✅ Panel jest pod /dashboard (a jak nie zalogowany -> /login)
+  // Panel jest pod /dashboard (a jak nie zalogowany -> /login)
   const panelPath = user ? '/dashboard' : '/login';
   const panelLabel = user ? 'Przejdź do panelu' : 'Zaloguj się do systemu';
 

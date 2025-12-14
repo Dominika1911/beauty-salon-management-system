@@ -55,9 +55,9 @@ export function ServicesCatalogPage(): ReactElement {
             )}
 
             <p>
-              ⏱️ {s.duration_minutes} min
+               {s.duration_minutes} min
               <br />
-              💰 {s.price} zł
+               {s.price} zł
             </p>
           </div>
         ))}
