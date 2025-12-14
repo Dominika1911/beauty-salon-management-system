@@ -147,40 +147,134 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): Re
 
 // ==================== DASHBOARD MANAGERA ====================
 
-const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): ReactElement => (
-  <div className="manager-dashboard">
-    <div className="stats-row">
-      <div className="stat-card">
-        <div className="stat-icon">📅</div>
-        <div className="stat-content">
-          <h3>Wizyty dzisiaj</h3>
-          <p className="stat-value">{data.today?.total_appointments || 0}</p>
+const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): ReactElement => {
+  const formatMoney = (value?: string): string => {
+    if (!value) return '0.00';
+    return value;
+  };
+
+  const stats = data.stats;
+
+  return (
+    <div className="manager-dashboard">
+      <div className="stats-row">
+        <div className="stat-card highlight">
+          <div className="stat-icon">📅</div>
+          <div className="stat-content">
+            <h3>Wizyty dzisiaj</h3>
+            <p className="stat-value">{data.today?.total_appointments ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">📋</div>
+          <div className="stat-content">
+            <h3>Wszystkie wizyty</h3>
+            <p className="stat-value">{stats?.total_appointments ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">⏳</div>
+          <div className="stat-content">
+            <h3>Oczekujące</h3>
+            <p className="stat-value">{stats?.pending_appointments ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">✅</div>
+          <div className="stat-content">
+            <h3>Zakończone dzisiaj</h3>
+            <p className="stat-value">{stats?.completed_today ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">💵</div>
+          <div className="stat-content">
+            <h3>Przychód dzisiaj</h3>
+            <p className="stat-value">{formatMoney(stats?.revenue_today)} PLN</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">📈</div>
+          <div className="stat-content">
+            <h3>Przychód w tym miesiącu</h3>
+            <p className="stat-value">{formatMoney(stats?.revenue_this_month)} PLN</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">👥</div>
+          <div className="stat-content">
+            <h3>Klienci</h3>
+            <p className="stat-value">{stats?.total_clients ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">🧑‍💼</div>
+          <div className="stat-content">
+            <h3>Pracownicy</h3>
+            <p className="stat-value">{stats?.total_employees ?? 0}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">🟢</div>
+          <div className="stat-content">
+            <h3>Aktywni pracownicy</h3>
+            <p className="stat-value">{stats?.active_employees ?? 0}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="appointments-section">
+        <h2>📆 Nadchodzące wizyty</h2>
+        <div className="appointments-list">
+          {data.upcoming_appointments && data.upcoming_appointments.length > 0 ? (
+            data.upcoming_appointments.slice(0, 10).map((apt: DashboardAppointment) => (
+              <div key={apt.id} className="appointment-row">
+                <div className="apt-time-col">
+                  {new Date(apt.start).toLocaleString('pl-PL')}
+                </div>
+                <div className="apt-service-col">{apt.service_name}</div>
+                <div className="apt-client-col">👤 {apt.client_name}</div>
+                <div className="apt-employee-col">👨‍💼 {apt.employee_name}</div>
+                <span className={`status-badge ${apt.status}`}>{apt.status_display}</span>
+              </div>
+            ))
+          ) : (
+            <p className="no-data">Brak nadchodzących wizyt</p>
+          )}
+        </div>
+      </div>
+
+      <div className="appointments-section">
+        <h2>🕘 Ostatnie wizyty</h2>
+        <div className="appointments-list">
+          {data.recent_appointments && data.recent_appointments.length > 0 ? (
+            data.recent_appointments.slice(0, 10).map((apt: DashboardAppointment) => (
+              <div key={apt.id} className="appointment-row">
+                <div className="apt-time-col">
+                  {new Date(apt.start).toLocaleString('pl-PL')}
+                </div>
+                <div className="apt-service-col">{apt.service_name}</div>
+                <div className="apt-client-col">👤 {apt.client_name}</div>
+                <div className="apt-employee-col">👨‍💼 {apt.employee_name}</div>
+                <span className={`status-badge ${apt.status}`}>{apt.status_display}</span>
+              </div>
+            ))
+          ) : (
+            <p className="no-data">Brak ostatnich wizyt</p>
+          )}
         </div>
       </div>
     </div>
-
-    <div className="appointments-section">
-      <h2>📆 Nadchodzące wizyty</h2>
-      <div className="appointments-list">
-        {data.upcoming_appointments && data.upcoming_appointments.length > 0 ? (
-          data.upcoming_appointments.slice(0, 10).map((apt: DashboardAppointment) => (
-            <div key={apt.id} className="appointment-row">
-              <div className="apt-time-col">
-                {new Date(apt.start).toLocaleString('pl-PL')}
-              </div>
-              <div className="apt-service-col">{apt.service_name}</div>
-              <div className="apt-client-col">👤 {apt.client_name}</div>
-              <div className="apt-employee-col">👨‍💼 {apt.employee_name}</div>
-              <span className={`status-badge ${apt.status}`}>{apt.status_display}</span>
-            </div>
-          ))
-        ) : (
-          <p className="no-data">Brak nadchodzących wizyt</p>
-        )}
-      </div>
-    </div>
-  </div>
-);
+  );
+};
 
 // ==================== KOMPONENT GŁÓWNY (DashboardPage) ====================
 
@@ -236,7 +330,7 @@ export const DashboardPage: React.FC = (): ReactElement => {
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <p className="user-welcome">Witaj, {user?.email} ({user?.role_display})</p>
+        <p className="user-welcome">Dzień dobry, {user?.email} ({user?.role_display})</p>
       </div>
 
       {isClient && dashboardData && <ClientDashboard data={clientData} />}
