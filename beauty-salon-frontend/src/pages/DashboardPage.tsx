@@ -1,20 +1,25 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { dashboardAPI } from '../api';
+import { dashboardAPI, statisticsAPI } from '../api';
+import { Modal } from '../components/UI/Modal';
 import type {
   DashboardData,
   ClientDashboardData,
   EmployeeDashboardData,
   ManagerDashboardData,
   DashboardAppointment,
+  StatisticsResponse,
 } from '../types';
 import './DashboardPage.css';
 
 // --- DEFINICJE INTERFEJSÓW DLA PROPSÓW KOMPONENTÓW ---
 interface ClientProps { data: ClientDashboardData; }
 interface EmployeeProps { data: EmployeeDashboardData; }
-interface ManagerProps { data: ManagerDashboardData; }
+interface ManagerProps {
+  data: ManagerDashboardData;
+  statsSummary30d: StatisticsResponse['summary'] | null;
+}
 
 // ==================== HELPERY ====================
 
@@ -34,15 +39,19 @@ const toMoney = (v: unknown): string => {
   return '0.00';
 };
 
-const pickStat = (data: ManagerDashboardData, key: keyof ManagerDashboardData['stats']): unknown => {
-  // Backend powinien zwracać to w data.stats, ale czasem pola mogą trafić na root (albo stats może być null/undefined).
-  const statsAny = (data as unknown as { stats?: Record<string, unknown> }).stats ?? {};
-  const rootAny = data as unknown as Record<string, unknown>;
-  const fromStats = statsAny[String(key)];
-  if (fromStats !== undefined && fromStats !== null) return fromStats;
-  const fromRoot = rootAny[String(key)];
-  if (fromRoot !== undefined && fromRoot !== null) return fromRoot;
-  return undefined;
+const sumManagerStats = (data: ManagerDashboardData): number => {
+  // backend potrafi nie zwrócić stats -> zabezpieczenie
+  const s = (data as unknown as { stats?: Record<string, unknown> }).stats ?? {};
+  return (
+    toNumber(s.total_appointments) +
+    toNumber(s.pending_appointments) +
+    toNumber(s.completed_today) +
+    toNumber(s.total_clients) +
+    toNumber(s.total_employees) +
+    toNumber(s.active_employees) +
+    toNumber(s.revenue_today) +
+    toNumber(s.revenue_this_month)
+  );
 };
 
 // ==================== DASHBOARD KLIENTA ====================
@@ -176,20 +185,41 @@ const EmployeeDashboard: React.FC<EmployeeProps> = ({ data }: EmployeeProps): Re
 
 // ==================== DASHBOARD MANAGERA ====================
 
-const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): ReactElement => {
-  const totalAppointments = toNumber(pickStat(data, 'total_appointments'));
-  const pendingAppointments = toNumber(pickStat(data, 'pending_appointments'));
-  const completedToday = toNumber(pickStat(data, 'completed_today'));
-  const revenueToday = toMoney(pickStat(data, 'revenue_today'));
-  const revenueThisMonth = toMoney(pickStat(data, 'revenue_this_month'));
-  const totalClients = toNumber(pickStat(data, 'total_clients'));
-  const totalEmployees = toNumber(pickStat(data, 'total_employees'));
-  const activeEmployees = toNumber(pickStat(data, 'active_employees'));
+const ManagerDashboard: React.FC<ManagerProps> = ({ data, statsSummary30d }: ManagerProps): ReactElement => {
+  const isSameLocalDay = (a: Date, b: Date): boolean =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-  const todayTotal = toNumber(data.today?.total_appointments);
+  const todayTotalFromRoot = toNumber(data.today?.total_appointments);
+  const todayTotalFromUpcoming = Array.isArray(data.upcoming_appointments)
+    ? data.upcoming_appointments.filter((apt) => {
+        const d = new Date(apt.start);
+        return Number.isFinite(d.getTime()) && isSameLocalDay(d, new Date());
+      }).length
+    : 0;
 
-  const statsMissing =
-    (data as unknown as { stats?: unknown }).stats === undefined || (data as unknown as { stats?: unknown }).stats === null;
+  const todayTotal = todayTotalFromRoot > 0 ? todayTotalFromRoot : todayTotalFromUpcoming;
+
+  const dashboardStatsLooksEmpty = sumManagerStats(data) === 0;
+  const useStatsSummary = dashboardStatsLooksEmpty && !!statsSummary30d;
+
+  // stats może nie istnieć w runtime
+  const stats = (data as unknown as { stats?: Record<string, unknown> }).stats ?? {};
+
+  const totalAppointments = useStatsSummary ? statsSummary30d!.total_appointments : toNumber(stats.total_appointments);
+  const totalClients = useStatsSummary ? statsSummary30d!.total_clients : toNumber(stats.total_clients);
+
+  const completedAppointments = useStatsSummary ? statsSummary30d!.completed_appointments : toNumber(stats.completed_today);
+  const cancelledAppointments = useStatsSummary ? statsSummary30d!.cancelled_appointments : 0;
+  const noShowAppointments = useStatsSummary ? statsSummary30d!.no_show_appointments : 0;
+
+  const totalRevenue = useStatsSummary ? statsSummary30d!.total_revenue : null;
+
+  const pendingAppointments = toNumber(stats.pending_appointments);
+  const totalEmployees = toNumber(stats.total_employees);
+  const activeEmployees = toNumber(stats.active_employees);
+
+  const revenueToday = toMoney(stats.revenue_today);
+  const revenueThisMonth = toMoney(stats.revenue_this_month);
 
   return (
     <div className="manager-dashboard">
@@ -205,48 +235,76 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
         <div className="stat-card">
           <div className="stat-icon">📋</div>
           <div className="stat-content">
-            <h3>Wszystkie wizyty</h3>
+            <h3>Wizyty (okres)</h3>
             <p className="stat-value">{totalAppointments}</p>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">⏳</div>
-          <div className="stat-content">
-            <h3>Oczekujące</h3>
-            <p className="stat-value">{pendingAppointments}</p>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">✅</div>
-          <div className="stat-content">
-            <h3>Zakończone dzisiaj</h3>
-            <p className="stat-value">{completedToday}</p>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">💵</div>
-          <div className="stat-content">
-            <h3>Przychód dzisiaj</h3>
-            <p className="stat-value">{revenueToday} PLN</p>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon">📈</div>
-          <div className="stat-content">
-            <h3>Przychód w tym miesiącu</h3>
-            <p className="stat-value">{revenueThisMonth} PLN</p>
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-icon">👥</div>
           <div className="stat-content">
-            <h3>Klienci</h3>
+            <h3>Klienci (okres)</h3>
             <p className="stat-value">{totalClients}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">✅</div>
+          <div className="stat-content">
+            <h3>Ukończone (okres)</h3>
+            <p className="stat-value">{completedAppointments}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">❌</div>
+          <div className="stat-content">
+            <h3>Anulowane (okres)</h3>
+            <p className="stat-value">{cancelledAppointments}</p>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">🙈</div>
+          <div className="stat-content">
+            <h3>No-show (okres)</h3>
+            <p className="stat-value">{noShowAppointments}</p>
+          </div>
+        </div>
+
+        {totalRevenue !== null ? (
+          <div className="stat-card">
+            <div className="stat-icon">💰</div>
+            <div className="stat-content">
+              <h3>Przychód (okres)</h3>
+              <p className="stat-value">{totalRevenue} PLN</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="stat-card">
+              <div className="stat-icon">💵</div>
+              <div className="stat-content">
+                <h3>Przychód dzisiaj</h3>
+                <p className="stat-value">{revenueToday} PLN</p>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon">📈</div>
+              <div className="stat-content">
+                <h3>Przychód w tym miesiącu</h3>
+                <p className="stat-value">{revenueThisMonth} PLN</p>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="stat-card">
+          <div className="stat-icon">⏳</div>
+          <div className="stat-content">
+            <h3>Oczekujące</h3>
+            <p className="stat-value">{pendingAppointments}</p>
           </div>
         </div>
 
@@ -267,9 +325,9 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
         </div>
       </div>
 
-      {statsMissing ? (
+      {useStatsSummary ? (
         <div className="no-data">
-          <p>⚠️ Backend nie zwrócił pola <strong>stats</strong> – dlatego część liczników może być 0.</p>
+          <p>👄👄👄</p>
         </div>
       ) : null}
 
@@ -319,23 +377,45 @@ const ManagerDashboard: React.FC<ManagerProps> = ({ data }: ManagerProps): React
 export const DashboardPage: React.FC = (): ReactElement => {
   const { user, isClient, isEmployee, isManager } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [statsSummary30d, setStatsSummary30d] = useState<StatisticsResponse['summary'] | null>(null);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const loadDashboard: () => Promise<void> = useCallback(async (): Promise<void> => {
-    try {
-      setLoading(true);
-      setError(null);
+  const loadDashboard = useCallback(
+    async (opts?: { showSuccess?: boolean }): Promise<void> => {
+      try {
+        setLoading(true);
+        setError(null);
 
-      const { data } = await dashboardAPI.get();
-      setDashboardData(data as DashboardData);
-    } catch (err) {
-      console.error('Błąd ładowania dashboardu', err);
-      setError('Nie udało się załadować danych dashboardu.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        const dashRes = await dashboardAPI.get();
+        setDashboardData(dashRes.data as DashboardData);
+
+        if (isManager) {
+          try {
+            const stats = await statisticsAPI.get(30);
+            setStatsSummary30d(stats.summary);
+          } catch (e) {
+            console.error('Błąd ładowania statistics (fallback dla dashboardu)', e);
+            setStatsSummary30d(null);
+          }
+        } else {
+          setStatsSummary30d(null);
+        }
+
+        if (opts?.showSuccess) {
+          setSuccessMsg('Dane dashboardu zostały odświeżone.');
+        }
+      } catch (err) {
+        console.error('Błąd ładowania dashboardu', err);
+        setError('Nie udało się załadować danych dashboardu.');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isManager],
+  );
 
   useEffect(() => {
     void loadDashboard();
@@ -350,30 +430,48 @@ export const DashboardPage: React.FC = (): ReactElement => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="error-container">
-        <h2>❌ Błąd</h2>
-        <p>{error}</p>
-        <button onClick={loadDashboard}>Spróbuj ponownie</button>
-      </div>
-    );
-  }
-
   const clientData: ClientDashboardData = dashboardData as ClientDashboardData;
   const employeeData: EmployeeDashboardData = dashboardData as EmployeeDashboardData;
   const managerData: ManagerDashboardData = dashboardData as ManagerDashboardData;
 
   return (
     <div className="dashboard">
+      <Modal isOpen={Boolean(error)} onClose={() => setError(null)} title="❌ Błąd">
+        <p style={{ marginTop: 0 }}>{error}</p>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <button type="button" onClick={() => setError(null)}>
+            Zamknij
+          </button>
+          <button type="button" onClick={() => void loadDashboard()}>
+            Spróbuj ponownie
+          </button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={Boolean(successMsg)} onClose={() => setSuccessMsg(null)} title="✅ Sukces">
+        <p style={{ marginTop: 0 }}>{successMsg}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button type="button" onClick={() => setSuccessMsg(null)}>
+            OK
+          </button>
+        </div>
+      </Modal>
+
       <div className="dashboard-header">
-        <h1>Dashboard</h1>
-        <p className="user-welcome">Witaj, {user?.email} ({user?.role_display})</p>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <h1 style={{ margin: 0 }}>Dashboard</h1>
+          <button type="button" onClick={() => void loadDashboard({ showSuccess: true })}>
+            Odśwież
+          </button>
+        </div>
+        <p className="user-welcome">
+          Witaj, {user?.email} ({user?.role_display})
+        </p>
       </div>
 
       {isClient && dashboardData && <ClientDashboard data={clientData} />}
       {isEmployee && dashboardData && <EmployeeDashboard data={employeeData} />}
-      {isManager && dashboardData && <ManagerDashboard data={managerData} />}
+      {isManager && dashboardData && <ManagerDashboard data={managerData} statsSummary30d={statsSummary30d} />}
     </div>
   );
 };
