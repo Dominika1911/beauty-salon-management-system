@@ -22,6 +22,8 @@ import { BookAppointmentPage } from '../pages/BookAppointmentPage';
 
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 import { MyProfilePage } from '../pages/Employee/MyProfilePage';
+import { MyAvailabilityPage } from '../pages/Employee/MyAvailabilityPage';
+import { MyTimeOffPage } from '../pages/Employee/MyTimeOffPage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
@@ -46,7 +48,7 @@ import SettingsPage from '../pages/SettingsPage';
 
 import ManagerProfilePage from '../pages/Manager/ManagerProfilePage';
 
-// ✅ route zależny od roli
+// route zależny od roli
 const ServicesRoutePage: React.FC = (): ReactElement => {
   const { user } = useAuth();
 
@@ -59,20 +61,13 @@ const ServicesRoutePage: React.FC = (): ReactElement => {
   return <ServicesManagementPage />;
 };
 
-// ✅ typ dla ESLint (@typescript-eslint/typedef)
 const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
-      {
-        index: true,
-        element: <PublicHomePage />,
-      },
-      {
-        path: 'login',
-        element: <LoginPage />,
-      },
+      { index: true, element: <PublicHomePage /> },
+      { path: 'login', element: <LoginPage /> },
 
       {
         path: 'dashboard',
@@ -83,7 +78,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ PROFIL (manager)
+      // MANAGER profile
       {
         path: 'profile',
         element: (
@@ -93,7 +88,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ PROFIL (employee)
+      // EMPLOYEE profile
       {
         path: 'my-profile',
         element: (
@@ -103,7 +98,27 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ My appointments (client + employee)
+      // EMPLOYEE availability
+      {
+        path: 'my-availability',
+        element: (
+          <ProtectedRoute allowedRoles={['employee']}>
+            <MyAvailabilityPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ EMPLOYEE time off
+      {
+        path: 'my-time-off',
+        element: (
+          <ProtectedRoute allowedRoles={['employee']}>
+            <MyTimeOffPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // My appointments (client + employee)
       {
         path: 'my-appointments',
         element: (
@@ -113,7 +128,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Employee only
+      // Employee schedule
       {
         path: 'my-schedule',
         element: (
@@ -123,7 +138,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Manager only - clients
+      // Manager - clients
       {
         path: 'clients',
         element: (
@@ -141,7 +156,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Manager only - employees
+      // Manager - employees
       {
         path: 'employees',
         element: (
@@ -151,7 +166,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Manager only - appointments
+      // Manager - appointments
       {
         path: 'appointments',
         element: (
@@ -169,7 +184,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // /services zależne od roli
+      // Services by role
       {
         path: 'services',
         element: (
@@ -179,7 +194,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // MANAGER ONLY
+      // Manager only
       {
         path: 'schedule',
         element: (
@@ -204,8 +219,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // ✅ STATYSTYKI (manager)
       {
         path: 'statistics',
         element: (
@@ -214,8 +227,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // PAYMENTS
       {
         path: 'payments',
         element: (
@@ -232,8 +243,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // INVOICES
       {
         path: 'invoices',
         element: (
@@ -250,8 +259,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-
-      // NOTIFICATIONS
       {
         path: 'notifications',
         element: (
@@ -261,7 +268,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // SETTINGS
+      // Settings
       {
         path: 'settings',
         element: (
@@ -271,7 +278,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // CLIENT ONLY
+      // Client only
       {
         path: 'book',
         element: (
@@ -283,10 +290,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
     ],
   },
 
-  {
-    path: '/404',
-    element: <h1>404 Strona nie znaleziona</h1>,
-  },
+  { path: '/404', element: <h1>404 Strona nie znaleziona</h1> },
 ]);
 
 export const AppRouter: React.FC = (): ReactElement => {

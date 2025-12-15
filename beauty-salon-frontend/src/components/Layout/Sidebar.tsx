@@ -1,15 +1,33 @@
-import { NavLink, useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import type { UserRole } from '../../types';
 import { Modal } from '../UI/Modal';
 
-interface NavItem {
+type NavItem = {
   label: string;
-  path: string;
+  path?: string;
   roles: UserRole[];
-}
+  type?: 'link' | 'header';
+};
+
+const baseLinkStyle = (isActive: boolean): React.CSSProperties => ({
+  padding: '10px 14px',
+  borderRadius: 8,
+  textDecoration: 'none',
+  color: '#5a2a35',
+  backgroundColor: isActive ? '#f8c1cc' : 'transparent',
+  fontWeight: isActive ? 700 : 500,
+});
+
+const headerStyle: React.CSSProperties = {
+  marginTop: 14,
+  marginBottom: 6,
+  fontWeight: 800,
+  color: '#8b2c3b',
+  fontSize: 14,
+};
 
 export function Sidebar(): ReactElement | null {
   const { user, logout } = useAuth();
@@ -17,123 +35,56 @@ export function Sidebar(): ReactElement | null {
 
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
-  if (!user) {
-    return null;
-  }
+  const navItems: NavItem[] = useMemo(() => {
+    if (!user) return [];
 
-  const navItems: NavItem[] = [
-    {
-      label: 'Dashboard',
-      path: '/dashboard',
-      roles: ['manager', 'employee', 'client'],
-    },
+    return [
+      { label: 'Dashboard', path: '/dashboard', roles: ['manager', 'employee', 'client'], type: 'link' },
 
-    // Profil (manager)
-    {
-      label: 'Profil',
-      path: '/profile',
-      roles: ['manager'],
-    },
+      // EMPLOYEE
+      { label: 'Pracownik', roles: ['employee'], type: 'header' },
+      { label: 'Mój profil', path: '/my-profile', roles: ['employee'], type: 'link' },
+      { label: 'Moja dostępność', path: '/my-availability', roles: ['employee'], type: 'link' },
+      { label: 'Mój grafik', path: '/my-schedule', roles: ['employee'], type: 'link' },
+      // ✅ NOWE
+      { label: 'Moje urlopy', path: '/my-time-off', roles: ['employee'], type: 'link' },
 
-    // ✅ Profil (employee)
-    {
-      label: 'Mój profil',
-      path: '/my-profile',
-      roles: ['employee'],
-    },
+      // SERVICES
+      {
+        label: user.role === 'client' ? 'Usługi' : 'Usługi (zarządzanie)',
+        path: '/services',
+        roles: ['manager', 'employee', 'client'],
+        type: 'link',
+      },
 
-    {
-      label: 'Wizyty (zarządzanie)',
-      path: '/appointments',
-      roles: ['manager'],
-    },
+      // SHARED
+      { label: 'Moje wizyty', path: '/my-appointments', roles: ['employee', 'client'], type: 'link' },
 
-    // MANAGER
-    {
-      label: 'Grafik (zarządzanie)',
-      path: '/schedule',
-      roles: ['manager'],
-    },
+      // CLIENT
+      { label: 'Klient', roles: ['client'], type: 'header' },
+      { label: 'Umów wizytę', path: '/book', roles: ['client'], type: 'link' },
 
-    // Statystyki (manager)
-    {
-      label: 'Statystyki',
-      path: '/statistics',
-      roles: ['manager'],
-    },
+      // MANAGER
+      { label: 'Manager', roles: ['manager'], type: 'header' },
+      { label: 'Profil', path: '/profile', roles: ['manager'], type: 'link' },
+      { label: 'Wizyty (kalendarz)', path: '/appointments', roles: ['manager'], type: 'link' },
+      { label: 'Wizyty (lista)', path: '/appointments-management', roles: ['manager'], type: 'link' },
+      { label: 'Grafik (zarządzanie)', path: '/schedule', roles: ['manager'], type: 'link' },
+      { label: 'Klienci', path: '/clients', roles: ['manager'], type: 'link' },
+      { label: 'Pracownicy', path: '/employees', roles: ['manager'], type: 'link' },
+      { label: 'Płatności', path: '/payments', roles: ['manager'], type: 'link' },
+      { label: 'Faktury', path: '/invoices', roles: ['manager'], type: 'link' },
+      { label: 'Powiadomienia', path: '/notifications', roles: ['manager'], type: 'link' },
+      { label: 'Raporty', path: '/reports', roles: ['manager'], type: 'link' },
+      { label: 'Logi systemowe', path: '/system-logs', roles: ['manager'], type: 'link' },
+      { label: 'Statystyki', path: '/statistics', roles: ['manager'], type: 'link' },
+      { label: 'Ustawienia', path: '/settings', roles: ['manager'], type: 'link' },
+    ];
+  }, [user]);
 
-    // EMPLOYEE
-    {
-      label: 'Mój grafik',
-      path: '/my-schedule',
-      roles: ['employee'],
-    },
+  if (!user) return null;
 
-    // /services zależne od roli
-    {
-      label: user.role === 'client' ? 'Usługi' : 'Usługi (zarządzanie)',
-      path: '/services',
-      roles: ['manager', 'employee', 'client'],
-    },
-
-    // CLIENT
-    {
-      label: 'Umów wizytę',
-      path: '/book',
-      roles: ['client'],
-    },
-
-    {
-      label: 'Moje wizyty',
-      path: '/my-appointments',
-      roles: ['employee', 'client'],
-    },
-    {
-      label: 'Klienci',
-      path: '/clients',
-      roles: ['manager'],
-    },
-
-    // Manager: Payments, Invoices, Notifications
-    {
-      label: 'Płatności',
-      path: '/payments',
-      roles: ['manager'],
-    },
-    {
-      label: 'Faktury',
-      path: '/invoices',
-      roles: ['manager'],
-    },
-    {
-      label: 'Powiadomienia',
-      path: '/notifications',
-      roles: ['manager'],
-    },
-
-    // Raporty / Logi
-    {
-      label: 'Raporty',
-      path: '/reports',
-      roles: ['manager'],
-    },
-    {
-      label: 'Logi systemowe',
-      path: '/system-logs',
-      roles: ['manager'],
-    },
-
-    {
-      label: 'Pracownicy',
-      path: '/employees',
-      roles: ['manager'],
-    },
-    {
-      label: 'Ustawienia',
-      path: '/settings',
-      roles: ['manager'],
-    },
-  ];
+  const visibleItems = navItems.filter((it) => it.roles.includes(user.role));
 
   const handleLogout = async (): Promise<void> => {
     await logout();
@@ -143,7 +94,7 @@ export function Sidebar(): ReactElement | null {
   return (
     <aside
       style={{
-        width: 220,
+        width: 260,
         padding: 16,
         backgroundColor: '#fde2e4',
         borderRight: '1px solid #f3c4cc',
@@ -153,28 +104,28 @@ export function Sidebar(): ReactElement | null {
         justifyContent: 'space-between',
       }}
     >
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {navItems
-          .filter((item) => item.roles.includes(user.role))
-          .map((item) => (
-            <NavLink
-              key={`${item.path}-${item.label}`}
-              to={item.path}
-              style={({ isActive }) => ({
-                padding: '10px 14px',
-                borderRadius: 8,
-                textDecoration: 'none',
-                color: '#5a2a35',
-                backgroundColor: isActive ? '#f8c1cc' : 'transparent',
-                fontWeight: isActive ? 700 : 500,
-              })}
-            >
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {visibleItems.map((item) => {
+          if (item.type === 'header') {
+            return (
+              <div key={`h-${item.label}`} style={headerStyle}>
+                {item.label}
+              </div>
+            );
+          }
+
+          if (!item.path) return null;
+
+          return (
+            <NavLink key={`${item.path}-${item.label}`} to={item.path} style={({ isActive }) => baseLinkStyle(isActive)}>
               {item.label}
             </NavLink>
-          ))}
+          );
+        })}
       </nav>
 
       <button
+        type="button"
         onClick={() => setLogoutModalOpen(true)}
         style={{
           marginTop: 20,
