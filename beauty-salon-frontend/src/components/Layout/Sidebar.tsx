@@ -36,6 +36,13 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
+    // ✅ NOWE: Statystyki (manager)
+    {
+      label: 'Statystyki',
+      path: '/statistics',
+      roles: ['manager'],
+    },
+
     // EMPLOYEE
     {
       label: 'Mój grafik',

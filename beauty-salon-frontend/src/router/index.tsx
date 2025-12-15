@@ -24,11 +24,6 @@ import StatisticsPage from '../pages/StatisticsPage';
 import SettingsPage from '../pages/SettingsPage';
 import { ServicesCatalogPage } from '../pages/ServicesCatalogPage';
 import { BookAppointmentPage } from '../pages/BookAppointmentPage';
-
-import ReportsPage from '../pages/Manager/ReportsPage';
-import SystemLogsPage from '../pages/Manager/SystemLogsPage';
-
-import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
@@ -41,6 +36,12 @@ import { InvoicesPage } from '../pages/Manager/InvoicesPage';
 import { InvoiceDetailsPage } from '../pages/Manager/InvoiceDetailsPage';
 
 import { NotificationsPage } from '../pages/Manager/NotificationsPage';
+
+import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
+
+// ✅ FIX: te pliki mają default export
+import ReportsPage from '../pages/Manager/ReportsPage';
+import SystemLogsPage from '../pages/Manager/SystemLogsPage';
 
 // Placeholder
 const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
@@ -58,225 +59,219 @@ const ServicesRoutePage: React.FC = (): ReactElement => {
   return <ServicesManagementPage />;
 };
 
-const router = createBrowserRouter([
-  // PUBLICZNE
-  {
-    path: '/login',
-    element: <LoginPage />,
-  },
-
-  // ✅ ROOT: / ma PublicHomePage jako index, a PANEL jest w child z Layoutem
+// ✅ FIX: typ dla ESLint (@typescript-eslint/typedef)
+const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
     path: '/',
+    element: <Layout />,
     children: [
-      // ✅ strona domyślna: /
+      // ✅ Public
       {
         index: true,
         element: <PublicHomePage />,
       },
-
-      // ✅ PANEL (z layoutem) – ale URL-e zostają /dashboard, /schedule itd.
       {
-        path: '',
-        element: <Layout />,
-        children: [
-          {
-            path: 'dashboard',
-            element: (
-              <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-                <DashboardPage />
-              </ProtectedRoute>
-            ),
-          },
+        path: 'login',
+        element: <LoginPage />,
+      },
 
-          // === MANAGER ONLY ===
-          {
-            path: 'clients',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <ClientsManagementPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'clients/:id',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <ClientDetailsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Protected - dashboard
+      {
+        path: 'dashboard',
+        element: (
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
+            <DashboardPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // PAYMENTS
-          {
-            path: 'payments',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <PaymentsPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'payments/:id',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <PaymentDetailsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Profile
+      {
+        path: 'profile',
+        element: (
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
+            <ProfilePage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // INVOICES
-          {
-            path: 'invoices',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <InvoicesPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'invoices/:id',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <InvoiceDetailsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ My appointments
+      {
+        path: 'my-appointments',
+        element: (
+          <ProtectedRoute allowedRoles={['client']}>
+            <MyAppointmentsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // NOTIFICATIONS
-          {
-            path: 'notifications',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <NotificationsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Employee only
+      {
+        path: 'my-schedule',
+        element: (
+          <ProtectedRoute allowedRoles={['employee']}>
+            <MySchedulePage />
+          </ProtectedRoute>
+        ),
+      },
 
-          {
-            path: 'appointments',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <AppointmentsManagementPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'my-appointments',
-            element: (
-              <ProtectedRoute allowedRoles={['client', 'employee']}>
-                <MyAppointmentsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Manager only - clients
+      {
+        path: 'clients',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ClientsManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'clients/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ClientDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          {
-            path: 'appointments-calendar',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <AppointmentsCalendarPage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Manager only - employees
+      {
+        path: 'employees-management',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <EmployeesManagementPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // EMPLOYEE ONLY
-          {
-            path: 'my-schedule',
-            element: (
-              <ProtectedRoute allowedRoles={['employee']}>
-                <MySchedulePage />
-              </ProtectedRoute>
-            ),
-          },
+      // ✅ Manager only - appointments calendar / management
+      {
+        path: 'appointments',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <AppointmentsCalendarPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'appointments-management',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <AppointmentsManagementPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // /services zależne od roli
-          {
-            path: 'services',
-            element: (
-              <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-                <ServicesRoutePage />
-              </ProtectedRoute>
-            ),
-          },
+      // SETTINGS
+      {
+        path: 'settings',
+        element: (
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
+            <SettingsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // MANAGER ONLY
-          {
-            path: 'schedule',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <ScheduleManagementPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'reports',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <ReportsPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'system-logs',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <SystemLogsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // NOTIFICATIONS
+      {
+        path: 'notifications',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <NotificationsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // CLIENT ONLY
-          {
-            path: 'book',
-            element: (
-              <ProtectedRoute allowedRoles={['client']}>
-                <BookAppointmentPage />
-              </ProtectedRoute>
-            ),
-          },
+      // PAYMENTS
+      {
+        path: 'payments',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <PaymentsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'payments/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <PaymentDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // MANAGER ONLY
-          {
-            path: 'employees',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <EmployeesManagementPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'statistics',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <StatisticsPage />
-              </ProtectedRoute>
-            ),
-          },
-          {
-            path: 'settings',
-            element: (
-              <ProtectedRoute allowedRoles={['manager']}>
-                <SettingsPage />
-              </ProtectedRoute>
-            ),
-          },
+      // INVOICES
+      {
+        path: 'invoices',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <InvoicesPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'invoices/:id',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <InvoiceDetailsPage />
+          </ProtectedRoute>
+        ),
+      },
 
-          {
-            path: 'profile',
-            element: <ProfilePage />,
-          },
+      // /services zależne od roli
+      {
+        path: 'services',
+        element: (
+          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
+            <ServicesRoutePage />
+          </ProtectedRoute>
+        ),
+      },
 
-          // panel 404
-          {
-            path: '*',
-            element: (
-              <div style={{ textAlign: 'center', padding: '3rem' }}>
-                <h1>404</h1>
-                <p>Strona nie znaleziona</p>
-              </div>
-            ),
-          },
-        ],
+      // MANAGER ONLY
+      {
+        path: 'schedule',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ScheduleManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'reports',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ReportsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ STATYSTYKI (manager)
+      {
+        path: 'statistics',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <StatisticsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      {
+        path: 'system-logs',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <SystemLogsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // CLIENT ONLY
+      {
+        path: 'book',
+        element: (
+          <ProtectedRoute allowedRoles={['client']}>
+            <BookAppointmentPage />
+          </ProtectedRoute>
+        ),
       },
     ],
   },
