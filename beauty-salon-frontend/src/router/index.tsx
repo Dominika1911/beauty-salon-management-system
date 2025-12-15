@@ -2,31 +2,29 @@ import React from 'react';
 import type { ReactElement } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 
-// === OSŁONA / LAYOUT ===
 import { Layout } from '../components/Layout/Layout';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { LoginPage } from '../pages/LoginPage';
-
-// === HOOK ===
 import { useAuth } from '../hooks/useAuth';
 
-// ✅ PUBLIC HOME
 import { PublicHomePage } from '../pages/PublicHomePage';
 
-// === STRONY ===
 import { DashboardPage } from '../pages/DashboardPage';
+
 import { ClientsManagementPage } from '../pages/Manager/ClientsManagementPage';
 import { ClientDetailsPage } from '../pages/Manager/ClientDetailsPage';
 import { EmployeesManagementPage } from '../pages/Manager/EmployeesManagementPage';
+
 import { ServicesManagementPage } from '../pages/Manager/ServicesManagementPage';
-import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
-import StatisticsPage from '../pages/StatisticsPage';
-import SettingsPage from '../pages/SettingsPage';
 import { ServicesCatalogPage } from '../pages/ServicesCatalogPage';
+
 import { BookAppointmentPage } from '../pages/BookAppointmentPage';
+
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
+import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
+
 import { MyAppointmentsPage } from '../pages/MyAppointmentsPage.tsx';
 
 import { PaymentsPage } from '../pages/Manager/PaymentsPage';
@@ -39,12 +37,13 @@ import { NotificationsPage } from '../pages/Manager/NotificationsPage';
 
 import { ScheduleManagementPage } from '../pages/Manager/ScheduleManagementPage';
 
-// ✅ FIX: te pliki mają default export
 import ReportsPage from '../pages/Manager/ReportsPage';
 import SystemLogsPage from '../pages/Manager/SystemLogsPage';
 
-// Placeholder
-const ProfilePage: React.FC = (): ReactElement => <h1>Profil</h1>;
+import StatisticsPage from '../pages/StatisticsPage';
+import SettingsPage from '../pages/SettingsPage';
+
+import ManagerProfilePage from '../pages/Manager/ManagerProfilePage';
 
 // ✅ route zależny od roli
 const ServicesRoutePage: React.FC = (): ReactElement => {
@@ -59,13 +58,12 @@ const ServicesRoutePage: React.FC = (): ReactElement => {
   return <ServicesManagementPage />;
 };
 
-// ✅ FIX: typ dla ESLint (@typescript-eslint/typedef)
+// ✅ typ dla ESLint (@typescript-eslint/typedef)
 const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
-      // ✅ Public
       {
         index: true,
         element: <PublicHomePage />,
@@ -75,7 +73,6 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         element: <LoginPage />,
       },
 
-      // ✅ Protected - dashboard
       {
         path: 'dashboard',
         element: (
@@ -85,12 +82,12 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Profile
+      // ✅ PROFIL (manager)
       {
         path: 'profile',
         element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <ProfilePage />
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ManagerProfilePage />
           </ProtectedRoute>
         ),
       },
@@ -135,7 +132,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
 
       // ✅ Manager only - employees
       {
-        path: 'employees-management',
+        path: 'employees',
         element: (
           <ProtectedRoute allowedRoles={['manager']}>
             <EmployeesManagementPage />
@@ -143,7 +140,7 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ Manager only - appointments calendar / management
+      // ✅ Manager only - appointments
       {
         path: 'appointments',
         element: (
@@ -161,22 +158,48 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // SETTINGS
+      // /services zależne od roli
       {
-        path: 'settings',
+        path: 'services',
         element: (
           <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <SettingsPage />
+            <ServicesRoutePage />
           </ProtectedRoute>
         ),
       },
 
-      // NOTIFICATIONS
+      // MANAGER ONLY
       {
-        path: 'notifications',
+        path: 'schedule',
         element: (
           <ProtectedRoute allowedRoles={['manager']}>
-            <NotificationsPage />
+            <ScheduleManagementPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'reports',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <ReportsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'system-logs',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <SystemLogsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ STATYSTYKI (manager)
+      {
+        path: 'statistics',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <StatisticsPage />
           </ProtectedRoute>
         ),
       },
@@ -217,49 +240,22 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // /services zależne od roli
+      // NOTIFICATIONS
       {
-        path: 'services',
+        path: 'notifications',
+        element: (
+          <ProtectedRoute allowedRoles={['manager']}>
+            <NotificationsPage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // SETTINGS
+      {
+        path: 'settings',
         element: (
           <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <ServicesRoutePage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // MANAGER ONLY
-      {
-        path: 'schedule',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ScheduleManagementPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'reports',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ReportsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // ✅ STATYSTYKI (manager)
-      {
-        path: 'statistics',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <StatisticsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      {
-        path: 'system-logs',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <SystemLogsPage />
+            <SettingsPage />
           </ProtectedRoute>
         ),
       },

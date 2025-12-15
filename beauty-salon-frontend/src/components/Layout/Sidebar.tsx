@@ -23,6 +23,14 @@ export function Sidebar(): ReactElement | null {
       path: '/dashboard',
       roles: ['manager', 'employee', 'client'],
     },
+
+    // ✅ NOWE: Profil (manager)
+    {
+      label: 'Profil',
+      path: '/profile',
+      roles: ['manager'],
+    },
+
     {
       label: 'Wizyty (zarządzanie)',
       path: '/appointments',
@@ -36,7 +44,7 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
-    // ✅ NOWE: Statystyki (manager)
+    // Statystyki (manager)
     {
       label: 'Statystyki',
       path: '/statistics',
@@ -75,7 +83,7 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
-    // ✅ Manager: Payments, Invoices, Notifications (MUSZĄ być)
+    // Manager: Payments, Invoices, Notifications
     {
       label: 'Płatności',
       path: '/payments',
@@ -92,7 +100,7 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager'],
     },
 
-    // ✅ DOPIĘTE: Raporty / Logi
+    // Raporty / Logi
     {
       label: 'Raporty',
       path: '/reports',
