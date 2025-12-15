@@ -1,5 +1,3 @@
-// src/pages/Employee/MySchedulePage.tsx
-
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import type { Employee, TimeOff, ScheduleEntry } from '../../types';
@@ -7,6 +5,7 @@ import { employeesAPI } from '../../api/employees';
 import { scheduleAPI } from '../../api/schedule';
 import { ScheduleEditor } from '../../components/Schedule/ScheduleEditor';
 import { TimeOffForm } from '../../components/Schedule/TimeOffForm';
+import { Modal } from '../../components/UI/Modal';
 import { useNotification } from '../../components/UI/Notification';
 
 type PageState = 'idle' | 'loading' | 'ready' | 'error';
@@ -19,209 +18,151 @@ export const MySchedulePage: React.FC = (): ReactElement => {
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
   const [timeOffList, setTimeOffList] = useState<TimeOff[]>([]);
   const [pageState, setPageState] = useState<PageState>('idle');
-  const [error, setError] = useState<string | null>(null);
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const [isTimeOffModalOpen, setIsTimeOffModalOpen] = useState<boolean>(false);
-  const [timeOffToEdit, setTimeOffToEdit] = useState<TimeOff | undefined>(undefined);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
-  const canLoad = useMemo(() => Boolean(isEmployee), [isEmployee]);
+  const [timeOffModalOpen, setTimeOffModalOpen] = useState(false);
 
-  const fetchScheduleData = useCallback(async (): Promise<void> => {
-    if (!isEmployee) return;
+  const canLoad = useMemo(() => isEmployee, [isEmployee]);
 
+  const loadData = useCallback(async () => {
     try {
       setPageState('loading');
-      setError(null);
 
-      // 1) Bierzemy dane pracownika (imię/nazwisko + prawdziwe employee.id)
-      const empResponse = await employeesAPI.me();
-      const employee = empResponse.data;
+      const empRes = await employeesAPI.me();
+      const employee = empRes.data;
 
-      // 2) Bierzemy grafik z dedykowanego endpointu grafiku (to co ustawił manager)
-      const scheduleResponse = await scheduleAPI.getEmployeeSchedule(employee.id);
-      const periods = (scheduleResponse.data?.availability_periods ?? []) as unknown as ScheduleEntry[];
+      const scheduleRes = await scheduleAPI.getEmployeeSchedule(employee.id);
+      const schedule = scheduleRes.data as ScheduleEntry[];
 
-      // 3) Urlopy (zostawiamy Twoje listTimeOff po employee.id)
-      const timeOffResponse = await scheduleAPI.listTimeOff(employee.id);
+      const timeOffRes = await scheduleAPI.listTimeOff({
+        employee: employee.id,
+        ordering: '-date_from',
+      });
 
       setEmployeeData(employee);
-      setScheduleEntries(periods);
-      setTimeOffList(timeOffResponse.data.results ?? []);
+      setScheduleEntries(schedule);
+      setTimeOffList(timeOffRes.data.results ?? []);
       setPageState('ready');
-    } catch (err) {
-      console.error('Błąd pobierania danych grafiku:', err);
-      setEmployeeData(null);
-      setScheduleEntries([]);
-      setTimeOffList([]);
-      setError('Nie udało się załadować grafiku i urlopów. Sprawdź status backendu.');
+    } catch (e) {
+      console.error(e);
       setPageState('error');
-      showNotification('Nie udało się pobrać danych grafiku.', 'error');
+      setErrorMessage(
+        'Nie udało się pobrać danych grafiku i urlopów. Spróbuj ponownie za chwilę.'
+      );
+      setErrorModalOpen(true);
     }
-  }, [isEmployee, showNotification]);
-
-  const handleSuccess = useCallback(() => {
-    setIsTimeOffModalOpen(false);
-    setTimeOffToEdit(undefined);
-    void fetchScheduleData();
-  }, [fetchScheduleData]);
-
-  const handleDeleteTimeOff = useCallback(
-    async (timeOffId: number, status: TimeOff['status']) => {
-      if (status !== 'pending') {
-        showNotification('Możesz usunąć tylko zgłoszenia w statusie "pending".', 'info');
-        return;
-      }
-
-      const confirmed = window.confirm('Czy na pewno chcesz usunąć to zgłoszenie nieobecności?');
-      if (!confirmed) return;
-
-      try {
-        await scheduleAPI.deleteTimeOff(timeOffId);
-        showNotification('Zgłoszenie zostało usunięte.', 'success');
-        handleSuccess();
-      } catch (err) {
-        console.error('Błąd podczas usuwania urlopu:', err);
-        showNotification('Błąd podczas usuwania zgłoszenia.', 'error');
-      }
-    },
-    [handleSuccess, showNotification]
-  );
+  }, []);
 
   useEffect(() => {
-    if (!canLoad) return;
+    if (canLoad) {
+      void loadData();
+    }
+  }, [canLoad, loadData]);
 
-    (async () => {
-      await fetchScheduleData();
-    })();
-  }, [canLoad, fetchScheduleData]);
+  const handleDeleteRequest = (id: number, status: TimeOff['status']) => {
+    if (status !== 'pending') {
+      showNotification('Można usunąć tylko wnioski w statusie pending.', 'info');
+      return;
+    }
+    setDeleteId(id);
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteId) return;
+
+    try {
+      await scheduleAPI.deleteTimeOff(deleteId);
+      showNotification('Wniosek usunięty.', 'success');
+      setConfirmDeleteOpen(false);
+      setDeleteId(null);
+      void loadData();
+    } catch {
+      setErrorMessage('Nie udało się usunąć wniosku.');
+      setErrorModalOpen(true);
+    }
+  };
 
   if (!isEmployee) {
-    return <div style={{ padding: 20, color: 'red' }}>Strona dostępna tylko dla pracownika.</div>;
+    return <div style={{ padding: 20 }}>Dostęp tylko dla pracownika.</div>;
   }
 
   if (pageState === 'loading') {
-    return <div style={{ padding: 20 }}>Ładowanie Twojego grafiku...</div>;
-  }
-
-  if (pageState === 'error') {
-    return (
-      <div style={{ padding: 20, color: 'red' }}>
-        Błąd: {error ?? 'Wystąpił nieznany błąd.'}{' '}
-        <button type="button" onClick={() => void fetchScheduleData()} style={{ marginLeft: 10, cursor: 'pointer' }}>
-          Spróbuj ponownie
-        </button>
-      </div>
-    );
+    return <div style={{ padding: 20 }}>Ładowanie…</div>;
   }
 
   return (
     <div style={{ padding: 20 }}>
-      <h1>
-        Mój Grafik{employeeData ? ` (${employeeData.first_name} ${employeeData.last_name})` : ''}
-      </h1>
+      <h1>Mój grafik</h1>
 
-      <p>
-        Tutaj możesz przeglądać swoje standardowe godziny pracy oraz zarządzać zgłoszonymi urlopami i nieobecnościami.
-      </p>
-
-      <h2 style={{ marginTop: 30 }}>Tygodniowa Dostępność</h2>
-      {employeeData ? (
+      {employeeData && (
         <ScheduleEditor
           employeeId={employeeData.id}
-          //najważniejsze: bierzemy grafik z /employees/{id}/schedule/
           initialSchedule={scheduleEntries}
-          onSuccess={handleSuccess}
           isManager={false}
+          onSuccess={loadData}
         />
-      ) : (
-        <p>Brak danych pracownika.</p>
       )}
 
-      <h2 style={{ marginTop: 30 }}>Urlopy i Nieobecności</h2>
-      <button
-        type="button"
-        onClick={() => {
-          setIsTimeOffModalOpen(true);
-          setTimeOffToEdit(undefined);
-        }}
-        style={{
-          marginBottom: 15,
-          padding: '10px 15px',
-          backgroundColor: '#dc3545',
-          color: 'white',
-          border: 'none',
-          cursor: 'pointer',
-          borderRadius: 8,
-          fontWeight: 700,
-        }}
-      >
-        + Zgłoś Nową Nieobecność
-      </button>
+      <h2 style={{ marginTop: 30 }}>Urlopy</h2>
 
-      <div style={{ marginTop: 10 }}>
-        {timeOffList.length === 0 ? (
-          <p>Brak zgłoszonych urlopów.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #ccc' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Od</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Do</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Powód</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Status</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Akcje</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeOffList.map((item) => (
-                <tr key={item.id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '8px' }}>{item.date_from}</td>
-                  <td style={{ padding: '8px' }}>{item.date_to}</td>
-                  <td style={{ padding: '8px' }}>{item.reason}</td>
-                  <td
-                    style={{
-                      padding: '8px',
-                      color: item.status === 'approved' ? 'green' : item.status === 'rejected' ? 'red' : 'orange',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.02em',
-                    }}
+      <button onClick={() => setTimeOffModalOpen(true)}>+ Zgłoś urlop</button>
+
+      {timeOffList.length === 0 ? (
+        <p>Brak zgłoszeń.</p>
+      ) : (
+        <table>
+          <tbody>
+            {timeOffList.map((t) => (
+              <tr key={t.id}>
+                <td>{t.date_from}</td>
+                <td>{t.date_to}</td>
+                <td>{t.status}</td>
+                <td>
+                  <button
+                    disabled={t.status !== 'pending'}
+                    onClick={() => handleDeleteRequest(t.id, t.status)}
                   >
-                    {item.status}
-                  </td>
-                  <td style={{ padding: '8px' }}>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteTimeOff(item.id, item.status)}
-                      disabled={item.status !== 'pending'}
-                      style={{
-                        color: item.status !== 'pending' ? '#999' : 'red',
-                        border: 'none',
-                        background: 'none',
-                        cursor: item.status !== 'pending' ? 'not-allowed' : 'pointer',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {item.status !== 'pending' ? '---' : 'Usuń'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    Usuń
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       {employeeData && (
         <TimeOffForm
-          isOpen={isTimeOffModalOpen}
-          onClose={() => setIsTimeOffModalOpen(false)}
-          onSuccess={handleSuccess}
+          isOpen={timeOffModalOpen}
+          onClose={() => setTimeOffModalOpen(false)}
+          onSuccess={loadData}
           employeeId={employeeData.id}
           isManager={false}
-          timeOffToEdit={timeOffToEdit}
         />
       )}
+
+      <Modal
+        isOpen={confirmDeleteOpen}
+        onClose={() => setConfirmDeleteOpen(false)}
+        title="Potwierdź"
+      >
+        <p>Czy na pewno usunąć wniosek?</p>
+        <button onClick={confirmDelete}>Usuń</button>
+        <button onClick={() => setConfirmDeleteOpen(false)}>Anuluj</button>
+      </Modal>
+
+      <Modal
+        isOpen={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        title="Wystąpił błąd"
+      >
+        <p>{errorMessage}</p>
+      </Modal>
     </div>
   );
 };

@@ -1,7 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import type { ReactElement } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import type { UserRole } from '../../types';
+import { Modal } from '../UI/Modal';
 
 interface NavItem {
   label: string;
@@ -12,6 +14,8 @@ interface NavItem {
 export function Sidebar(): ReactElement | null {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
 
   if (!user) {
     return null;
@@ -24,11 +28,18 @@ export function Sidebar(): ReactElement | null {
       roles: ['manager', 'employee', 'client'],
     },
 
-    // ✅ NOWE: Profil (manager)
+    // Profil (manager)
     {
       label: 'Profil',
       path: '/profile',
       roles: ['manager'],
+    },
+
+    // ✅ Profil (employee)
+    {
+      label: 'Mój profil',
+      path: '/my-profile',
+      roles: ['employee'],
     },
 
     {
@@ -58,7 +69,7 @@ export function Sidebar(): ReactElement | null {
       roles: ['employee'],
     },
 
-    // ✅ JEDEN wpis /services (etykieta zależna od roli)
+    // /services zależne od roli
     {
       label: user.role === 'client' ? 'Usługi' : 'Usługi (zarządzanie)',
       path: '/services',
@@ -125,9 +136,6 @@ export function Sidebar(): ReactElement | null {
   ];
 
   const handleLogout = async (): Promise<void> => {
-    const ok = window.confirm('Czy na pewno chcesz się wylogować?');
-    if (!ok) return;
-
     await logout();
     navigate('/login', { replace: true });
   };
@@ -167,7 +175,7 @@ export function Sidebar(): ReactElement | null {
       </nav>
 
       <button
-        onClick={() => void handleLogout()}
+        onClick={() => setLogoutModalOpen(true)}
         style={{
           marginTop: 20,
           padding: '10px 14px',
@@ -181,6 +189,28 @@ export function Sidebar(): ReactElement | null {
       >
         Wyloguj
       </button>
+
+      <Modal isOpen={logoutModalOpen} onClose={() => setLogoutModalOpen(false)} title="Wylogowanie">
+        <div style={{ padding: 12 }}>
+          <p style={{ marginTop: 0 }}>Czy na pewno chcesz się wylogować?</p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+            <button
+              type="button"
+              onClick={() => setLogoutModalOpen(false)}
+              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
+            >
+              Wyloguj
+            </button>
+          </div>
+        </div>
+      </Modal>
     </aside>
   );
 }

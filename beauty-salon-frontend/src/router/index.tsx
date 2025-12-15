@@ -21,6 +21,7 @@ import { ServicesCatalogPage } from '../pages/ServicesCatalogPage';
 import { BookAppointmentPage } from '../pages/BookAppointmentPage';
 
 import { MySchedulePage } from '../pages/Employee/MySchedulePage';
+import { MyProfilePage } from '../pages/Employee/MyProfilePage';
 
 import { AppointmentsManagementPage } from '../pages/Manager/AppointmentsManagementPage';
 import { AppointmentsCalendarPage } from '../pages/Manager/AppointmentsCalendarPage';
@@ -92,11 +93,21 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
         ),
       },
 
-      // ✅ My appointments
+      // ✅ PROFIL (employee)
+      {
+        path: 'my-profile',
+        element: (
+          <ProtectedRoute allowedRoles={['employee']}>
+            <MyProfilePage />
+          </ProtectedRoute>
+        ),
+      },
+
+      // ✅ My appointments (client + employee)
       {
         path: 'my-appointments',
         element: (
-          <ProtectedRoute allowedRoles={['client']}>
+          <ProtectedRoute allowedRoles={['client', 'employee']}>
             <MyAppointmentsPage />
           </ProtectedRoute>
         ),
