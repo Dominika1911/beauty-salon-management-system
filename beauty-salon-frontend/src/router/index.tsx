@@ -7,7 +7,7 @@ import { ProtectedRoute } from '../components/ProtectedRoute';
 import { LoginPage } from '../pages/LoginPage';
 import { useAuth } from '../hooks/useAuth';
 
-import { PublicHomePage } from '../pages/PublicHomePage';
+import PublicHomePage from '../pages/PublicHomePage';
 
 import { DashboardPage } from '../pages/DashboardPage';
 

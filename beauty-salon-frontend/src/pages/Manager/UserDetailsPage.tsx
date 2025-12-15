@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usersAPI } from '../../api/users';
-import type { UserDetail } from '../../types';
+import type { User, UserAccountStatus } from '../../types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -30,12 +30,13 @@ export function UserDetailsPage(): ReactElement {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<UserDetail | null>(null);
+  // backend w detail może zwracać dodatkowe pola (np. account_status, last_login), więc typ rozszerzamy lokalnie
+  type UserDetails = User & { account_status?: UserAccountStatus; last_login?: string | null };
+
+  const [user, setUser] = useState<UserDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [confirmToggle, setConfirmToggle] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
-    null
-  );
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const userId = Number(id);
 
@@ -68,7 +69,7 @@ export function UserDetailsPage(): ReactElement {
     setConfirmToggle(false);
   };
 
-  const confirmToggleActive = async (): Promise<void> => {
+  const confirmToggleActiveNow = async (): Promise<void> => {
     if (!user) return;
     const next = !user.is_active;
 
@@ -85,13 +86,8 @@ export function UserDetailsPage(): ReactElement {
     }
   };
 
-  if (loading) {
-    return <div style={{ padding: 20 }}>Ładowanie…</div>;
-  }
-
-  if (!user) {
-    return <div style={{ padding: 20 }}>Brak danych użytkownika.</div>;
-  }
+  if (loading) return <div style={{ padding: 20 }}>Ładowanie…</div>;
+  if (!user) return <div style={{ padding: 20 }}>Brak danych użytkownika.</div>;
 
   return (
     <div style={{ padding: 20, maxWidth: 900 }}>
@@ -138,13 +134,13 @@ export function UserDetailsPage(): ReactElement {
             <span>{user.is_active ? 'TAK' : 'NIE'}</span>
 
             <strong>Status konta</strong>
-            <span>{user.account_status}</span>
+            <span>{user.account_status ?? '—'}</span>
 
             <strong>Utworzono</strong>
             <span>{formatDateTime(user.created_at)}</span>
 
             <strong>Ostatnie logowanie</strong>
-            <span>{formatDateTime(user.last_login)}</span>
+            <span>{formatDateTime(user.last_login ?? null)}</span>
           </div>
 
           <hr style={{ margin: '20px 0' }} />
@@ -154,10 +150,7 @@ export function UserDetailsPage(): ReactElement {
               {user.is_active ? 'Dezaktywuj' : 'Aktywuj'}
             </button>
 
-            <button
-              style={beautyButtonStyle}
-              onClick={() => navigate(`/users`)}
-            >
+            <button style={beautyButtonStyle} onClick={() => navigate('/users')}>
               Powrót do listy
             </button>
           </div>
@@ -167,20 +160,21 @@ export function UserDetailsPage(): ReactElement {
               style={{
                 marginTop: 14,
                 padding: 12,
-                borderRadius: 10,
-                border: '1px solid #e6a1ad',
-                backgroundColor: '#ffe6ec',
+                borderRadius: 12,
+                border: '1px solid #f2a6b3',
+                background: '#fff1f3',
               }}
             >
-              <strong>
-                Potwierdź: {user.is_active ? 'DEZAKTYWUJ' : 'AKTYWUJ'} użytkownika
-              </strong>
-              <div style={{ marginTop: 10, display: 'flex', gap: 10 }}>
-                <button style={beautyButtonSecondaryStyle} onClick={cancelToggleActive}>
-                  Wróć
+              <p style={{ marginTop: 0 }}>
+                Potwierdź: {user.is_active ? 'DEZAKTYWUJ' : 'AKTYWUJ'} użytkownika <strong>{user.email}</strong>
+              </p>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button style={beautyButtonDangerStyle} onClick={() => void confirmToggleActiveNow()}>
+                  Potwierdź
                 </button>
-                <button style={beautyButtonDangerStyle} onClick={() => void confirmToggleActive()}>
-                  Tak
+                <button style={beautyButtonSecondaryStyle} onClick={cancelToggleActive}>
+                  Anuluj
                 </button>
               </div>
             </div>

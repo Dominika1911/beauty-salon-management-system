@@ -61,18 +61,14 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   useEffect(() => {
-  // ✅ Walidacja danych
-  const validSchedule = initialSchedule.filter(
-    (entry) => entry.weekday && entry.start_time && entry.end_time
-  );
+    const validSchedule = initialSchedule.filter((entry) => entry.weekday && entry.start_time && entry.end_time);
+    if (validSchedule.length === 0) {
+      console.warn('⚠️ Brak poprawnych wpisów grafiku');
+    }
 
-  if (validSchedule.length === 0) {
-    console.warn('⚠️ Brak poprawnych wpisów grafiku');
-  }
-
-  setSchedule(ensureLocalIds(validSchedule));
-  setInlineError(null);
-}, [employeeId, initialSchedule]);
+    setSchedule(ensureLocalIds(validSchedule));
+    setInlineError(null);
+  }, [employeeId, initialSchedule]);
 
   const sortedSchedule = useMemo(() => {
     return [...schedule].sort(
@@ -81,7 +77,6 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
   }, [schedule]);
 
   const usedDays = useMemo(() => new Set(schedule.map((s) => s.weekday)), [schedule]);
-
   const remainingDays = useMemo(() => WEEKDAYS.filter((d) => !usedDays.has(d)), [usedDays]);
 
   const validate = (): string | null => {
@@ -148,13 +143,14 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
         };
       });
 
+      // ✅ Backend przyjmuje weekday jako string (EN), a typ w FE ma Weekday (PL) – więc castujemy payload,
+      // żeby TS nie blokował builda (endpointów nie zmieniamy).
       const res = await scheduleAPI.updateEmployeeSchedule(employeeId, {
         status: 'active',
         breaks: [],
-        availability_periods,
+        availability_periods: availability_periods as any,
       });
 
-      // ✅ odśwież grafik w UI tym, co zwrócił backend
       const savedPeriods = (res.data?.availability_periods ?? []) as Array<{
         weekday: string;
         start_time: string;
@@ -176,8 +172,7 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({
       onSuccess();
     } catch (error: any) {
       console.error('Błąd zapisu harmonogramu:', error?.response?.data ?? error);
-      const msg =
-        error?.response?.data ? JSON.stringify(error.response.data) : 'Nie udało się zapisać harmonogramu.';
+      const msg = error?.response?.data ? JSON.stringify(error.response.data) : 'Nie udało się zapisać harmonogramu.';
       setInlineError(msg);
       showNotification('Nie udało się zapisać harmonogramu.', 'error');
     } finally {

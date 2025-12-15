@@ -2,6 +2,15 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { servicesAPI } from '../api/services';
 import type { Service } from '../types';
 
+function formatDurationToMinutes(duration: string): string {
+  const parts = duration.split(':').map((x) => Number(x));
+  if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+    const totalMinutes = parts[0] * 60 + parts[1];
+    return `${totalMinutes} min`;
+  }
+  return duration;
+}
+
 export function ServicesCatalogPage(): ReactElement {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -50,14 +59,12 @@ export function ServicesCatalogPage(): ReactElement {
           >
             <h3 style={{ marginBottom: 8 }}>{s.name}</h3>
 
-            {s.description && (
-              <p style={{ marginBottom: 12, color: '#555' }}>{s.description}</p>
-            )}
+            {s.description && <p style={{ marginBottom: 12, color: '#555' }}>{s.description}</p>}
 
             <p>
-               {s.duration_minutes} min
+              {formatDurationToMinutes(s.duration)}
               <br />
-               {s.price} zł
+              {s.price} zł
             </p>
           </div>
         ))}

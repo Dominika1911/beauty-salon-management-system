@@ -1,4 +1,4 @@
-import React, { type CSSProperties, type ReactElement } from 'react';
+import { type CSSProperties, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
@@ -78,92 +78,74 @@ const btnBase: CSSProperties = {
   display: 'inline-block',
   padding: '12px 18px',
   borderRadius: 12,
-  border: '1px solid rgba(233, 30, 99, 0.28)',
-  background: '#ffffff',
-  color: '#5a2a35',
-  textDecoration: 'none',
   fontWeight: 900,
+  textDecoration: 'none',
+  border: '1px solid rgba(233, 30, 99, 0.20)',
 };
 
 const btnPrimary: CSSProperties = {
   ...btnBase,
-  background: '#f8c1cc',
-  borderColor: 'rgba(233, 30, 99, 0.35)',
+  background: '#e91e63',
+  color: '#fff',
 };
 
-const footer: CSSProperties = {
-  marginTop: 22,
-  paddingTop: 14,
-  borderTop: '1px solid rgba(233, 30, 99, 0.15)',
-  color: '#5a2a35',
-  opacity: 0.7,
-  fontSize: 13,
+const btnSecondary: CSSProperties = {
+  ...btnBase,
+  background: '#ffffff',
+  color: '#8b2c3b',
 };
 
 export function PublicHomePage(): ReactElement {
-  const { user } = useAuth();
-
-  // Panel jest pod /dashboard (a jak nie zalogowany -> /login)
-  const panelPath = user ? '/dashboard' : '/login';
-  const panelLabel = user ? 'Przejdź do panelu' : 'Zaloguj się do systemu';
+  const { isAuthenticated, user } = useAuth();
 
   return (
     <div style={pageWrap}>
       <div style={card}>
         <div style={header}>
-          <h1 style={title}>Beauty Salon</h1>
-          <p style={subtitle}>System obsługi salonu kosmetycznego (rezerwacje, grafik, klienci, usługi).</p>
+          <h1 style={title}>Salon Kosmetyczny</h1>
+          <p style={subtitle}>Rezerwuj wizyty, zarządzaj grafikiem i pracą salonu w jednym miejscu.</p>
         </div>
 
         <div style={body}>
-          <h2 style={sectionTitle}>Dla kogo jest system?</h2>
+          <h2 style={sectionTitle}>Co możesz tutaj zrobić?</h2>
+
           <div style={grid3}>
             <div style={box}>
-              <h3 style={boxTitle}>Klienci</h3>
-              <p style={boxText}>Rezerwacja wizyt online, podgląd historii wizyt oraz dostęp do oferty salonu.</p>
+              <h3 style={boxTitle}>Rezerwacje</h3>
+              <p style={boxText}>Klienci mogą przeglądać usługi i rezerwować wizyty.</p>
             </div>
 
             <div style={box}>
               <h3 style={boxTitle}>Pracownicy</h3>
-              <p style={boxText}>Dostęp do grafiku i listy wizyt oraz podstawowych danych potrzebnych do obsługi klientów.</p>
+              <p style={boxText}>Pracownik widzi swoje wizyty i dostępność.</p>
             </div>
 
             <div style={box}>
-              <h3 style={boxTitle}>Administrator</h3>
-              <p style={boxText}>
-                Zarządzanie klientami, pracownikami, usługami, rezerwacjami, raportami, ustawieniami i logami.
-              </p>
-            </div>
-          </div>
-
-          <h2 style={{ ...sectionTitle, marginTop: 22 }}>Jak to działa?</h2>
-          <div style={grid3}>
-            <div style={box}>
-              <h3 style={boxTitle}>1. Logowanie</h3>
-              <p style={boxText}>Użytkownik loguje się do systemu i uzyskuje dostęp zgodny ze swoją rolą.</p>
-            </div>
-
-            <div style={box}>
-              <h3 style={boxTitle}>2. Rezerwacje i obsługa</h3>
-              <p style={boxText}>Umawianie wizyt, prowadzenie grafiku i obsługa klientów odbywa się w jednym miejscu.</p>
-            </div>
-
-            <div style={box}>
-              <h3 style={boxTitle}>3. Raporty i kontrola</h3>
-              <p style={boxText}>Administrator ma dostęp do statystyk, raportów i logów operacji w systemie.</p>
+              <h3 style={boxTitle}>Manager</h3>
+              <p style={boxText}>Manager zarządza usługami, grafikiem i klientami.</p>
             </div>
           </div>
 
           <div style={actions}>
-            <Link to={panelPath} style={btnPrimary}>
-              {panelLabel}
-            </Link>
+            {!isAuthenticated ? (
+              <Link to="/login" style={btnPrimary}>
+                Zaloguj się
+              </Link>
+            ) : (
+              <Link to="/dashboard" style={btnPrimary}>
+                Przejdź do panelu
+              </Link>
+            )}
 
-            <span style={{ color: '#5a2a35', opacity: 0.75, fontSize: 13 }}>Panel dostępny po zalogowaniu</span>
-          </div>
-
-          <div style={footer}>
-            <div>Frontend: React + TypeScript • Backend: Django REST Framework • DB: PostgreSQL</div>
+            {isAuthenticated && user ? (
+              <span style={{ color: '#5a2a35', opacity: 0.85 }}>
+                Zalogowano jako: <strong>{user.email}</strong>
+              </span>
+            ) : (
+              <Link to="/services" style={btnSecondary}>
+                Zobacz usługi
+              </Link>
+            )}
           </div>
         </div>
       </div>

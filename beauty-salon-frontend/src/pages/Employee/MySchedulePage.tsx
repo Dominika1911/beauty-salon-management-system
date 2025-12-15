@@ -1,138 +1,92 @@
+// src/pages/Employee/MySchedulePage.tsx
+
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import type { Employee, TimeOff, ScheduleEntry, ScheduleDetail } from '../../types';
+import type { Employee, TimeOff, ScheduleEntry, Weekday } from '../../types';
 import { employeesAPI } from '../../api/employees';
 import { scheduleAPI } from '../../api/schedule';
 import { ScheduleEditor } from '../../components/Schedule/ScheduleEditor';
 import { TimeOffForm } from '../../components/Schedule/TimeOffForm';
-import { Modal } from '../../components/UI/Modal';
 import { useNotification } from '../../components/UI/Notification';
 
-type PageState = 'idle' | 'loading' | 'ready';
+type PageState = 'idle' | 'loading' | 'ready' | 'error';
 
-function extractScheduleEntries(data: unknown): ScheduleEntry[] {
-  if (Array.isArray(data)) return data as ScheduleEntry[];
-
-  if (data && typeof data === 'object' && 'availability_periods' in (data as Record<string, unknown>)) {
-    const periods = (data as ScheduleDetail).availability_periods;
-    return Array.isArray(periods) ? periods : [];
-  }
-
-  return [];
-}
+const EN_TO_PL_WEEKDAY: Record<string, Weekday> = {
+  Monday: 'Poniedziałek',
+  Tuesday: 'Wtorek',
+  Wednesday: 'Środa',
+  Thursday: 'Czwartek',
+  Friday: 'Piątek',
+  Saturday: 'Sobota',
+  Sunday: 'Niedziela',
+};
 
 export const MySchedulePage: React.FC = (): ReactElement => {
   const { isEmployee } = useAuth();
   const { showNotification } = useNotification();
 
   const [employeeData, setEmployeeData] = useState<Employee | null>(null);
-
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
-  const [scheduleError, setScheduleError] = useState<string | null>(null);
-
   const [timeOffList, setTimeOffList] = useState<TimeOff[]>([]);
-  const [timeOffError, setTimeOffError] = useState<string | null>(null);
-
   const [pageState, setPageState] = useState<PageState>('idle');
+  const [error, setError] = useState<string | null>(null);
 
   const [isTimeOffModalOpen, setIsTimeOffModalOpen] = useState<boolean>(false);
   const [timeOffToEdit, setTimeOffToEdit] = useState<TimeOff | undefined>(undefined);
-
-  // błędy krytyczne (tylko gdy nie da się nawet pobrać employee/me lub przy akcjach)
-  const [isErrorModalOpen, setIsErrorModalOpen] = useState<boolean>(false);
-  const [errorModalMessage, setErrorModalMessage] = useState<string>('');
-
-  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState<boolean>(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   const canLoad = useMemo(() => Boolean(isEmployee), [isEmployee]);
 
   const fetchScheduleData = useCallback(async (): Promise<void> => {
     if (!isEmployee) return;
 
-    setPageState('loading');
-    setScheduleError(null);
-    setTimeOffError(null);
-
-    // 1) employee/me – krytyczne
-    let employee: Employee;
     try {
+      setPageState('loading');
+      setError(null);
+
+      // 1) dane pracownika
       const empResponse = await employeesAPI.me();
-      employee = empResponse.data;
+      const employee = empResponse.data;
+
+      // 2) grafik pracownika
+      const scheduleResponse = await scheduleAPI.getEmployeeSchedule(employee.id);
+
+      const rawPeriods = (scheduleResponse.data?.availability_periods ?? []) as Array<{
+        weekday: string;
+        start_time: string;
+        end_time: string;
+        id?: number;
+      }>;
+
+      const periods: ScheduleEntry[] = rawPeriods
+        .filter((p) => Boolean(p.weekday && p.start_time && p.end_time))
+        .map((p, idx) => ({
+          id: (p.id ?? Number(`${Date.now()}${idx}`)) as any,
+          weekday: EN_TO_PL_WEEKDAY[p.weekday] ?? (p.weekday as any),
+          start_time: (p.start_time ?? '').substring(0, 5),
+          end_time: (p.end_time ?? '').substring(0, 5),
+        }));
+
+      // 3) urlopy
+      // ✅ listTimeOff przyjmuje params object (a nie number).
+      // Dla pracownika backend zwykle zwraca "moje" wpisy bez filtra employee=...
+      const timeOffResponse = await scheduleAPI.listTimeOff({
+        ordering: '-date_from',
+        page_size: 100,
+      });
+
       setEmployeeData(employee);
+      setScheduleEntries(periods);
+      setTimeOffList(timeOffResponse.data.results ?? []);
+      setPageState('ready');
     } catch (err) {
-      console.error('employeesAPI.me error:', err);
+      console.error('Błąd pobierania danych grafiku:', err);
       setEmployeeData(null);
       setScheduleEntries([]);
       setTimeOffList([]);
-
-      setErrorModalMessage('Nie udało się pobrać danych pracownika (employees/me).');
-      setIsErrorModalOpen(true);
-      showNotification('Nie udało się pobrać profilu pracownika.', 'error');
-
-      setPageState('ready');
-      return;
+      setError('Nie udało się załadować grafiku i urlopów. Sprawdź status backendu.');
+      setPageState('error');
+      showNotification('Nie udało się pobrać danych grafiku.', 'error');
     }
-
-    // 2) Grafik – jeśli backend wywala 500, NIE blokujemy strony (bez modala na starcie)
-    const schedulePromise = (async (): Promise<boolean> => {
-      try {
-        const res = await scheduleAPI.getEmployeeSchedule(employee.id);
-        setScheduleEntries(extractScheduleEntries(res.data));
-        setScheduleError(null);
-        return true;
-      } catch (err1) {
-        console.error('getEmployeeSchedule error:', err1);
-
-        // fallback: /schedules/?employee={id}
-        try {
-          const res2 = await scheduleAPI.list({ employee: employee.id, ordering: '-id', page_size: 1 });
-          const first = res2.data.results?.[0];
-          if (first) {
-            setScheduleEntries(extractScheduleEntries(first));
-            setScheduleError(null);
-            return true;
-          }
-
-          setScheduleEntries([]);
-          setScheduleError('Nie udało się pobrać grafiku (brak danych).');
-          return false;
-        } catch (err2) {
-          console.error('schedulesAPI.list fallback error:', err2);
-          setScheduleEntries([]);
-          // Tu w logach widać 500 – to backend. Nie spamujemy modalem.
-          setScheduleError('Nie udało się pobrać grafiku (błąd serwera).');
-          return false;
-        }
-      }
-    })();
-
-    // 3) Urlopy – niezależnie
-    const timeOffPromise = scheduleAPI
-      .listTimeOff({ employee: employee.id, ordering: '-date_from' })
-      .then((res) => {
-        setTimeOffList(res.data.results ?? []);
-        setTimeOffError(null);
-        return true;
-      })
-      .catch((err) => {
-        console.error('listTimeOff error:', err);
-        setTimeOffList([]);
-        setTimeOffError('Nie udało się pobrać urlopów.');
-        return false;
-      });
-
-    const [scheduleOk, timeOffOk] = await Promise.all([schedulePromise, timeOffPromise]);
-
-    // toast informacyjny (bez modala)
-    if (!scheduleOk) {
-      showNotification('Nie udało się pobrać grafiku (backend 500).', 'error');
-    }
-    if (!timeOffOk) {
-      showNotification('Nie udało się pobrać urlopów.', 'error');
-    }
-
-    setPageState('ready');
   }, [isEmployee, showNotification]);
 
   const handleSuccess = useCallback(() => {
@@ -141,34 +95,27 @@ export const MySchedulePage: React.FC = (): ReactElement => {
     void fetchScheduleData();
   }, [fetchScheduleData]);
 
-  const requestDeleteTimeOff = useCallback(
-    (timeOffId: number, status: TimeOff['status']) => {
+  const handleDeleteTimeOff = useCallback(
+    async (timeOffId: number, status: TimeOff['status']) => {
       if (status !== 'pending') {
         showNotification('Możesz usunąć tylko zgłoszenia w statusie "pending".', 'info');
         return;
       }
-      setPendingDeleteId(timeOffId);
-      setIsConfirmDeleteOpen(true);
+
+      const confirmed = window.confirm('Czy na pewno chcesz usunąć to zgłoszenie nieobecności?');
+      if (!confirmed) return;
+
+      try {
+        await scheduleAPI.deleteTimeOff(timeOffId);
+        showNotification('Zgłoszenie zostało usunięte.', 'success');
+        handleSuccess();
+      } catch (err) {
+        console.error('Błąd podczas usuwania urlopu:', err);
+        showNotification('Błąd podczas usuwania zgłoszenia.', 'error');
+      }
     },
-    [showNotification]
+    [handleSuccess, showNotification]
   );
-
-  const confirmDelete = useCallback(async (): Promise<void> => {
-    if (!pendingDeleteId) return;
-
-    try {
-      await scheduleAPI.deleteTimeOff(pendingDeleteId);
-      showNotification('Zgłoszenie zostało usunięte.', 'success');
-      setIsConfirmDeleteOpen(false);
-      setPendingDeleteId(null);
-      void fetchScheduleData();
-    } catch (err) {
-      console.error('deleteTimeOff error:', err);
-      setErrorModalMessage('Nie udało się usunąć zgłoszenia. Spróbuj ponownie.');
-      setIsErrorModalOpen(true);
-      showNotification('Błąd podczas usuwania zgłoszenia.', 'error');
-    }
-  }, [fetchScheduleData, pendingDeleteId, showNotification]);
 
   useEffect(() => {
     if (!canLoad) return;
@@ -183,48 +130,35 @@ export const MySchedulePage: React.FC = (): ReactElement => {
     return <div style={{ padding: 20 }}>Ładowanie Twojego grafiku...</div>;
   }
 
+  if (pageState === 'error') {
+    return (
+      <div style={{ padding: 20, color: 'red' }}>
+        Błąd: {error ?? 'Wystąpił nieznany błąd.'}{' '}
+        <button type="button" onClick={() => void fetchScheduleData()} style={{ marginLeft: 10, cursor: 'pointer' }}>
+          Spróbuj ponownie
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: 20 }}>
       <h1>
         Mój Grafik{employeeData ? ` (${employeeData.first_name} ${employeeData.last_name})` : ''}
       </h1>
 
-      <div style={{ marginTop: 8 }}>
-        <button
-          type="button"
-          onClick={() => void fetchScheduleData()}
-          style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer', fontWeight: 700 }}
-        >
-          Odśwież
-        </button>
-      </div>
-
-      <p style={{ marginTop: 10 }}>
+      <p>
         Tutaj możesz przeglądać swoje standardowe godziny pracy oraz zarządzać zgłoszonymi urlopami i nieobecnościami.
       </p>
 
       <h2 style={{ marginTop: 30 }}>Tygodniowa Dostępność</h2>
-
-      {scheduleError ? (
-        <div style={{ padding: 12, border: '1px solid #f3c4cc', borderRadius: 12, background: '#fff0f3', color: '#8b2c3b' }}>
-          <b>Grafik niedostępny.</b> {scheduleError}
-          <div style={{ marginTop: 8, fontSize: 13, color: '#5a2a35' }}>
-            (W konsoli widać HTTP 500 — to błąd backendu, nie frontu.)
-          </div>
-        </div>
-      ) : employeeData ? (
-        <ScheduleEditor
-          employeeId={employeeData.id}
-          initialSchedule={scheduleEntries}
-          onSuccess={handleSuccess}
-          isManager={false}
-        />
+      {employeeData ? (
+        <ScheduleEditor employeeId={employeeData.id} initialSchedule={scheduleEntries} onSuccess={handleSuccess} isManager={false} />
       ) : (
         <p>Brak danych pracownika.</p>
       )}
 
       <h2 style={{ marginTop: 30 }}>Urlopy i Nieobecności</h2>
-
       <button
         type="button"
         onClick={() => {
@@ -244,15 +178,6 @@ export const MySchedulePage: React.FC = (): ReactElement => {
       >
         + Zgłoś Nową Nieobecność
       </button>
-
-      {timeOffError && (
-        <div style={{ padding: 12, color: 'red' }}>
-          Błąd: {timeOffError}{' '}
-          <button type="button" onClick={() => void fetchScheduleData()} style={{ marginLeft: 10, cursor: 'pointer' }}>
-            Spróbuj ponownie
-          </button>
-        </div>
-      )}
 
       <div style={{ marginTop: 10 }}>
         {timeOffList.length === 0 ? (
@@ -288,7 +213,7 @@ export const MySchedulePage: React.FC = (): ReactElement => {
                   <td style={{ padding: '8px' }}>
                     <button
                       type="button"
-                      onClick={() => requestDeleteTimeOff(item.id, item.status)}
+                      onClick={() => void handleDeleteTimeOff(item.id, item.status)}
                       disabled={item.status !== 'pending'}
                       style={{
                         color: item.status !== 'pending' ? '#999' : 'red',
@@ -318,65 +243,6 @@ export const MySchedulePage: React.FC = (): ReactElement => {
           timeOffToEdit={timeOffToEdit}
         />
       )}
-
-      <Modal
-        isOpen={isConfirmDeleteOpen}
-        onClose={() => {
-          setIsConfirmDeleteOpen(false);
-          setPendingDeleteId(null);
-        }}
-        title="Potwierdź usunięcie"
-      >
-        <div style={{ padding: 12 }}>
-          <p style={{ marginTop: 0 }}>Czy na pewno chcesz usunąć to zgłoszenie nieobecności?</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={() => {
-                setIsConfirmDeleteOpen(false);
-                setPendingDeleteId(null);
-              }}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Anuluj
-            </button>
-            <button
-              type="button"
-              onClick={() => void confirmDelete()}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Usuń
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isErrorModalOpen} onClose={() => setIsErrorModalOpen(false)} title="Wystąpił błąd">
-        <div style={{ padding: 12 }}>
-          <p style={{ marginTop: 0, whiteSpace: 'pre-line' }}>{errorModalMessage}</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={() => {
-                setIsErrorModalOpen(false);
-                void fetchScheduleData();
-              }}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Spróbuj ponownie
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsErrorModalOpen(false)}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Zamknij
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 };
-
-export default MySchedulePage;

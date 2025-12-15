@@ -609,6 +609,32 @@ class AvailabilityPeriodSerializer(serializers.Serializer):
         error_messages={'invalid': 'Wymagany format czasu to HH:MM:SS.'}
     )
 
+    def to_representation(self, instance: Any) -> dict[str, str]:
+        """Bezpieczna serializacja danych z JSONField.
+
+        DRF przy serializacji dictów robi lookup po kluczach i rzuca KeyError, jeśli brakuje np. `weekday`.
+        W bazie mogą istnieć starsze wpisy zapisane z inną nazwą klucza (np. `day`, `week_day`, `day_of_week`).
+        """
+        if isinstance(instance, dict):
+            weekday_val = (
+                instance.get("weekday")
+                or instance.get("day")
+                or instance.get("week_day")
+                or instance.get("day_of_week")
+                or instance.get("weekday_display")
+                or ""
+            )
+            start_val = instance.get("start_time") or ""
+            end_val = instance.get("end_time") or ""
+            return {
+                "weekday": str(weekday_val),
+                "start_time": str(start_val),
+                "end_time": str(end_val),
+            }
+        return super().to_representation(instance)
+
+
+
     def validate(self, data: dict) -> dict:
         """Dodatkowa walidacja czasu."""
         # Walidacja, czy czas startu nie jest po czasie końca
