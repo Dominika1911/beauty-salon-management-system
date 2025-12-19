@@ -7,6 +7,9 @@ from django.db.models import Count, Q, Sum, QuerySet
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.http import HttpResponse
+from django.core.files.base import ContentFile
+from django.utils.text import slugify
 from rest_framework.request import Request
 from rest_framework.serializers import BaseSerializer
 
@@ -70,6 +73,8 @@ from .models import (
     StatsSnapshot,
 )
 
+
+
 # ============================================================================
 # IMPORTY SERIALIZERÓW
 # ============================================================================
@@ -127,7 +132,7 @@ from .serializers import (
     EmployeeStatisticsSerializer,
 )
 
-
+from .services.pdf_reports import render_statistics_pdf
 # ============================================================================
 # AUDIT LOG HELPER
 # ============================================================================
@@ -1415,6 +1420,71 @@ class ReportPDFViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self) -> QuerySet[ReportPDF]:
         return super().get_queryset()
+
+    @action(detail=False, methods=["post"], url_path="generate-statistics")
+    def generate_statistics(self, request: Request) -> HttpResponse:
+        """Generuje raport PDF statystyk i zapisuje go jako ReportPDF.
+
+        Dostęp: tylko manager (dziedziczy IsManager z viewsetu).
+        """
+        days_param = request.query_params.get("days", "30")
+        try:
+            days = int(days_param)
+        except ValueError:
+            days = 30
+
+        # Trzymamy się tego samego zakresu co /api/statistics/
+        today = timezone.localdate()
+        start_date = today - timedelta(days=days - 1)
+
+        # Re-użycie istniejącej logiki statystyk: ten sam request => te same dane
+        stats_response = StatisticsView().get(request)
+        if not isinstance(stats_response, Response):
+            return HttpResponse("Nie udało się wygenerować danych statystycznych.", status=500)
+
+        stats_data = stats_response.data if isinstance(stats_response.data, dict) else {}
+        pdf_bytes = render_statistics_pdf(
+            stats=stats_data,
+            date_from=start_date,
+            date_to=today,
+            generated_by=getattr(request.user, "email", str(request.user)),
+            days=days,
+        )
+
+        # Zapis w bazie + media (żeby raport był widoczny w /api/reports/ i UI /reports)
+        filename = slugify(f"statistics_{days}d_{today.isoformat()}") + ".pdf"
+        report = ReportPDF.objects.create(
+            type="custom",
+            title=f"Raport statystyk ({days} dni)",
+            date_from=start_date,
+            date_to=today,
+            generated_by=request.user,
+            parameters={"report": "statistics", "days": days},
+        )
+        report.file.save(filename, ContentFile(pdf_bytes), save=True)
+
+        # Audit log (wymaganie “logowanie operacji w bazie danych”)
+        try:
+            create_audit_log(
+                user=request.user,
+                type="report.generate",
+                entity_type="ReportPDF",
+                entity_id=report.id,
+                metadata={
+                    "report_type": "statistics",
+                    "days": days,
+                    "date_from": str(start_date),
+                    "date_to": str(today),
+                },
+            )
+        except Exception:
+            # audit log nie może blokować raportów
+            pass
+
+        resp = HttpResponse(pdf_bytes, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
 
 # ==================== AUDIT LOG & SYSTEM SETTINGS ====================
 

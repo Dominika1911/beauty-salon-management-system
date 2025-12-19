@@ -55,6 +55,14 @@ export const reportsAPI = {
     return res.data;
   },
 
+  generateStatisticsPdf: async (days: number): Promise<Blob> => {
+    const res = await api.post(ENDPOINTS.base + "generate-statistics/", null, {
+      params: { days },
+      responseType: "blob",
+    });
+    return res.data as Blob;
+  },
+
   // Backend zwraca file_path – w UI robimy link. Normalizujemy do URL absolutnego.
   mediaUrl: (filePath: string): string => buildAbsoluteUrl(filePath),
 };

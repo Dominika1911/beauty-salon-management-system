@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 import { getStatistics, type StatisticsResponse } from '@/shared/api/statistics';
+import { reportsAPI } from '@/shared/api/reports';
 import type { EmployeeStatisticsItem, ServiceStatisticsItem } from '@/shared/types';
 import { notify } from '@/shared/utils/notificationService';
 import { formatCurrencyPLN, formatDatePL, formatPercent } from '@/shared/utils/formatters';
@@ -68,6 +69,7 @@ export default function StatisticsPage(): ReactElement {
   const [days, setDays] = useState<Days>(30);
   const [data, setData] = useState<StatisticsResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [exporting, setExporting] = useState(false);
 
   const changeDays = (v: Days): void => {
     setDays(v);
@@ -99,10 +101,33 @@ export default function StatisticsPage(): ReactElement {
 
   const headerInfo = useMemo((): string => {
     if (!data) return '';
-    return `Okres: ostatnie ${data.period.days} dni (${formatDatePL(data.period.from)} – ${formatDatePL(data.period.to)})`;
+    return `Okres: ostatnie ${data.period.days} dni (${formatDatePL(data.period.from)} – ${formatDatePL(
+      data.period.to,
+    )})`;
   }, [data]);
 
   const summary = data?.summary ?? null;
+
+  const exportStatisticsPdf = async (): Promise<void> => {
+    try {
+      setExporting(true);
+
+      const blob = await reportsAPI.generateStatisticsPdf(days);
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report_statistics_${days}d.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      notify('Nie udało się wygenerować PDF.', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div style={{ padding: 30 }}>
@@ -132,11 +157,11 @@ export default function StatisticsPage(): ReactElement {
 
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={exportStatisticsPdf}
               style={{ ...beautyButtonSecondaryStyle, padding: '8px 12px', fontWeight: 800 }}
-              disabled={loading}
+              disabled={loading || exporting}
             >
-              Eksportuj do PDF
+              {exporting ? 'Generowanie PDF…' : 'Eksportuj do PDF'}
             </button>
           </div>
 
@@ -157,16 +182,28 @@ export default function StatisticsPage(): ReactElement {
               >
                 <div style={kpiCardStyle}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Wizyty</div>
-                  <div>Łącznie: <strong>{summary.total_appointments}</strong></div>
-                  <div>Ukończone: <strong>{summary.completed_appointments}</strong></div>
-                  <div>Anulowane: <strong>{summary.cancelled_appointments}</strong></div>
-                  <div>No-show: <strong>{summary.no_show_appointments}</strong></div>
+                  <div>
+                    Łącznie: <strong>{summary.total_appointments}</strong>
+                  </div>
+                  <div>
+                    Ukończone: <strong>{summary.completed_appointments}</strong>
+                  </div>
+                  <div>
+                    Anulowane: <strong>{summary.cancelled_appointments}</strong>
+                  </div>
+                  <div>
+                    No-show: <strong>{summary.no_show_appointments}</strong>
+                  </div>
                 </div>
 
                 <div style={kpiCardStyle}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Klienci</div>
-                  <div>Łącznie: <strong>{summary.total_clients}</strong></div>
-                  <div>Nowi: <strong>{summary.new_clients}</strong></div>
+                  <div>
+                    Łącznie: <strong>{summary.total_clients}</strong>
+                  </div>
+                  <div>
+                    Nowi: <strong>{summary.new_clients}</strong>
+                  </div>
                 </div>
 
                 <div style={kpiCardStyle}>
@@ -174,9 +211,7 @@ export default function StatisticsPage(): ReactElement {
                   <div>
                     Łącznie: <strong>{formatCurrencyPLN(summary.total_revenue)}</strong>
                   </div>
-                  <div style={{ ...beautyMutedTextStyle, marginTop: 8 }}>
-                    (wartość z backendu jako string)
-                  </div>
+                  <div style={{ ...beautyMutedTextStyle, marginTop: 8 }}>(wartość z backendu jako string)</div>
                 </div>
               </div>
 
