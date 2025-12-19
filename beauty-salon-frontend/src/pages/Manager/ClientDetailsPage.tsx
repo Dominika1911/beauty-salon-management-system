@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, type ReactElement, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { clientsAPI } from '@/shared/api/clients';
@@ -46,7 +46,7 @@ export function ClientDetailsPage(): ReactElement {
 
   const [confirmSoftDelete, setConfirmSoftDelete] = useState(false);
 
-  const textareaStyle: React.CSSProperties = {
+  const textareaStyle: CSSProperties = {
     ...beautyInputStyle,
     resize: 'vertical',
     minHeight: 110,

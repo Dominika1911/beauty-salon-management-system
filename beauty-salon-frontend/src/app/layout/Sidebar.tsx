@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import type { ReactElement, CSSProperties } from 'react';
 import { useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/shared/hooks/useAuth';
@@ -12,7 +12,7 @@ type NavItem = {
   type?: 'link' | 'header';
 };
 
-const baseLinkStyle = (isActive: boolean): React.CSSProperties => ({
+const baseLinkStyle = (isActive: boolean): CSSProperties => ({
   padding: '10px 14px',
   borderRadius: 8,
   textDecoration: 'none',
@@ -21,7 +21,7 @@ const baseLinkStyle = (isActive: boolean): React.CSSProperties => ({
   fontWeight: isActive ? 700 : 500,
 });
 
-const headerStyle: React.CSSProperties = {
+const headerStyle: CSSProperties = {
   marginTop: 14,
   marginBottom: 6,
   fontWeight: 800,

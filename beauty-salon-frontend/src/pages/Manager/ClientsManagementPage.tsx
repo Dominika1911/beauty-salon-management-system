@@ -4,6 +4,7 @@ import { clientsAPI } from '@/shared/api/clients';
 import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
 import { ClientFormModal } from '@/features/manager/components/ClientFormModal';
 import type { Client, PaginatedResponse } from '@/shared/types';
+import { formatPhonePL } from '@/shared/utils/formatters';
 
 import '@/styles/components/Table.css';
 import { useAuth } from '@/shared/hooks/useAuth';
@@ -130,7 +131,12 @@ export function ClientsManagementPage(): ReactElement {
         ),
       },
       { header: 'Email', key: 'email', width: '260px' },
-      { header: 'Telefon', key: 'phone', width: '160px' },
+      {
+        header: 'Telefon',
+        key: 'phone',
+        width: '160px',
+        render: (c) => formatPhonePL(c.phone),
+      },
       {
         header: 'Wizyty',
         key: 'visits_count',

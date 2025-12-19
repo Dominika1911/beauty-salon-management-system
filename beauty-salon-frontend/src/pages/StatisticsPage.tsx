@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 import { getStatistics, type StatisticsResponse } from '@/shared/api/statistics';
+import type { EmployeeStatisticsItem, ServiceStatisticsItem } from '@/shared/types';
 import { notify } from '@/shared/utils/notificationService';
+import { formatCurrencyPLN, formatDatePL, formatPercent } from '@/shared/utils/formatters';
 import {
   beautyButtonSecondaryStyle,
   beautyCardBodyStyle,
@@ -14,105 +16,35 @@ type Days = 7 | 30 | 90;
 
 interface DaysButtonProps {
   label: string;
-  value: Days;
   active: boolean;
-  onClick: (v: Days) => void;
+  onClick: () => void;
+  disabled: boolean;
 }
 
-function DaysButton({ label, value, active, onClick }: DaysButtonProps): ReactElement {
+const daysButtonStyle = (active: boolean): CSSProperties => ({
+  ...beautyButtonSecondaryStyle,
+  padding: '8px 12px',
+  fontWeight: 800,
+  backgroundColor: active ? '#ffffff' : '#fff5fa',
+  borderColor: active ? 'rgba(233, 30, 99, 0.35)' : 'rgba(233, 30, 99, 0.20)',
+  cursor: 'pointer',
+});
+
+const DaysButton: React.FC<DaysButtonProps> = ({ label, active, onClick, disabled }): ReactElement => {
   return (
-    <button
-      type="button"
-      onClick={() => onClick(value)}
-      style={{
-        ...(beautyButtonSecondaryStyle as CSSProperties),
-        padding: '6px 10px',
-        borderRadius: 10,
-        fontWeight: 800,
-        border: active ? '2px solid #d36aa0' : '1px solid rgba(211,106,160,0.35)',
-        background: active ? 'rgba(211,106,160,0.08)' : '#fff',
-      }}
-    >
+    <button onClick={onClick} type="button" style={daysButtonStyle(active)} disabled={disabled}>
       {label}
     </button>
   );
-}
-
-type DeltaBlockNumberLike = { current: unknown; previous: unknown; delta: unknown; delta_pct: number | null };
-type DeltaBlockMoneyLike = { current: unknown; previous: unknown; delta: unknown; delta_pct: number | null };
-
-function toNumber(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-
-function formatPLN(value: unknown): string {
-  const n = toNumber(value);
-  return new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(n ?? 0);
-}
-
-function formatSignedInt(value: unknown): string {
-  const n = toNumber(value);
-  if (n === null) return '0';
-  const i = Math.trunc(n);
-  return `${i > 0 ? '+' : ''}${i}`;
-}
-
-function formatSignedMoney(value: unknown): string {
-  const n = toNumber(value) ?? 0;
-  const signed = n > 0 ? '+' : '';
-  return `${signed}${formatPLN(n)}`;
-}
-
-function formatPct(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—';
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
-}
-
-function formatPercent(value: unknown, digits = 2): string {
-  const n = toNumber(value);
-  if (n === null) return '—';
-  return `${n.toFixed(digits)}%`;
-}
-
-function DeltaLine({
-  money,
-  block,
-}: {
-  money: boolean;
-  block: (DeltaBlockNumberLike | DeltaBlockMoneyLike) | undefined;
-}): ReactElement | null {
-  if (!block) return null;
-
-  const deltaPct = block.delta_pct;
-  const pctText = formatPct(deltaPct);
-
-  const deltaNum = toNumber(block.delta) ?? 0;
-
-  const deltaText = money ? formatSignedMoney(block.delta) : formatSignedInt(block.delta);
-
-  const color = deltaNum > 0 ? '#0f8a3a' : deltaNum < 0 ? '#b00020' : 'rgba(0,0,0,0.55)';
-
-  return (
-    <div style={{ marginTop: 8, fontSize: 12, color, fontWeight: 700 }}>
-      {deltaText} <span style={{ fontWeight: 600, color: 'rgba(0,0,0,0.55)' }}>•</span> {pctText}
-    </div>
-  );
-}
-
-const pageWrapStyle: CSSProperties = {
-  padding: 18,
 };
 
+// formattery przeniesione do shared/utils/formatters
+
 const kpiCardStyle: CSSProperties = {
-  background: '#fff',
-  borderRadius: 14,
-  border: '1px solid rgba(211,106,160,0.20)',
   padding: 14,
+  borderRadius: 12,
+  border: '1px solid rgba(233, 30, 99, 0.20)',
+  background: '#fff5fa',
 };
 
 const tableStyle: CSSProperties = {
@@ -121,139 +53,130 @@ const tableStyle: CSSProperties = {
 };
 
 const thStyle: CSSProperties = {
-  textAlign: 'left',
-  fontSize: 12,
   padding: '10px 8px',
-  borderBottom: '1px solid rgba(211,106,160,0.25)',
-  color: 'rgba(0,0,0,0.7)',
+  textAlign: 'left',
+  borderBottom: '1px solid rgba(233, 30, 99, 0.25)',
 };
 
 const tdStyle: CSSProperties = {
   padding: '10px 8px',
-  borderBottom: '1px solid rgba(211,106,160,0.12)',
+  borderBottom: '1px solid rgba(233, 30, 99, 0.12)',
   verticalAlign: 'top',
 };
 
-function formatDateRange(fromISO: string, toISO: string): string {
-  const from = new Date(fromISO);
-  const to = new Date(toISO);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
-  return `${fmt(from)} – ${fmt(to)}`;
-}
-
 export default function StatisticsPage(): ReactElement {
-  const [days, setDays] = useState<Days>(7);
+  const [days, setDays] = useState<Days>(30);
   const [data, setData] = useState<StatisticsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const rangeLabel = useMemo(() => {
-    if (!data) return '';
-    return `Okres: ostatnie ${data.period.days} dni (${formatDateRange(data.period.from, data.period.to)})`;
-  }, [data]);
+  const changeDays = (v: Days): void => {
+    setDays(v);
+    setLoading(true);
+  };
 
   useEffect(() => {
     let cancelled = false;
 
-    async function run(): Promise<void> {
+    const fetchStats = async (): Promise<void> => {
       try {
-        setLoading(true);
-        const res = await getStatistics(days);
-        if (!cancelled) setData(res);
+        const result = await getStatistics(days);
+        if (cancelled) return;
+        setData(result);
       } catch {
         notify('Nie udało się pobrać statystyk.', 'error');
+        if (!cancelled) setData(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    }
+    };
 
-    run();
+    void fetchStats();
+
     return () => {
       cancelled = true;
     };
   }, [days]);
 
-  const summary = data?.summary;
+  const headerInfo = useMemo((): string => {
+    if (!data) return '';
+    return `Okres: ostatnie ${data.period.days} dni (${formatDatePL(data.period.from)} – ${formatDatePL(data.period.to)})`;
+  }, [data]);
+
+  const summary = data?.summary ?? null;
 
   return (
-    <div style={pageWrapStyle}>
+    <div style={{ padding: 30 }}>
       <div style={beautyCardStyle}>
         <div style={beautyCardHeaderStyle}>
-          <div style={beautyPageTitleStyle}>Statystyki</div>
-          <div style={beautyMutedTextStyle}>{rangeLabel}</div>
+          <h1 style={beautyPageTitleStyle}>Statystyki</h1>
+          <p style={beautyMutedTextStyle}>{data ? headerInfo : '—'}</p>
         </div>
 
         <div style={beautyCardBodyStyle}>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-            <DaysButton label="7 dni" value={7} active={days === 7} onClick={setDays} />
-            <DaysButton label="30 dni" value={30} active={days === 30} onClick={setDays} />
-            <DaysButton label="90 dni" value={90} active={days === 90} onClick={setDays} />
+          {/* kontrolki */}
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <DaysButton label="7 dni" active={days === 7} onClick={() => changeDays(7)} disabled={loading} />
+              <DaysButton label="30 dni" active={days === 30} onClick={() => changeDays(30)} disabled={loading} />
+              <DaysButton label="90 dni" active={days === 90} onClick={() => changeDays(90)} disabled={loading} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => window.print()}
+              style={{ ...beautyButtonSecondaryStyle, padding: '8px 12px', fontWeight: 800 }}
+              disabled={loading}
+            >
+              Eksportuj do PDF
+            </button>
           </div>
 
-          {loading || !summary ? (
-            <div style={beautyMutedTextStyle}>Ładowanie…</div>
+          {loading ? (
+            <div style={beautyMutedTextStyle}>Ładowanie statystyk…</div>
+          ) : !data || !summary ? (
+            <div style={beautyMutedTextStyle}>Brak danych do wyświetlenia.</div>
           ) : (
             <>
               {/* KPI */}
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
                   gap: 12,
                   marginBottom: 16,
                 }}
               >
                 <div style={kpiCardStyle}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Wizyty</div>
-                  <div>
-                    Łącznie: <strong>{summary.total_appointments}</strong>
-                  </div>
-                  <div>
-                    Ukończone: <strong>{summary.completed_appointments}</strong>
-                  </div>
-                  <div>
-                    Anulowane: <strong>{summary.cancelled_appointments}</strong>
-                  </div>
-                  <div>
-                    No-show: <strong>{summary.no_show_appointments}</strong>
-                  </div>
-
-                  <div style={{ marginTop: 10, fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>
-                    Porównanie vs poprzedni okres:
-                  </div>
-                  <DeltaLine money={false} block={data?.comparison?.appointments?.total} />
-
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>Ukończone:</span>
-                    <DeltaLine money={false} block={data?.comparison?.appointments?.completed} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>Anulowane:</span>
-                    <DeltaLine money={false} block={data?.comparison?.appointments?.cancelled} />
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>No-show:</span>
-                    <DeltaLine money={false} block={data?.comparison?.appointments?.no_show} />
-                  </div>
+                  <div>Łącznie: <strong>{summary.total_appointments}</strong></div>
+                  <div>Ukończone: <strong>{summary.completed_appointments}</strong></div>
+                  <div>Anulowane: <strong>{summary.cancelled_appointments}</strong></div>
+                  <div>No-show: <strong>{summary.no_show_appointments}</strong></div>
                 </div>
 
                 <div style={kpiCardStyle}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Klienci</div>
-                  <div>
-                    Łącznie: <strong>{summary.total_clients}</strong>
-                  </div>
-                  <div>
-                    Nowi: <strong>{summary.new_clients}</strong>
-                  </div>
-                  <DeltaLine money={false} block={data?.comparison?.new_clients} />
+                  <div>Łącznie: <strong>{summary.total_clients}</strong></div>
+                  <div>Nowi: <strong>{summary.new_clients}</strong></div>
                 </div>
 
                 <div style={kpiCardStyle}>
                   <div style={{ fontWeight: 900, marginBottom: 8 }}>Przychód</div>
                   <div>
-                    Łącznie: <strong>{formatPLN(summary.total_revenue)}</strong>
+                    Łącznie: <strong>{formatCurrencyPLN(summary.total_revenue)}</strong>
                   </div>
-                  <DeltaLine money={true} block={data?.comparison?.total_revenue} />
+                  <div style={{ ...beautyMutedTextStyle, marginTop: 8 }}>
+                    (wartość z backendu jako string)
+                  </div>
                 </div>
               </div>
 
@@ -273,42 +196,14 @@ export default function StatisticsPage(): ReactElement {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.services.map((row) => (
+                      {data.services.map((row: ServiceStatisticsItem) => (
                         <tr key={row.service.id}>
                           <td style={tdStyle}>
                             <div style={{ fontWeight: 800 }}>{row.service.name}</div>
-                            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>ID: {row.service.id}</div>
+                            <div style={beautyMutedTextStyle}>ID: {row.service.id}</div>
                           </td>
                           <td style={tdStyle}>{row.total_appointments}</td>
-                          <td style={tdStyle}>{formatPLN(row.total_revenue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Trend dzienny (zakończone) */}
-              <div style={{ ...kpiCardStyle, background: '#fff', marginBottom: 16 }}>
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>Trend dzienny (zakończone)</div>
-
-                {!data.daily || data.daily.length === 0 ? (
-                  <div style={beautyMutedTextStyle}>Brak danych trendu dziennego dla tego okresu.</div>
-                ) : (
-                  <table style={tableStyle}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Data</th>
-                        <th style={thStyle}>Zakończone</th>
-                        <th style={thStyle}>Przychód</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.daily.map((d) => (
-                        <tr key={d.date}>
-                          <td style={tdStyle}>{d.date}</td>
-                          <td style={tdStyle}>{d.appointments_count}</td>
-                          <td style={tdStyle}>{formatPLN(d.revenue)}</td>
+                          <td style={tdStyle}>{formatCurrencyPLN(row.total_revenue)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -317,36 +212,35 @@ export default function StatisticsPage(): ReactElement {
               </div>
 
               {/* Employees */}
-              {data.employees && data.employees.length > 0 && (
-                <div style={{ ...kpiCardStyle, background: '#fff' }}>
-                  <div style={{ fontWeight: 900, marginBottom: 10 }}>Pracownicy</div>
+              <div style={{ ...kpiCardStyle, background: '#fff' }}>
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>Pracownicy</div>
+
+                {data.employees.length === 0 ? (
+                  <div style={beautyMutedTextStyle}>Brak danych pracowników dla tego okresu.</div>
+                ) : (
                   <table style={tableStyle}>
                     <thead>
                       <tr>
                         <th style={thStyle}>Pracownik</th>
                         <th style={thStyle}>Wizyty</th>
-                        <th style={thStyle}>Przychód</th>
                         <th style={thStyle}>Obłożenie</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data.employees.map((row) => (
+                      {data.employees.map((row: EmployeeStatisticsItem) => (
                         <tr key={row.employee.id}>
                           <td style={tdStyle}>
-                            <div style={{ fontWeight: 800 }}>
-                              {row.employee.first_name} {row.employee.last_name}
-                            </div>
-                            <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.6)' }}>ID: {row.employee.id}</div>
+                            <div style={{ fontWeight: 800 }}>{row.employee.full_name}</div>
+                            <div style={beautyMutedTextStyle}>ID: {row.employee.id}</div>
                           </td>
                           <td style={tdStyle}>{row.total_appointments}</td>
-                          <td style={tdStyle}>{formatPLN(row.total_revenue)}</td>
                           <td style={tdStyle}>{formatPercent(row.occupancy_percent)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>

@@ -167,8 +167,8 @@ const finePrint: CSSProperties = {
 
 export function PublicHomePage(): ReactElement {
   const { isAuthenticated, user } = useAuth();
-  const servicesLink: string = isAuthenticated ? '/services' : '/login';
-  const servicesLabel: string = isAuthenticated ? 'Zobacz usługi' : 'Zobacz usługi (logowanie)';
+  const servicesLink: string = isAuthenticated ? '/dashboard/services' : '/login?next=%2Fdashboard%2Fservices';
+  const servicesLabel: string = isAuthenticated ? 'Zobacz usługi' : 'Zobacz usługi (po zalogowaniu)';
 
   return (
     <div style={pageWrap}>
@@ -208,7 +208,7 @@ export function PublicHomePage(): ReactElement {
 
                 <div style={box}>
                   <h3 style={boxTitle}>Manager</h3>
-                  <p style={boxText}>Manager obsługuje usługi, grafik, klientów i obejmuje kontrolę nad salonem.</p>
+                  <p style={boxText}>Manager obsługuje usługi, grafik, klientów i pełni kontrolę nad salonem.</p>
                 </div>
               </div>
 
@@ -235,7 +235,7 @@ export function PublicHomePage(): ReactElement {
               </div>
 
               <p style={finePrint}>
-                Strona startowa Beauty Salon Managmement System. Zapraszamy!
+                Beauty Salon Management System. Zapraszamy!
               </p>
             </div>
 

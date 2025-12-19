@@ -1,4 +1,3 @@
-
 from decimal import Decimal
 from datetime import timedelta, datetime
 from django.db import models, transaction
@@ -11,13 +10,20 @@ from django.core.cache import cache
 from typing import Optional, Dict, Any, List, TYPE_CHECKING, cast
 from django.db.models import QuerySet, ManyToManyField
 from .managers import ActiveManager, AppointmentManager
-from .utils import ( # Zaktualizowane importy
+from .utils import (
     phone_validator,
     calculate_vat,
     generate_invoice_number,
     generate_employee_number,
     generate_client_number
 )
+import re
+
+def normalize_phone(value: str) -> str:
+    value = value.strip()
+    if value.startswith("+"):
+        return "+" + re.sub(r"\D", "", value[1:])
+    return re.sub(r"\D", "", value)
 
 
 # ============================================================================
@@ -145,10 +151,13 @@ class Employee(SoftDeletableModel, TimestampedModel):
     hired_at = models.DateField(_('data zatrudnienia'), default=timezone.now)
     is_active = models.BooleanField(_('aktywny'), default=True)
     skills: ManyToManyField = models.ManyToManyField('Service',verbose_name=_('umiejętności (usługi)'),blank=True)
-
-    #DODANE POLA
     appointments_count = models.PositiveIntegerField(_('liczba zrealizowanych wizyt'), default=0)
     average_rating = models.DecimalField(_('średnia ocena'), max_digits=3, decimal_places=2, default=Decimal('0.00'))
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.phone:
+            self.phone = normalize_phone(self.phone)
+        super().save(*args, **kwargs)
+
 
     class Meta:
         verbose_name = _('pracownik')
@@ -168,15 +177,18 @@ class Client(SoftDeletableModel, TimestampedModel):
         _('numer klienta'),
         max_length=20,
         unique=True,
-        null=True,  #pozwala zapisać klienta bez numeru
-        blank=True, #pozwala pominąć numer w formularzach/adminie
+        null=True,
+        blank=True,
         default = generate_client_number,
     )
     first_name = models.CharField(_('imię'), max_length=150)
     last_name = models.CharField(_('nazwisko'), max_length=150)
     email = models.EmailField(_('adres email'), unique=True, null=True, blank=True)
-    phone = models.CharField(_('telefon'), max_length=15, validators=[phone_validator], unique=True, null=True,
-                             blank=True)
+    phone = models.CharField(_('telefon'), max_length=15, validators=[phone_validator], unique=True, null=True, blank=True)
+    def save(self, *args, **kwargs):
+        if self.phone:
+            self.phone = normalize_phone(self.phone)
+        super().save(*args, **kwargs)
 
     # CRM Metrics
     visits_count = models.PositiveIntegerField(_('liczba zrealizowanych wizyt'), default=0)
@@ -197,7 +209,7 @@ class Client(SoftDeletableModel, TimestampedModel):
     )
 
     # DODANE POLE
-    internal_notes = models.TextField(_('notatki wewnętrzne'), blank=True)
+    internal_notes = models.TextField(_('notatki wewnętrzne salonu'), blank=True)
 
     class Meta:
         verbose_name = _('klient')
@@ -222,17 +234,9 @@ class Service(SoftDeletableModel, TimestampedModel):
     # Pricing
     price = models.DecimalField(_('cena podstawowa (PLN)'), max_digits=10, decimal_places=2)
     duration = models.DurationField(_('czas trwania'))
-
-    # Categorization
     category = models.CharField(_('kategoria'), max_length=100, blank=True, db_index=True)
-
-    # Status
     is_published = models.BooleanField(_('opublikowana (widoczna)'), default=True)
-
-    # Promo (JSONField)
     promotion = models.JSONField(_('promocja'), default=dict, blank=True)
-
-    # DODANE POLA
     image_url = models.URLField(_('URL obrazka'), blank=True)
     reservations_count = models.PositiveIntegerField(_('liczba rezerwacji'), default=0)
 
@@ -619,6 +623,9 @@ class SystemSettings(TimestampedModel):
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Zapisuje i aktualizuje cache."""
+        if self.phone:
+            self.phone = normalize_phone(self.phone)
+
         self.pk = 1
         super().save(*args, **kwargs)
         cache.set('system_settings_cache', self)

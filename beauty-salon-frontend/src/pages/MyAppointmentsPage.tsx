@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement, type CSSProperties } from "react";
 import { isAxiosError } from "axios";
 
 import { appointmentsAPI } from "@/shared/api/appointments";
@@ -122,7 +122,7 @@ function Modal(props: {
   const isConfirm = props.variant === "confirm";
   const isError = props.variant === "error";
 
-  const overlayStyle: React.CSSProperties = {
+  const overlayStyle: CSSProperties = {
     position: "fixed",
     inset: 0,
     background: "rgba(0,0,0,0.45)",
@@ -133,7 +133,7 @@ function Modal(props: {
     zIndex: 9999,
   };
 
-  const boxStyle: React.CSSProperties = {
+  const boxStyle: CSSProperties = {
     width: "100%",
     maxWidth: 520,
     background: "#fff",
@@ -143,7 +143,7 @@ function Modal(props: {
     overflow: "hidden",
   };
 
-  const headerStyle: React.CSSProperties = {
+  const headerStyle: CSSProperties = {
     padding: "14px 16px",
     background: beautyColors.bg,
     borderBottom: `1px solid ${beautyColors.border}`,
@@ -153,20 +153,20 @@ function Modal(props: {
     gap: 10,
   };
 
-  const titleStyle: React.CSSProperties = {
+  const titleStyle: CSSProperties = {
     margin: 0,
     fontSize: 18,
     fontWeight: 800,
     color: isError ? beautyColors.dangerDark : beautyColors.primaryDarker,
   };
 
-  const bodyStyle: React.CSSProperties = {
+  const bodyStyle: CSSProperties = {
     padding: 16,
     color: beautyColors.text,
     whiteSpace: "pre-line",
   };
 
-  const footerStyle: React.CSSProperties = {
+  const footerStyle: CSSProperties = {
     padding: "12px 16px",
     borderTop: `1px solid ${beautyColors.border}`,
     display: "flex",
@@ -175,7 +175,7 @@ function Modal(props: {
     background: "#fff",
   };
 
-  const xBtnStyle: React.CSSProperties = {
+  const xBtnStyle: CSSProperties = {
     border: `1px solid ${beautyColors.border}`,
     background: "#fff",
     borderRadius: 10,
