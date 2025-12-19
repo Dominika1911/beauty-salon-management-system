@@ -1,0 +1,216 @@
+@import '../DashboardPage.css';
+@import "../../components/Table.css";
+
+
+.calendar-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.calendar-day-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.calendar-day-controls input[type="date"] {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--beauty-border);
+  background: white;
+  font-weight: 700;
+}
+
+.calendar-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.calendar-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+}
+
+.calendar-times {
+  position: relative;
+}
+
+.calendar-times-head {
+  height: 46px;
+}
+
+.calendar-time {
+  height: 60px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 8px;
+  font-weight: 800;
+  color: var(--beauty-text-secondary);
+}
+
+.calendar-cols {
+  background: white;
+  border-radius: 16px;
+  box-shadow: var(--beauty-shadow-sm);
+  overflow: hidden;
+  border: 1px solid var(--beauty-border);
+}
+
+.calendar-cols-head {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  border-bottom: 1px solid var(--beauty-border);
+  background: rgba(255, 105, 180, 0.06);
+}
+
+.calendar-col-head {
+  padding: 12px 14px;
+  font-weight: 900;
+  color: var(--beauty-primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calendar-cols-body {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  height: 720px; /* 12h * 60px */
+  position: relative;
+}
+
+.calendar-col {
+  position: relative;
+  border-right: 1px solid var(--beauty-border);
+  overflow: hidden;
+}
+
+.calendar-col:last-child {
+  border-right: none;
+}
+
+.calendar-col-bg {
+  position: absolute;
+  inset: 0;
+}
+
+.calendar-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(0,0,0,0.06);
+}
+
+.calendar-appt {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  border-radius: 14px;
+  padding: 10px 10px;
+  box-shadow: var(--beauty-shadow-sm);
+  border: 1px solid rgba(0,0,0,0.08);
+  background: white;
+  overflow: hidden;
+}
+
+.calendar-appt-title {
+  font-weight: 900;
+  color: var(--beauty-primary-dark);
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.calendar-appt-sub {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--beauty-text-secondary);
+  font-weight: 700;
+}
+
+.calendar-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.calendar-modal {
+  width: min(520px, 92vw);
+  background: white;
+  border-radius: 18px;
+  box-shadow: var(--beauty-shadow-lg);
+  border: 1px solid var(--beauty-border);
+  overflow: hidden;
+}
+
+.calendar-modal-header {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 105, 180, 0.06);
+  border-bottom: 1px solid var(--beauty-border);
+}
+
+.calendar-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--beauty-primary-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.calendar-modal-close {
+  border: 2px solid var(--beauty-border);
+  background: white;
+  border-radius: 999px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.calendar-modal-body {
+  padding: 16px;
+}
+
+.calendar-modal-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  padding: 6px 0;
+  font-weight: 700;
+  color: var(--beauty-text-secondary);
+}
+
+.calendar-modal-row b {
+  color: var(--beauty-primary-dark);
+}
+
+.calendar-modal-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* statusy – delikatne tła */
+.calendar-appt.status-pending { background: rgba(255, 193, 7, 0.18); }
+.calendar-appt.status-confirmed { background: rgba(0, 123, 255, 0.14); }
+.calendar-appt.status-in_progress { background: rgba(23, 162, 184, 0.14); }
+.calendar-appt.status-completed { background: rgba(40, 167, 69, 0.14); }
+.calendar-appt.status-cancelled { background: rgba(220, 53, 69, 0.14); }
+.calendar-appt.status-no_show { background: rgba(108, 117, 125, 0.16); }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type ReactElement } from 'react';
-import './SettingsPage.css';
+import '@/styles/pages/SettingsPage.css';
 
-import { getSystemSettings, patchSystemSettings, type SystemSettings } from '../api/systemSettings';
-import { usersAPI } from '../api';
-import { notify } from '../utils/notificationService';
+import { getSystemSettings, patchSystemSettings, type SystemSettings } from '@/shared/api/systemSettings';
+import { usersAPI } from "@/shared/api";
+import { notify } from '@/shared/utils/notificationService';
 
 import {
   settingsToFormState,
@@ -14,7 +14,7 @@ import {
   WEEKDAY_LABEL_PL,
   type SettingsFormState,
   type OpeningHoursDay,
-} from '../utils/settingsMappers';
+} from '@/shared/utils/settingsMappers';
 
 type ErrorMap = Record<string, string>;
 

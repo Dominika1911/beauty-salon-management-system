@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { AppointmentListItem, AppointmentStatus } from '../../types';
+import type { AppointmentListItem, AppointmentStatus } from '@/shared/types';
 
-import { appointmentsAPI } from '../../api/appointments';
-import { employeesAPI } from '../../api/employees';
-import { AppointmentFormModal } from '../../components/Manager/AppointmentFormModal';
-import { useAuth } from '../../hooks/useAuth';
+import { appointmentsAPI } from '@/shared/api/appointments';
+import { employeesAPI } from '@/shared/api/employees';
+import { AppointmentFormModal } from '@/features/manager/components/AppointmentFormModal';
+import { useAuth } from '@/shared/hooks/useAuth';
 
-import '../DashboardPage.css';
-import './AppointmentsCalendarPage.css';
+import '@/styles/pages/DashboardPage.css';
+import '@/styles/pages/manager/AppointmentsCalendarPage.css';
 
 type EmployeeLite = { id: number; first_name: string; last_name: string; is_active?: boolean };
 

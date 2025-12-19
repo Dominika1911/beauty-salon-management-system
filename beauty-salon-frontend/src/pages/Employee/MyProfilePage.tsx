@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { employeesAPI } from '../../api/employees';
-import type { Employee } from '../../types';
-import { Modal } from '../../components/UI/Modal';
-import { useNotification } from '../../components/UI/Notification';
-import { useAuth } from '../../hooks/useAuth';
+import { employeesAPI } from '@/shared/api/employees';
+import type { Employee } from '@/shared/types';
+import { Modal } from '@/shared/ui/Modal';
+import { useNotification } from '@/shared/ui/Notification';
+import { useAuth } from '@/shared/hooks/useAuth';
 
 export const MyProfilePage: React.FC = (): ReactElement => {
   const { isEmployee } = useAuth();

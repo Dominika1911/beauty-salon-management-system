@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { employeesAPI } from '../../api/employees';
-import { availabilityAPI, type AvailabilityResponse, type AvailabilitySlot } from '../../api/availability';
-import type { Employee, Service } from '../../types';
-import { Modal } from '../../components/UI/Modal';
-import { useAuth } from '../../hooks/useAuth';
+import { employeesAPI } from '@/shared/api/employees';
+import { availabilityAPI, type AvailabilityResponse, type AvailabilitySlot } from '@/shared/api/availability';
+import type { Employee, Service } from '@/shared/types';
+import { Modal } from '@/shared/ui/Modal';
+import { useAuth } from '@/shared/hooks/useAuth';
 
 function toYMD(d: Date): string {
   const yyyy = String(d.getFullYear());

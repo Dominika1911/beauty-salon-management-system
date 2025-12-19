@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { ReactElement } from 'react';
-import { usersAPI } from '../../api';
-import { Modal } from '../../components/UI/Modal';
-import type { User } from '../../types';
+import { usersAPI } from "@/shared/api";
+import { Modal } from '@/shared/ui/Modal';
+import type { User } from '@/shared/types';
 
 export const ManagerProfilePage: React.FC = (): ReactElement => {
   const [profile, setProfile] = useState<User | null>(null);

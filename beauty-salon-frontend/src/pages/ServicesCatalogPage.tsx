@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { servicesAPI } from '../api/services';
-import type { Service } from '../types';
+import { servicesAPI } from '@/shared/api/services';
+import type { Service } from '@/shared/types';
 
 function formatDurationToMinutes(duration: string): string {
   const parts = duration.split(':').map((x) => Number(x));

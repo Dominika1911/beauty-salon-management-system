@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { isAxiosError } from "axios";
 
-import { servicesAPI } from "../api/services";
-import { employeesAPI } from "../api/employees";
-import { availabilityAPI, type AvailabilitySlot } from "../api/availability";
-import { appointmentsAPI } from "../api/appointments";
+import { servicesAPI } from "@/shared/api/services";
+import { employeesAPI } from "@/shared/api/employees";
+import { availabilityAPI, type AvailabilitySlot } from "@/shared/api/availability";
+import { appointmentsAPI } from "@/shared/api/appointments";
 
-import type { Employee, Service } from "../types";
+import type { Employee, Service } from "@/shared/types";
 import {
   beautyButtonSecondaryStyle,
   beautyButtonStyle,
@@ -18,7 +18,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from "../utils/ui";
+} from "@/shared/utils/ui";
 
 const yyyyMmDd = (d: Date): string => {
   const y = d.getFullYear();

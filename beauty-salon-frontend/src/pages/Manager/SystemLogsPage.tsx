@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { isAxiosError } from 'axios';
-import { auditLogsAPI, type AuditLog } from '../../api/auditLogs';
+import { auditLogsAPI, type AuditLog } from '@/shared/api/auditLogs';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -11,7 +11,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 type Banner = { type: 'success' | 'error'; text: string };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, type ReactElement } from 'react';
 import { useNavigate, type NavigateFunction } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
-import './LoginPage.css';
+import { useAuth } from '@/shared/hooks/useAuth';
+import '@/styles/pages/LoginPage.css';
 
 export const LoginPage: React.FC = (): ReactElement => {
   const [email, setEmail] = useState('');

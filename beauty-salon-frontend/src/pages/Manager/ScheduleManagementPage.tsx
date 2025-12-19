@@ -1,21 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 
-import { useAuth } from '../../hooks/useAuth';
-import { employeesAPI } from '../../api/employees';
-import { scheduleAPI } from '../../api/schedule';
-import { servicesAPI } from '../../api/services';
-import { availabilityAPI, type AvailabilitySlot } from '../../api/availability';
+import { useAuth } from '@/shared/hooks/useAuth';
+import { employeesAPI } from '@/shared/api/employees';
+import { scheduleAPI } from '@/shared/api/schedule';
+import { servicesAPI } from '@/shared/api/services';
+import { availabilityAPI, type AvailabilitySlot } from '@/shared/api/availability';
 
-import type { Employee, TimeOff, ScheduleEntry, Weekday, Service } from '../../types';
+import type { Employee, TimeOff, ScheduleEntry, Weekday, Service } from '@/shared/types';
 
-import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
-import { ScheduleEditor } from '../../components/Schedule/ScheduleEditor';
-import { TimeOffForm } from '../../components/Schedule/TimeOffForm';
-import { WeeklySalonSchedule } from '../../components/Schedule/WeeklySalonSchedule';
+import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
+import { ScheduleEditor } from '@/features/schedule/components/ScheduleEditor';
+import { TimeOffForm } from '@/features/schedule/components/TimeOffForm';
+import { WeeklySalonSchedule } from '@/features/schedule/components/WeeklySalonSchedule';
 
-import { usePagination } from '../../hooks/usePagination';
-import { useNotification } from '../../components/UI/Notification';
-import { Modal } from '../../components/UI/Modal';
+import { usePagination } from '@/shared/hooks/usePagination';
+import { useNotification } from '@/shared/ui/Notification';
+import { Modal } from '@/shared/ui/Modal';
 
 const SCHEDULE_PAGE_SIZE = 20;
 const EMPTY_SCHEDULE: ScheduleEntry[] = [];

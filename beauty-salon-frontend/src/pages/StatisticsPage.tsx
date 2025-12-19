@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
-import { getStatistics, type StatisticsResponse } from '../api/statistics';
-import type { EmployeeStatisticsItem, ServiceStatisticsItem } from '../types';
-import { notify } from '../utils/notificationService';
+import { getStatistics, type StatisticsResponse } from '@/shared/api/statistics';
+import type { EmployeeStatisticsItem, ServiceStatisticsItem } from '@/shared/types';
+import { notify } from '@/shared/utils/notificationService';
 import {
   beautyButtonSecondaryStyle,
   beautyCardBodyStyle,
@@ -9,7 +9,7 @@ import {
   beautyCardStyle,
   beautyMutedTextStyle,
   beautyPageTitleStyle,
-} from '../utils/ui';
+} from '@/shared/utils/ui';
 
 type Days = 7 | 30 | 90;
 

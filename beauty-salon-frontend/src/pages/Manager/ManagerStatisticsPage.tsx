@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { statisticsAPI } from '../../api';
-import { Modal } from '../../components/UI/Modal';
-import type { StatisticsResponse } from '../../types';
-import '../StatisticsPage.css';
+import { Modal } from '@/shared/ui/Modal';
+import type { StatisticsResponse } from '@/shared/types';
+import '@/styles/pages/StatisticsPage.css';
 
 type DaysOption = 7 | 14 | 30 | 90;
 

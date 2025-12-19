@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 import { isAxiosError } from 'axios';
-import { notificationsAPI } from '../../api/notifications';
-import type { Notification, NotificationCreateData, PaginatedResponse } from '../../types';
+import { notificationsAPI } from '@/shared/api/notifications';
+import type { Notification, NotificationCreateData, PaginatedResponse } from '@/shared/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -12,7 +12,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 const TYPE_LABELS: Record<string, string> = {
   reminder: 'Przypomnienie',

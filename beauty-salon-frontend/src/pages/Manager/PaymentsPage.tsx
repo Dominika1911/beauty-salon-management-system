@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { isAxiosError } from 'axios';
-import { paymentsAPI } from '../../api/payments';
-import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
-import type { PaginatedResponse, Payment } from '../../types';
+import { paymentsAPI } from '@/shared/api/payments';
+import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
+import type { PaginatedResponse, Payment } from '@/shared/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -14,7 +14,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—';

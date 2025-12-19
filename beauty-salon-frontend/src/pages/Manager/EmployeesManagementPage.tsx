@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback, type ReactElement } from 'react';
-import { employeesAPI } from '../../api/employees';
-import { servicesAPI } from '../../api/services';
-import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
-import { EmployeeFormModal } from '../../components/Manager/EmployeeFormModal';
-import { usePagination } from '../../hooks/usePagination';
-import type { Employee, PaginatedResponse, Service } from '../../types';
+import { employeesAPI } from '@/shared/api/employees';
+import { servicesAPI } from '@/shared/api/services';
+import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
+import { EmployeeFormModal } from '@/features/manager/components/EmployeeFormModal';
+import { usePagination } from '@/shared/hooks/usePagination';
+import type { Employee, PaginatedResponse, Service } from '@/shared/types';
 
-import '../../components/UI/Table/Table.css';
-import { useAuth } from '../../hooks/useAuth';
+import '@/styles/components/Table.css';
+import { useAuth } from '@/shared/hooks/useAuth';
 
 const EMPLOYEES_PAGE_SIZE: number = 20;
 

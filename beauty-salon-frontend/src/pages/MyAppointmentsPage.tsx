@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { isAxiosError } from "axios";
 
-import { appointmentsAPI } from "../api/appointments";
-import { availabilityAPI, type AvailabilitySlot } from "../api/availability";
-import { employeesAPI } from "../api/employees";
-import { clientsAPI } from "../api/clients";
+import { appointmentsAPI } from "@/shared/api/appointments";
+import { availabilityAPI, type AvailabilitySlot } from "@/shared/api/availability";
+import { employeesAPI } from "@/shared/api/employees";
+import { clientsAPI } from "@/shared/api/clients";
 
-import type { AppointmentCreateData, AppointmentListItem, AppointmentStatus, Client, Employee, Service } from "../types";
-import { useAuth } from "../hooks/useAuth";
+import type { AppointmentCreateData, AppointmentListItem, AppointmentStatus, Client, Employee, Service } from "@/shared/types";
+import { useAuth } from "@/shared/hooks/useAuth";
 import {
   beautyButtonSecondaryStyle,
   beautyButtonStyle,
@@ -19,7 +19,7 @@ import {
   beautyPageTitleStyle,
   beautyColors,
   beautySelectStyle,
-} from "../utils/ui";
+} from "@/shared/utils/ui";
 
 type Tab = "client" | "employee-today" | "employee-upcoming";
 

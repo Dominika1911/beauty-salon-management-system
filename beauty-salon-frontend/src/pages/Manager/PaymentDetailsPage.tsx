@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
-import { paymentsAPI } from '../../api/payments';
-import type { Payment } from '../../types';
+import { paymentsAPI } from '@/shared/api/payments';
+import type { Payment } from '@/shared/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -12,7 +12,7 @@ import {
   beautyCardStyle,
   beautyMutedTextStyle,
   beautyPageTitleStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—';

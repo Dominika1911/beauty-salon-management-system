@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { clientsAPI } from '../../api/clients';
-import { Table, type ColumnDefinition } from '../../components/UI/Table/Table';
-import { ClientFormModal } from '../../components/Manager/ClientFormModal';
-import type { Client, PaginatedResponse } from '../../types';
+import { clientsAPI } from '@/shared/api/clients';
+import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
+import { ClientFormModal } from '@/features/manager/components/ClientFormModal';
+import type { Client, PaginatedResponse } from '@/shared/types';
 
-import '../../components/UI/Table/Table.css';
-import { useAuth } from '../../hooks/useAuth';
+import '@/styles/components/Table.css';
+import { useAuth } from '@/shared/hooks/useAuth';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -17,7 +17,7 @@ import {
   beautyInputStyle,
   beautyMutedTextStyle,
   beautyPageTitleStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 const CLIENTS_PAGE_SIZE = 20;
 

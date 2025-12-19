@@ -4,6 +4,13 @@
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
+
+    // ✅ Ułatwia importy (bez długich ścieżek typu ../../..)
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -22,6 +29,7 @@
     "types": ["vite/client"]
   },
   "include": ["src"],
+
   // REFERENCJE SĄ TU DODANE, ABY 'tsc -b' ZOBACZYŁ PLIKI NODE
   "references": [{ "path": "./tsconfig.node.json" }]
 }

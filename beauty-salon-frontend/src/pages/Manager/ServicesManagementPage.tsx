@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from 'react';
 import { isAxiosError } from 'axios';
-import { servicesAPI } from '../../api/services';
-import { ServiceFormModal } from '../../components/Manager/ServiceFormModal';
-import { usePagination } from '../../hooks/usePagination';
-import { useAuth } from '../../hooks/useAuth';
-import type { PaginatedResponse, Service } from '../../types';
+import { servicesAPI } from '@/shared/api/services';
+import { ServiceFormModal } from '@/features/manager/components/ServiceFormModal';
+import { usePagination } from '@/shared/hooks/usePagination';
+import { useAuth } from '@/shared/hooks/useAuth';
+import type { PaginatedResponse, Service } from '@/shared/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -15,7 +15,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '../../utils/ui';
+} from '@/shared/utils/ui';
 
 const PAGE_SIZE = 20;
 
