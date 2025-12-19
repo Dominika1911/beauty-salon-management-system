@@ -579,3 +579,16 @@
   box-shadow: var(--beauty-shadow-sm);
   animation: shake 0.6s ease;
 }
+
+/* ==================== SUCCESS MESSAGE ==================== */
+.success-message {
+  padding: var(--spacing-md);
+  background: linear-gradient(135deg, #e0ffe0 0%, #ccffcc 100%);
+  border: 2px solid #ccf2d6;
+  border-left: 5px solid var(--beauty-success);
+  border-radius: var(--radius-md);
+  color: var(--beauty-success-dark);
+  font-weight: 600;
+  box-shadow: var(--beauty-shadow-sm);
+  animation: pulse 1.2s ease;
+}

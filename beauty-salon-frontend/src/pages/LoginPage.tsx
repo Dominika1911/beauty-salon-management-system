@@ -29,7 +29,7 @@ export const LoginPage: React.FC = (): ReactElement => {
     if (result.success) {
       navigate('/dashboard');
     } else {
-      // ✅ Obsługa zabezpieczenia przed logowaniem adminów
+      // Obsługa zabezpieczenia przed logowaniem adminów
       if (result.error === 'superuser_login_not_allowed') {
         setError('Konta administracyjne logują się przez /admin/');
       } else if (result.error === 'Invalid credentials.') {
@@ -66,7 +66,7 @@ export const LoginPage: React.FC = (): ReactElement => {
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 required
-                placeholder="klient1@example.com"
+                placeholder="klient@beauty-salon.com"
                 autoComplete="email"
                 disabled={loading}
               />
@@ -106,7 +106,7 @@ export const LoginPage: React.FC = (): ReactElement => {
           </form>
 
           <div className="login-footer">
-            <a href="#">Zapomniałeś hasła?</a>
+            {/* Funkcjonalność resetu hasła została usunięta */}
           </div>
         </div>
       </div>

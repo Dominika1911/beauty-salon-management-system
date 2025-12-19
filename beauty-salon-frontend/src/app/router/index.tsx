@@ -37,19 +37,29 @@ import ManagerProfilePage from '@/pages/Manager/ManagerProfilePage';
 import { ServicesCatalogPage } from '@/pages/ServicesCatalogPage';
 import StatisticsPage from '@/pages/StatisticsPage';
 import SettingsPage from '@/pages/SettingsPage';
+// import ForgotPasswordPage from '@/pages/ForgotPasswordPage'; // usunięto reset hasła
 
 
 // route zależny od roli
+/**
+ * Komponent decydujący, którą wersję strony usług wyświetlić w zależności od roli użytkownika.
+ *
+ * Klienci oraz pracownicy powinni widzieć jedynie katalog usług (bez możliwości edycji),
+ * natomiast menedżerowie mają dostęp do panelu zarządzania usługami.
+ */
 const ServicesRoutePage: React.FC = (): ReactElement => {
   const { user } = useAuth();
 
+  // Jeśli użytkownik nie jest zalogowany – przekieruj do logowania
   if (!user) return <Navigate to="/login" replace />;
 
-  if (user.role === 'client') {
-    return <ServicesCatalogPage />;
+  // Manager ma pełny dostęp do zarządzania usługami
+  if (user.role === 'manager') {
+    return <ServicesManagementPage />;
   }
 
-  return <ServicesManagementPage />;
+  // Klient oraz pracownik widzą katalog usług bez opcji zarządzania
+  return <ServicesCatalogPage />;
 };
 
 const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
@@ -59,6 +69,8 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
     children: [
       { index: true, element: <PublicHomePage /> },
       { path: 'login', element: <LoginPage /> },
+
+      // Reset hasła usunięty – brak publicznej trasy
 
       {
         path: 'dashboard',

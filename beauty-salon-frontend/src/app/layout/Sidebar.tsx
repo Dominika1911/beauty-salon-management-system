@@ -1,9 +1,9 @@
 import type { ReactElement } from 'react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/shared/hooks/useAuth';
 import type { UserRole } from '@/shared/types';
-import { Modal } from "@/shared/ui/Modal";
+
 
 type NavItem = {
   label: string;
@@ -33,8 +33,6 @@ export function Sidebar(): ReactElement | null {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
-
   const navItems: NavItem[] = useMemo(() => {
     if (!user) return [];
 
@@ -46,12 +44,11 @@ export function Sidebar(): ReactElement | null {
       { label: 'Mój profil', path: '/my-profile', roles: ['employee'], type: 'link' },
       { label: 'Moja dostępność', path: '/my-availability', roles: ['employee'], type: 'link' },
       { label: 'Mój grafik', path: '/my-schedule', roles: ['employee'], type: 'link' },
-      // ✅ NOWE
       { label: 'Moje urlopy', path: '/my-time-off', roles: ['employee'], type: 'link' },
 
       // SERVICES
       {
-        label: user.role === 'client' ? 'Usługi' : 'Usługi (zarządzanie)',
+        label: user.role === 'manager' ? 'Usługi (zarządzanie)' : 'Usługi',
         path: '/services',
         roles: ['manager', 'employee', 'client'],
         type: 'link',
@@ -87,6 +84,7 @@ export function Sidebar(): ReactElement | null {
   const visibleItems = navItems.filter((it) => it.roles.includes(user.role));
 
   const handleLogout = async (): Promise<void> => {
+    // Perform logout and redirect to login
     await logout();
     navigate('/login', { replace: true });
   };
@@ -126,7 +124,10 @@ export function Sidebar(): ReactElement | null {
 
       <button
         type="button"
-        onClick={() => setLogoutModalOpen(true)}
+        onClick={() => {
+          const confirmed = window.confirm('Czy na pewno chcesz się wylogować?');
+          if (confirmed) void handleLogout();
+        }}
         style={{
           marginTop: 20,
           padding: '10px 14px',
@@ -140,28 +141,6 @@ export function Sidebar(): ReactElement | null {
       >
         Wyloguj
       </button>
-
-      <Modal isOpen={logoutModalOpen} onClose={() => setLogoutModalOpen(false)} title="Wylogowanie">
-        <div style={{ padding: 12 }}>
-          <p style={{ marginTop: 0 }}>Czy na pewno chcesz się wylogować?</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={() => setLogoutModalOpen(false)}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Anuluj
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ccc', cursor: 'pointer' }}
-            >
-              Wyloguj
-            </button>
-          </div>
-        </div>
-      </Modal>
     </aside>
   );
 }
