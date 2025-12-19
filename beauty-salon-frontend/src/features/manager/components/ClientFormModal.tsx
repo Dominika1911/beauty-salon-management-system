@@ -64,9 +64,14 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
             setSubmissionError('Nazwisko musi mieć co najmniej 2 znaki.');
             return false;
         }
-        if (phone && phone.replace(/\D/g, '').length < 9) {
-            setSubmissionError('Numer telefonu musi mieć co najmniej 9 cyfr.');
-            return false;
+
+        // Walidacja formatu międzynarodowego: + i 9-15 cyfr
+        if (phone) {
+            const phoneRegex = /^\+\d{9,15}$/;
+            if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+                setSubmissionError('Telefon musi być w formacie międzynarodowym (np. +48123456789).');
+                return false;
+            }
         }
 
         return true;
@@ -79,9 +84,15 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
         setLoading(true);
         setSubmissionError(null);
 
-        const dataToSend: Partial<ClientCreateUpdateData> = { ...formData };
+        // Przygotowanie danych i czyszczenie numeru telefonu ze spacji/myślników
+        const dataToSend: any = { ...formData };
+        if (dataToSend.phone) {
+            dataToSend.phone = dataToSend.phone.replace(/[^\d+]/g, '');
+        } else {
+            dataToSend.phone = null;
+        }
+
         if (!dataToSend.email) dataToSend.email = null;
-        if (!dataToSend.phone) dataToSend.phone = null;
         if (!dataToSend.internal_notes) delete dataToSend.internal_notes;
 
         try {
@@ -95,9 +106,20 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
             onSuccess();
             onClose();
 
-        } catch (error: unknown) {
-            console.error('Błąd z API:', (error as {response?: {data?: unknown}}).response?.data);
-            setSubmissionError("Nie udało się zapisać klienta. Sprawdź, czy email/telefon nie są już używane.");
+        } catch (error: any) {
+            const apiData = error.response?.data;
+            console.error('Błąd z API:', apiData);
+
+            // Wyciąganie szczegółowego komunikatu o błędzie z pola 'phone'
+            if (apiData?.phone) {
+                const msg = Array.isArray(apiData.phone) ? apiData.phone[0] : apiData.phone;
+                setSubmissionError(`Błąd telefonu: ${msg}`);
+            } else if (apiData?.email) {
+                const msg = Array.isArray(apiData.email) ? apiData.email[0] : apiData.email;
+                setSubmissionError(`Błąd email: ${msg}`);
+            } else {
+                setSubmissionError("Nie udało się zapisać klienta. Sprawdź, czy dane są unikalne.");
+            }
         } finally {
             setLoading(false);
         }
@@ -111,7 +133,17 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
                 <input type="text" name="first_name" placeholder="Imię" value={formData.first_name} onChange={handleChange} required />
                 <input type="text" name="last_name" placeholder="Nazwisko" value={formData.last_name} onChange={handleChange} required />
                 <input type="email" name="email" placeholder="Email" value={formData.email || ''} onChange={handleChange} />
-                <input type="tel" name="phone" placeholder="Telefon" value={formData.phone || ''} onChange={handleChange} />
+
+                <div className="input-group">
+                    <input
+                        type="tel"
+                        name="phone"
+                        placeholder="Telefon (np. +48123456789)"
+                        value={formData.phone || ''}
+                        onChange={handleChange}
+                    />
+                    <small style={{ fontSize: '11px', color: '#666' }}>Wymagany format: + i 9-15 cyfr</small>
+                </div>
 
                 <h4 className="form-section-title">Komunikacja i Notatki</h4>
                 <select name="preferred_contact" value={formData.preferred_contact} onChange={handleChange}>
@@ -133,14 +165,18 @@ export const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClos
 
                 <textarea
                     name="internal_notes"
-                    placeholder="Wewnętrzne notatki o kliencie (widoczne tylko dla personelu)"
+                    placeholder="Wewnętrzne notatki o kliencie"
                     value={formData.internal_notes || ''}
                     onChange={handleChange}
                     rows={3}
                     style={{ marginTop: '10px' }}
                 />
 
-                {submissionError && <p className="submission-error">{submissionError}</p>}
+                {submissionError && (
+                    <div style={{ color: 'red', marginTop: '10px', fontSize: '14px', fontWeight: 'bold' }}>
+                        {submissionError}
+                    </div>
+                )}
 
                 <button type="submit" disabled={loading} style={{ marginTop: '20px' }}>
                     {loading ? 'Zapisywanie...' : (isEditing ? 'Zapisz Zmiany' : 'Dodaj Klienta')}

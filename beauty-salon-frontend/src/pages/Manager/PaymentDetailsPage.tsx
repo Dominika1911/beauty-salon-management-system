@@ -6,7 +6,6 @@ import type { Payment } from '@/shared/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
-  beautyButtonStyle,
   beautyCardBodyStyle,
   beautyCardHeaderStyle,
   beautyCardStyle,

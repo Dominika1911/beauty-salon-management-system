@@ -17,18 +17,6 @@ import {
 type Msg = { type: 'success' | 'error'; text: string };
 type PaidFilter = 'all' | 'paid' | 'unpaid';
 
-function formatDateTime(value: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString('pl-PL', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 function extractErrorMessage(err: unknown): string {
   if (isAxiosError(err)) {

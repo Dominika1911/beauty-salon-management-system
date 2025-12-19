@@ -1,1 +1,17 @@
-/* Styles for StatisticsPage (optional) */
+.stat-delta {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  opacity: 0.95;
+}
+
+.delta-positive {
+  color: #2ecc71;
+}
+
+.delta-negative {
+  color: #e74c3c;
+}
+
+.delta-neutral {
+  color: rgba(255, 255, 255, 0.75);
+}

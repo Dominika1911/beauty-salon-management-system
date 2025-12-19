@@ -693,12 +693,39 @@ export interface StatsSnapshot {
 // STATISTICS (GET /statistics/)
 // ============================================================================
 
+
 export interface StatisticsPeriod {
   days: number;
   from: string;
   to: string;
+  date_from?: string | null;
+  date_to?: string | null;
 }
 
+export interface DeltaBlockNumber {
+  current: number;
+  previous: number;
+  delta: number;
+  delta_pct: number | null;
+}
+
+export interface DeltaBlockMoney {
+  current: string;
+  previous: string;
+  delta: string;
+  delta_pct: number | null;
+}
+
+export interface StatisticsComparison {
+  total_revenue: DeltaBlockMoney;
+  new_clients: DeltaBlockNumber;
+  appointments: {
+    total: DeltaBlockNumber;
+    completed: DeltaBlockNumber;
+    cancelled: DeltaBlockNumber;
+    no_show: DeltaBlockNumber;
+  };
+}
 export interface StatisticsSummary {
   total_clients: number;
   new_clients: number;
@@ -719,13 +746,23 @@ export interface EmployeeStatisticsItem {
   employee: EmployeeSimple;
   total_appointments: number;
   occupancy_percent: string;
+  total_revenue: string;
+}
+
+export interface DailyStatisticsItem {
+  date: string | null;
+  appointments_count: number;
+  revenue: string | number;
 }
 
 export interface StatisticsResponse {
   period: StatisticsPeriod;
+  previous_period?: StatisticsPeriod;
   summary: StatisticsSummary;
+  comparison?: StatisticsComparison;
   services: ServiceStatisticsItem[];
   employees: EmployeeStatisticsItem[];
+  daily: DailyStatisticsItem[];
 }
 // ============================================================================
 // BOOKING (POST /bookings/)
@@ -742,4 +779,3 @@ export interface BookingCreateResponse {
   detail: string;
   appointment: AppointmentDetail;
 }
-

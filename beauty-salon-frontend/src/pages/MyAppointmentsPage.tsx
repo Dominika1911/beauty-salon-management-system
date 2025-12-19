@@ -972,7 +972,6 @@ export function MyAppointmentsPage(): ReactElement {
                     {todayAppointments.map((a) => {
                       // Wiersz wizyty dzisiaj
                       const showTodayActions = true;
-                      const showUpcomingActions = false;
                       return (
                         <tr key={a.id} style={{ borderBottom: "1px solid rgba(233, 30, 99, 0.10)" }}>
                           <td style={{ padding: 10 }}>{formatTime(a.start)}</td>
@@ -1065,7 +1064,6 @@ export function MyAppointmentsPage(): ReactElement {
                   </thead>
                   <tbody>
                     {upcomingAppointments.map((a) => {
-                      const showTodayActions = false;
                       const showUpcomingActions = true;
                       return (
                         <tr key={a.id} style={{ borderBottom: "1px solid rgba(233, 30, 99, 0.10)" }}>

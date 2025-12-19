@@ -1,11 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { statisticsAPI } from '../../api';
+import { statisticsAPI } from '@/shared/api';
 import { Modal } from '@/shared/ui/Modal';
-import type { StatisticsResponse } from '@/shared/types';
+import type { DailyStatisticsItem, StatisticsResponse } from '@/shared/types';
 import '@/styles/pages/StatisticsPage.css';
 
 type DaysOption = 7 | 14 | 30 | 90;
+
+const formatPLN = (value: string | number): string => {
+  const num = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(num)) return '—';
+  return new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(num);
+};
+
+const formatPct = (value: number | null | undefined): string => {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+};
+
+const formatDeltaNumber = (value: number): string => `${value > 0 ? '+' : ''}${value}`;
+
+const formatDeltaMoney = (value: string): string => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  const formatted = formatPLN(Math.abs(n));
+  return `${n > 0 ? '+' : n < 0 ? '-' : ''}${formatted}`;
+};
+
+const getDeltaClass = (n: number): string => {
+  if (n > 0) return 'delta-positive';
+  if (n < 0) return 'delta-negative';
+  return 'delta-neutral';
+};
 
 const formatValue = (value: unknown): string => {
   if (value === null || value === undefined) return '—';
@@ -53,12 +79,31 @@ export const ManagerStatisticsPage: React.FC = (): ReactElement => {
 
   const summaryEntries = useMemo(() => {
     if (!data?.summary) return [];
-    return Object.entries(data.summary as unknown as Record<string, unknown>);
+    const order = [
+      'total_appointments',
+      'completed_appointments',
+      'cancelled_appointments',
+      'no_show_appointments',
+      'new_clients',
+      'total_clients',
+      'total_revenue',
+    ];
+
+    const obj = data.summary as unknown as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    const ordered = [...order.filter((k) => keys.includes(k)), ...keys.filter((k) => !order.includes(k))];
+    return ordered.map((k) => [k, obj[k]] as const);
   }, [data]);
 
   const periodEntries = useMemo(() => {
     if (!data?.period) return [];
     return Object.entries(data.period as unknown as Record<string, unknown>);
+  }, [data]);
+
+  const previousPeriodText = useMemo(() => {
+    if (!data?.previous_period) return null;
+    const p = data.previous_period;
+    return `Poprzedni okres: ${p.from} → ${p.to} (${p.days} dni)`;
   }, [data]);
 
   const servicesColumns = useMemo(() => {
@@ -105,6 +150,9 @@ export const ManagerStatisticsPage: React.FC = (): ReactElement => {
               {periodEntries.map(([k, v]) => `${prettifyKey(k)}: ${formatValue(v)}`).join(' • ')}
             </p>
           ) : null}
+          {previousPeriodText ? (
+            <p style={{ marginTop: 4, opacity: 0.75, fontSize: 13 }}>{previousPeriodText}</p>
+          ) : null}
         </div>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -132,7 +180,81 @@ export const ManagerStatisticsPage: React.FC = (): ReactElement => {
             <div key={key} className="stat-card">
               <div className="stat-content">
                 <h3>{prettifyKey(key)}</h3>
-                <p className="stat-value">{formatValue(value)}</p>
+                <p className="stat-value">
+                  {key === 'total_revenue'
+                    ? formatPLN(value as string | number)
+                    : formatValue(value)}
+                </p>
+
+                {/* Porównanie okresu vs poprzedni okres (jeśli backend zwraca) */}
+                {data?.comparison ? (
+                  (() => {
+                    const cmp = data.comparison;
+
+                    // Mapowanie kluczy summary -> ścieżka w comparison
+                    if (key === 'total_revenue' && cmp.total_revenue) {
+                      const d = Number(cmp.total_revenue.delta);
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaMoney(cmp.total_revenue.delta)} • {formatPct(cmp.total_revenue.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    if (key === 'new_clients' && cmp.new_clients) {
+                      const d = cmp.new_clients.delta;
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaNumber(d)} • {formatPct(cmp.new_clients.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    if (key === 'total_appointments' && cmp.appointments?.total) {
+                      const d = cmp.appointments.total.delta;
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaNumber(d)} • {formatPct(cmp.appointments.total.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    if (key === 'completed_appointments' && cmp.appointments?.completed) {
+                      const d = cmp.appointments.completed.delta;
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaNumber(d)} • {formatPct(cmp.appointments.completed.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    if (key === 'cancelled_appointments' && cmp.appointments?.cancelled) {
+                      const d = cmp.appointments.cancelled.delta;
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaNumber(d)} • {formatPct(cmp.appointments.cancelled.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    if (key === 'no_show_appointments' && cmp.appointments?.no_show) {
+                      const d = cmp.appointments.no_show.delta;
+                      const cls = getDeltaClass(d);
+                      return (
+                        <p className={`stat-delta ${cls}`}>
+                          {formatDeltaNumber(d)} • {formatPct(cmp.appointments.no_show.delta_pct)}
+                        </p>
+                      );
+                    }
+
+                    return null;
+                  })()
+                ) : null}
               </div>
             </div>
           ))
@@ -212,6 +334,47 @@ export const ManagerStatisticsPage: React.FC = (): ReactElement => {
           <p className="no-data">Brak danych pracowników.</p>
         )}
       </div>
+
+<div className="appointments-section">
+  <h2>Trend dzienny (zakończone)</h2>
+
+  {data?.daily && data.daily.length > 0 ? (
+    <div className="appointments-list" style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr>
+            <th style={{ textAlign: 'left', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+              Data
+            </th>
+            <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+              Wizyty
+            </th>
+            <th style={{ textAlign: 'right', padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+              Przychód
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.daily.map((row: DailyStatisticsItem, idx: number) => (
+            <tr key={idx}>
+              <td style={{ padding: '8px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {formatValue(row.date)}
+              </td>
+              <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {formatValue(row.appointments_count)}
+              </td>
+              <td style={{ padding: '8px 10px', textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                {formatPLN(row.revenue)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  ) : (
+    <p className="no-data">Brak danych trendu dziennego.</p>
+  )}
+</div>
     </div>
   );
 };

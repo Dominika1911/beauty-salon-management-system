@@ -1,8 +1,3 @@
-"""
-URL configuration for config project.
-Projekt: Beauty Salon Management System
-"""
-
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static

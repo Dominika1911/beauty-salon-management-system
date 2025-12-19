@@ -4,6 +4,7 @@ from typing import Any, Optional, Dict, List, TYPE_CHECKING, Iterable, Tuple
 
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q, Sum, QuerySet
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework.request import Request
@@ -2262,44 +2263,132 @@ class StatisticsView(APIView):
     """
     Globalne statystyki salonu (wizyty, przychody, usługi, pracownicy).
 
-    Domyślny okres: ostatnie 30 dni (parametr ?days=).
+    Obsługa okresu:
+    - domyślnie: ostatnie 30 dni (?days=30)
+    - alternatywnie: ?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD (date_to włącznie)
     """
+
     permission_classes = [IsManagerOrEmployee]
 
     def get(self, request: Request) -> Response:
-        days_param = request.query_params.get("days", "30")
-        try:
-            days = int(days_param)
-        except ValueError:
-            days = 30
+        # --- helpers ---
+        def _pct_change(cur: int | Decimal, prev: int | Decimal) -> Optional[float]:
+            try:
+                if prev == 0:
+                    return None
+                return float((Decimal(cur) - Decimal(prev)) / Decimal(prev) * Decimal("100.0"))
+            except Exception:
+                return None
+
+        def _delta_block(cur: int | Decimal, prev: int | Decimal, *, money: bool = False) -> Dict[str, Any]:
+            if money:
+                cur_d = Decimal(cur or 0).quantize(Decimal("0.01"))
+                prev_d = Decimal(prev or 0).quantize(Decimal("0.01"))
+                delta_d = (cur_d - prev_d).quantize(Decimal("0.01"))
+                return {
+                    "current": str(cur_d),
+                    "previous": str(prev_d),
+                    "delta": str(delta_d),
+                    "delta_pct": _pct_change(cur_d, prev_d),
+                }
+
+            cur_i = int(cur or 0)
+            prev_i = int(prev or 0)
+            delta_i = cur_i - prev_i
+            return {
+                "current": cur_i,
+                "previous": prev_i,
+                "delta": delta_i,
+                "delta_pct": (None if prev_i == 0 else round((delta_i / prev_i) * 100, 2)),
+            }
+
+        def _compute_snapshot(*, start_dt: datetime, end_dt: datetime) -> Dict[str, Any]:
+            appt_qs_local = Appointment.objects.filter(start__gte=start_dt, start__lt=end_dt)
+
+            total_clients_local = Client.objects.filter(deleted_at__isnull=True).count()
+            new_clients_local = Client.objects.filter(
+                created_at__gte=start_dt, created_at__lt=end_dt, deleted_at__isnull=True
+            ).count()
+
+            total_appointments_local = appt_qs_local.count()
+            completed_appointments_local = appt_qs_local.filter(status=Appointment.Status.COMPLETED).count()
+            cancelled_appointments_local = appt_qs_local.filter(status=Appointment.Status.CANCELLED).count()
+            no_show_appointments_local = appt_qs_local.filter(status=Appointment.Status.NO_SHOW).count()
+
+            payments_qs_local = (
+                Payment.objects.annotate(effective_paid_at=Coalesce("paid_at", "created_at"))
+                .filter(
+                    status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
+                    effective_paid_at__gte=start_dt,
+                    effective_paid_at__lt=end_dt,
+                )
+            )
+            total_revenue_local = payments_qs_local.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+
+            return {
+                "total_clients": total_clients_local,
+                "new_clients": new_clients_local,
+                "total_appointments": total_appointments_local,
+                "completed_appointments": completed_appointments_local,
+                "cancelled_appointments": cancelled_appointments_local,
+                "no_show_appointments": no_show_appointments_local,
+                "total_revenue": total_revenue_local,
+                "appt_qs": appt_qs_local,  # dla daily / innych agregacji
+            }
+
+        # --- okres ---
+        date_from = parse_date(request.query_params.get("date_from") or "")
+        date_to = parse_date(request.query_params.get("date_to") or "")
 
         now = timezone.now()
-        since = now - timedelta(days=days)
+        tz = timezone.get_current_timezone()
 
-        total_clients = Client.objects.filter(deleted_at__isnull=True).count()
-        new_clients = Client.objects.filter(created_at__gte=since, deleted_at__isnull=True).count()
+        if date_from and date_to:
+            if date_from > date_to:
+                return Response(
+                    {"detail": "date_from nie może być po date_to."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            start_dt = timezone.make_aware(datetime.combine(date_from, time.min), tz)
+            end_dt = timezone.make_aware(datetime.combine(date_to + timedelta(days=1), time.min), tz)  # exclusive
+            days = (date_to - date_from).days + 1
+        else:
+            days_param = request.query_params.get("days", "30")
+            try:
+                days = int(days_param)
+            except ValueError:
+                days = 30
 
-        total_appointments = Appointment.objects.count()
-        completed_appointments = Appointment.objects.filter(status=Appointment.Status.COMPLETED).count()
-        cancelled_appointments = Appointment.objects.filter(status=Appointment.Status.CANCELLED).count()
-        no_show_appointments = Appointment.objects.filter(status=Appointment.Status.NO_SHOW).count()
+            today = timezone.localdate()
+            start_date = today - timedelta(days=days - 1)
+            start_dt = timezone.make_aware(datetime.combine(start_date, time.min), tz)
+            # end exclusive: początek jutra (czyli “do końca dzisiejszego dnia”)
+            end_dt = timezone.make_aware(datetime.combine(today + timedelta(days=1), time.min), tz)
 
-        total_revenue = (
-            Payment.objects.filter(
-                status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-                created_at__gte=since,
-            ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
-        )
+        # --- poprzedni okres (tej samej długości) ---
+        prev_end_dt = start_dt
+        prev_start_dt = start_dt - timedelta(days=days)
 
+        # --- snapshoty ---
+        cur = _compute_snapshot(start_dt=start_dt, end_dt=end_dt)
+        prev = _compute_snapshot(start_dt=prev_start_dt, end_dt=prev_end_dt)
+
+        appt_qs = cur["appt_qs"]
+
+        # --- usługi: liczba wizyt + przychód (z payments powiązanych z wizytą) ---
         services_qs = (
             Service.objects.filter(is_published=True)
             .annotate(
-                total_appointments=Count("appointments", filter=Q(appointments__start__gte=since)),
+                total_appointments=Count(
+                    "appointments",
+                    filter=Q(appointments__start__gte=start_dt, appointments__start__lt=end_dt),
+                ),
                 total_revenue=Sum(
                     "appointments__payments__amount",
                     filter=Q(
                         appointments__payments__status__in=[Payment.Status.PAID, Payment.Status.DEPOSIT],
-                        appointments__payments__created_at__gte=since,
+                        appointments__payments__created_at__gte=start_dt,
+                        appointments__payments__created_at__lt=end_dt,
                     ),
                 ),
             )
@@ -2316,19 +2405,30 @@ class StatisticsView(APIView):
         ]
         service_stats = ServiceStatisticsSerializer(service_stats_data, many=True).data
 
+        # --- pracownicy: liczba wizyt, occupancy, + total_revenue z COMPLETED (service.price) ---
         employees_qs = (
             Employee.objects.filter(is_active=True)
             .annotate(
-                total_appointments=Count("appointments", filter=Q(appointments__start__gte=since)),
+                total_appointments=Count(
+                    "appointments",
+                    filter=Q(appointments__start__gte=start_dt, appointments__start__lt=end_dt),
+                ),
+                total_revenue=Sum(
+                    "appointments__service__price",
+                    filter=Q(
+                        appointments__start__gte=start_dt,
+                        appointments__start__lt=end_dt,
+                        appointments__status=Appointment.Status.COMPLETED,
+                    ),
+                ),
             )
             .order_by("-total_appointments")
         )
 
-        # ✅ TU JEST NAPRAWA: liczymy occupancy naprawdę
         employee_stats_data = []
         for employee in employees_qs:
-            avail_min = compute_employee_availability_minutes(employee, since, now)
-            appt_min = compute_employee_appointments_minutes(employee, since, now)
+            avail_min = compute_employee_availability_minutes(employee, start_dt, end_dt)
+            appt_min = compute_employee_appointments_minutes(employee, start_dt, end_dt)
 
             if avail_min <= 0:
                 occ = Decimal("0.00")
@@ -2340,27 +2440,79 @@ class StatisticsView(APIView):
                     "employee": employee,
                     "total_appointments": employee.total_appointments or 0,
                     "occupancy_percent": occ.quantize(Decimal("0.01")),
+                    "total_revenue": employee.total_revenue or Decimal("0.00"),
                 }
             )
 
         employee_stats = EmployeeStatisticsSerializer(employee_stats_data, many=True).data
 
+        # --- trend dzienny (COMPLETED) w bieżącym okresie ---
+        daily_raw = (
+            appt_qs.filter(status=Appointment.Status.COMPLETED)
+            .annotate(day=TruncDate("start", tzinfo=timezone.get_current_timezone()))
+            .values("day")
+            .annotate(
+                appointments_count=Count("id"),
+                revenue=Sum("service__price"),
+            )
+            .order_by("day")
+        )
+
+        daily = [
+            {
+                "date": row["day"].isoformat() if row["day"] else None,
+                "appointments_count": int(row["appointments_count"]),
+                "revenue": row["revenue"] or Decimal("0.00"),
+            }
+            for row in daily_raw
+        ]
+
+        # --- response ---
         data = {
-            "period": {"days": days, "from": since, "to": now},
-            "summary": {
-                "total_clients": total_clients,
-                "new_clients": new_clients,
-                "total_appointments": total_appointments,
-                "completed_appointments": completed_appointments,
-                "cancelled_appointments": cancelled_appointments,
-                "no_show_appointments": no_show_appointments,
-                "total_revenue": total_revenue,
+            "period": {
+                "days": days,
+                "from": start_dt.isoformat(),
+                "to": end_dt.isoformat(),
+                "date_from": (date_from.isoformat() if date_from else None),
+                "date_to": (date_to.isoformat() if date_to else None),
             },
+            "previous_period": {
+                "days": days,
+                "from": prev_start_dt.isoformat(),
+                "to": prev_end_dt.isoformat(),
+            },
+
+            # zachowujemy dotychczasową strukturę (front nie pęknie)
+            "summary": {
+                "total_clients": cur["total_clients"],
+                "new_clients": cur["new_clients"],
+                "total_appointments": cur["total_appointments"],
+                "completed_appointments": cur["completed_appointments"],
+                "cancelled_appointments": cur["cancelled_appointments"],
+                "no_show_appointments": cur["no_show_appointments"],
+                "total_revenue": cur["total_revenue"],
+            },
+
+            # nowe: porównanie current vs previous (Δ i %)
+            "comparison": {
+                "total_revenue": _delta_block(cur["total_revenue"], prev["total_revenue"], money=True),
+                "new_clients": _delta_block(cur["new_clients"], prev["new_clients"]),
+                "appointments": {
+                    "total": _delta_block(cur["total_appointments"], prev["total_appointments"]),
+                    "completed": _delta_block(cur["completed_appointments"], prev["completed_appointments"]),
+                    "cancelled": _delta_block(cur["cancelled_appointments"], prev["cancelled_appointments"]),
+                    "no_show": _delta_block(cur["no_show_appointments"], prev["no_show_appointments"]),
+                },
+            },
+
             "services": service_stats,
             "employees": employee_stats,
+            "daily": daily,
         }
 
         return Response(data)
+
+
 
 
 # ==================== DASHBOARD VIEW ====================

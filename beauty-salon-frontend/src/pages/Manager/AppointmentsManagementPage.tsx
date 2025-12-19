@@ -200,8 +200,6 @@ function DetailsModal(props: {
   const joinedClientName = parts.length > 0 ? parts.join(" ") : null;
 
   const clientName = clientNameCandidate ?? joinedClientName;
-
-  const employeeName = safeString(employeeObj?.full_name) ?? null;
   const serviceName = safeString(serviceObj?.name) ?? null;
 
   const startISO = safeString(obj?.start);

@@ -1342,6 +1342,8 @@ class EmployeeStatisticsSerializer(serializers.Serializer):
     employee = EmployeeSimpleSerializer(read_only=True)
     total_appointments = serializers.IntegerField(read_only=True)
     occupancy_percent = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    total_revenue = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
 
 class ScheduleUpdateSerializer(serializers.ModelSerializer):
     availability_periods = AvailabilityPeriodSerializer(many=True)
