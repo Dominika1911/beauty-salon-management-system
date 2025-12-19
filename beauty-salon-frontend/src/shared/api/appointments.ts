@@ -9,6 +9,18 @@ import type {
 } from '@/shared/types';
 import type { AxiosResponse } from 'axios';
 
+/**
+ * UWAGA: Kontrakt backendu jest mieszany:
+ * - POST/PATCH /appointments/ używa "slugów" (stabilnych identyfikatorów biznesowych):
+ *   - employee: Employee.number (np. "EMP-00003")
+ *   - client: Client.number (np. "CLI-00026")
+ *   - service: Service.name (np. "Balayage premium ...")
+ * - POST /bookings/ (rezerwacja klienta) używa ID:
+ *   - employee: Employee.id (number)
+ *   - service: Service.id (number)
+ */
+const looksLikeNumericId = (v: unknown): boolean => typeof v === 'string' && /^\d+$/.test(v);
+
 // Parametry filtrowania i paginacji (zgodne z DRF filterset_fields + custom date_from/date_to)
 interface AppointmentListParams {
   date_from?: string;
@@ -98,11 +110,28 @@ export const appointmentsAPI: AppointmentsApi = {
   },
 
   /**
-   * Utwórz wizytę (manager/employee – backend może blokować client)
-   */
-  create: (data: AppointmentCreateData): Promise<AxiosResponse<AppointmentDetail>> => {
-    return api.post<AppointmentDetail>(ENDPOINTS.base, data);
-  },
+ * Utwórz wizytę (manager/employee – backend może blokować client)
+ *
+ * Backend oczekuje "slugów", nie ID:
+ * - data.employee = employee.number (np. "EMP-00003")
+ * - data.client   = client.number   (np. "CLI-00026")
+ * - data.service  = service.name    (np. "Balayage premium ...")
+ */
+create: (data: AppointmentCreateData): Promise<AxiosResponse<AppointmentDetail>> => {
+  if (!data.employee || !data.employee.trim()) {
+    return Promise.reject(new Error('Invalid employee (use Employee.number, e.g. "EMP-00003")'));
+  }
+  if (looksLikeNumericId(data.employee)) {
+    return Promise.reject(new Error('Employee looks like numeric ID; use Employee.number (e.g. "EMP-00003")'));
+  }
+  if (data.client != null && data.client !== '' && looksLikeNumericId(data.client)) {
+    return Promise.reject(new Error('Client looks like numeric ID; use Client.number (e.g. "CLI-00026")'));
+  }
+  if (!data.service || !data.service.trim()) {
+    return Promise.reject(new Error('Invalid service (use Service.name)'));
+  }
+  return api.post<AppointmentDetail>(ENDPOINTS.base, data);
+},
 
   /**
    * Zmiana statusu wizyty
@@ -123,12 +152,31 @@ export const appointmentsAPI: AppointmentsApi = {
   },
 
   /**
-   * Aktualizacja wizyty (PATCH)
-   */
-  update: (id: number, data: Partial<AppointmentCreateData>): Promise<AxiosResponse<AppointmentDetail>> => {
-    if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
-    return api.patch<AppointmentDetail>(ENDPOINTS.detail(id), data);
-  },
+ * Aktualizacja wizyty (PATCH)
+ *
+ * Tak samo jak create(): backend przyjmuje "slugi":
+ * - employee: Employee.number
+ * - client: Client.number
+ * - service: Service.name
+ */
+update: (id: number, data: Partial<AppointmentCreateData>): Promise<AxiosResponse<AppointmentDetail>> => {
+  if (!id || id <= 0) return Promise.reject(new Error('Invalid appointment ID'));
+
+  if (data.employee != null) {
+    if (!data.employee.trim()) return Promise.reject(new Error('Invalid employee (use Employee.number)'));
+    if (looksLikeNumericId(data.employee)) {
+      return Promise.reject(new Error('Employee looks like numeric ID; use Employee.number'));
+    }
+  }
+  if (data.client != null && data.client !== '' && looksLikeNumericId(data.client)) {
+    return Promise.reject(new Error('Client looks like numeric ID; use Client.number'));
+  }
+  if (data.service != null) {
+    if (!data.service.trim()) return Promise.reject(new Error('Invalid service (use Service.name)'));
+  }
+
+  return api.patch<AppointmentDetail>(ENDPOINTS.detail(id), data);
+},
 
   /**
    * Usunięcie wizyty
@@ -140,6 +188,11 @@ export const appointmentsAPI: AppointmentsApi = {
 
   /**
    * Rezerwacja klienta: POST /bookings/
+   *
+   * Ten endpoint używa ID (nie slugów):
+   * - data.employee = Employee.id (number)
+   * - data.service  = Service.id (number)
+   *
    * Backend waliduje dostępność; frontend wybiera start ze slotów z /availability/slots/
    */
   book: (data: BookingCreateData): Promise<AxiosResponse<AppointmentDetail>> => {

@@ -9,9 +9,8 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
-/**
- * Provider autentykacji - opakowuje aplikację i zarządza stanem logowania
- */
+
+// Provider autentykacji - opakowuje aplikację i zarządza stanem logowania
 export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -22,9 +21,8 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
   const isEmployee = user?.role === 'employee';
   const isClient = user?.role === 'client';
 
-  /**
-   * Sprawdza, czy użytkownik jest zalogowany
-   */
+
+  //Sprawdza, czy użytkownik jest zalogowany
   const checkAuthStatus: () => Promise<void> = async (): Promise<void> => {
     try {
       setIsLoading(true);
@@ -44,22 +42,18 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
     }
   };
 
-  // Sprawdź auth przy montowaniu komponentu (najpierw ustaw CSRF cookie)
+  // Sprawdza auth przy montowaniu komponentu (najpierw ustaw CSRF cookie)
   useEffect(() => {
     (async () => {
       try {
-        await authAPI.csrf(); // ustawia csrftoken cookie
+        await authAPI.csrf();
       } catch {
-        // ignorujemy – chodzi o cookie
       }
       await checkAuthStatus();
     })();
   }, []);
 
-  /**
-   * Loguje użytkownika do systemu
-   * ZGODNIE Z TYPAMI: zwraca { success, error? }
-   */
+  //Loguje użytkownika do systemu
   const login: AuthContextType['login'] = async (
     credentials: LoginCredentials,
   ): Promise<{ success: boolean; error?: string }> => {
@@ -90,9 +84,7 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
     }
   };
 
-  /**
-   * Wylogowuje użytkownika
-   */
+   // Wylogowuje użytkownika
   const logout: () => Promise<void> = async (): Promise<void> => {
     try {
       setError(null);
@@ -109,7 +101,7 @@ export function AuthProvider({ children }: AuthProviderProps): ReactElement {
     user,
     isAuthenticated,
     isLoading,
-    loading: isLoading, // alias z typów
+    loading: isLoading,
     error,
     isManager,
     isEmployee,

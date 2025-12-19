@@ -15,6 +15,15 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
+# Additional imports for authentication views
+
+
+# Imports for authentication endpoints (now moved to auth_views.py)
+# These remain here only if other views need them. Currently unused.
+from django.utils.decorators import method_decorator  # type: ignore
+from django.views.decorators.csrf import csrf_exempt  # type: ignore
+from rest_framework.decorators import api_view  # type: ignore
+
 # ============================================================================
 # IMPORTY PERMISSIONS Z OSOBNEGO PLIKU
 # ============================================================================
@@ -769,6 +778,32 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return AppointmentStatusUpdateSerializer
         # (opcjonalnie) tu nie musisz nic dodawać, bo cancel_my zwraca detail serializer
         return AppointmentDetailSerializer
+
+    def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        """
+        Utworzenie wizyty (manager/pracownik).  Nadpisujemy domyślną implementację,
+        aby przetwarzać pola employee, client i service przekazywane jako ciągi
+        znaków reprezentujące identyfikatory.  Jeśli są to cyfry, konwertujemy
+        je do int – w przeciwnym razie pozostawiamy bez zmian.  Dzięki temu
+        backend nie odrzuci poprawnych identyfikatorów przesłanych jako string.
+        """
+        mutable_data = request.data.copy()
+        for field in ("employee", "client", "service"):
+            value = mutable_data.get(field)
+            # jeśli pole istnieje i jest łańcuchem złożonym wyłącznie z cyfr,
+            # konwertujemy do liczby całkowitej – DRF serializer lepiej interpretuje int.
+            if isinstance(value, str) and value.isdigit():
+                try:
+                    mutable_data[field] = int(value)
+                except ValueError:
+                    # pozostawiamy oryginalną wartość; walidacja będzie obsłużona przez serializer
+                    pass
+
+        serializer = self.get_serializer(data=mutable_data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)  # type: ignore[arg-type]
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def get_permissions(self) -> List[permissions.BasePermission]:
         if self.action in ["change_status", "destroy"]:

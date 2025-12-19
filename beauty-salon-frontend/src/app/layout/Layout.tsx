@@ -1,5 +1,3 @@
-// src/components/Layout/Layout.tsx
-
 import React, { type ReactElement } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useAuth } from '@/shared/hooks/useAuth';
