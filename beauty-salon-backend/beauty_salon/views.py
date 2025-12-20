@@ -2,7 +2,10 @@ from datetime import timedelta, datetime, date, time
 from decimal import Decimal
 from typing import Any, Optional, Dict, List, TYPE_CHECKING, Iterable, Tuple
 
+import uuid
+
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, Q, Sum, QuerySet
 from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
@@ -101,6 +104,8 @@ from .serializers import (
     ClientDetailSerializer,
     ClientCreateUpdateSerializer,
     ClientSoftDeleteSerializer,
+    ClientMeSerializer,
+    ClientMeUpdateSerializer,
     # SCHEDULE & TIME OFF
     ScheduleSerializer,
     ScheduleUpdateSerializer,
@@ -393,18 +398,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
 
-
-# ==================== CLIENT VIEWS ====================
-
-
 class ClientViewSet(viewsets.ModelViewSet):
     """
-    Klienci salonu.
+       Klienci salonu.
 
-    - Manager/pracownik: pełne zarządzanie klientami
-    - Klient: dostęp do własnego profilu przez `me` oraz `my_appointments`
-    """
-
+       - Manager/pracownik: pełne zarządzanie klientami
+       - Klient: dostęp do własnego profilu przez `me` oraz `my_appointments`
+       """
     queryset = Client.objects.select_related("user").all()
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ["marketing_consent", "preferred_contact", "deleted_at", "email"]
@@ -471,15 +471,28 @@ class ClientViewSet(viewsets.ModelViewSet):
 
         return qs.none()
 
-    @action(detail=False, methods=["get"])
+    @action(detail=False, methods=["get", "patch", "delete"])
     def me(self, request: Request) -> Response:
-        """Profil klienta powiązanego z zalogowanym użytkownikiem."""
+        """
+        Profil klienta powiązanego z zalogowanym użytkownikiem (RODO):
+        - GET: zwraca dane profilu (bez internal_notes)
+        - PATCH: edycja danych profilu (tylko pola klienta)
+        - DELETE: usunięcie konta (soft delete + anonimizacja + audit log)
+        """
         user = request.user
         if not user.is_authenticated:
             return Response(
                 {"detail": "Authentication credentials were not provided."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+        # Tylko klient ma prawo do /clients/me/
+        if not (hasattr(user, "is_client") and getattr(user, "is_client", False)):
+            return Response(
+                {"detail": "Dostęp tylko dla klienta."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         try:
             client = user.client_profile
         except Client.DoesNotExist:
@@ -487,8 +500,83 @@ class ClientViewSet(viewsets.ModelViewSet):
                 {"detail": "Konto nie jest powiązane z klientem."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        serializer = ClientDetailSerializer(client)
-        return Response(serializer.data)
+
+        # --------------------
+        # GET
+        # --------------------
+        if request.method == "GET":
+            serializer = ClientMeSerializer(client)
+            return Response(serializer.data)
+
+        # --------------------
+        # PATCH
+        # --------------------
+        if request.method == "PATCH":
+            serializer = ClientMeUpdateSerializer(client, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+
+            # wykrycie zmienionych pól (bez wartości)
+            changed_fields: list[str] = []
+            for field, new_val in serializer.validated_data.items():
+                old_val = getattr(client, field)
+                if old_val != new_val:
+                    changed_fields.append(field)
+
+            updated_client = serializer.save()
+
+            create_audit_log(
+                user=request.user,
+                type="client.me.update",
+                message="Klient zaktualizował swój profil.",
+                entity=updated_client,
+                request=request,
+                metadata={"changed_fields": changed_fields},
+            )
+
+            return Response(ClientMeSerializer(updated_client).data, status=status.HTTP_200_OK)
+
+        # --------------------
+        # DELETE (RODO / GDPR erase)
+        # --------------------
+        if request.method == "DELETE":
+            with transaction.atomic():
+                # 1) soft delete klienta (deleted_at)
+                client.soft_delete()
+
+                # 2) anonimizacja danych klienta (profil)
+                client.first_name = "Klient"
+                client.last_name = "Klient"
+                client.email = None
+                client.phone = None
+                client.marketing_consent = False
+                client.preferred_contact = Client.ContactPreference.NONE
+                client.internal_notes = ""
+                client.user = None  # odpinamy konto od profilu
+                client.save()
+
+                # 3) dezaktywacja i anonimizacja User (email jest unique i NOT NULL)
+                #    Uwaga: nie możemy ustawić email na None.
+                deleted_email = f"deleted-{uuid.uuid4()}@example.invalid"
+                user.email = deleted_email
+                user.first_name = ""
+                user.last_name = ""
+                user.is_active = False
+                user.save(update_fields=["email", "first_name", "last_name", "is_active"])
+
+                create_audit_log(
+                    user=request.user,
+                    type="client.me.gdpr_delete",
+                    message="Klient usunął konto (RODO): soft delete + anonimizacja.",
+                    entity=client,
+                    request=request,
+                    metadata={"client_id": client.id, "user_id": user.id},
+                )
+
+            # 204 = brak treści (frontend i tak zrobi logout)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return Response({"detail": "Method not allowed."}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
 
     @action(detail=False, methods=["get"])
     def soft_deleted(self, request: Request) -> Response:
@@ -545,6 +633,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         qs = Appointment.objects.filter(client=client).order_by("id")
         serializer = AppointmentListSerializer(qs, many=True)
         return Response(serializer.data)
+
 
 
 # ==================== SCHEDULE VIEWS ====================

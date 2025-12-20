@@ -4,6 +4,8 @@ import type {
   AppointmentListItem,
   Client,
   ClientCreateUpdateData,
+  ClientMe,
+  ClientMeUpdateData,
   PaginatedResponse,
 } from '@/shared/types';
 
@@ -42,13 +44,17 @@ export interface ClientsApi {
   update: (id: number, data: Partial<ClientCreateUpdateData>) => Promise<AxiosResponse<Client>>;
   delete: (id: number) => Promise<AxiosResponse<void>>;
 
-  me: () => Promise<AxiosResponse<Client>>;
+  // Profil klienta (RODO)
+  me: () => Promise<AxiosResponse<ClientMe>>;
+  updateMe: (data: ClientMeUpdateData) => Promise<AxiosResponse<ClientMe>>;
+  deleteMe: () => Promise<AxiosResponse<void>>;
+
   myAppointments: () => Promise<AxiosResponse<AppointmentListItem[]>>;
 
   softDeleted: (params?: ClientListParams) => Promise<AxiosResponse<Client[]>>;
 
   /**
-   * ✅ POPRAWNE
+   *  POPRAWNE
    * POST /clients/soft_delete/
    * body: { client: number }
    */
@@ -75,7 +81,10 @@ export const clientsAPI: ClientsApi = {
 
   delete: (id) => api.delete<void>(ENDPOINTS.detail(id)),
 
-  me: () => api.get<Client>(ENDPOINTS.me),
+  // RODO: profil klienta
+  me: () => api.get<ClientMe>(ENDPOINTS.me),
+  updateMe: (data) => api.patch<ClientMe>(ENDPOINTS.me, data),
+  deleteMe: () => api.delete<void>(ENDPOINTS.me),
 
   myAppointments: () => api.get<AppointmentListItem[]>(ENDPOINTS.myAppointments),
 

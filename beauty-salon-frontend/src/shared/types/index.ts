@@ -122,6 +122,31 @@ export interface ClientCreateUpdateData {
   internal_notes?: string;
 }
 
+// ✅ Profil klienta (RODO) — /clients/me/
+export interface ClientMe {
+  id: number;
+  number: string | null;
+  first_name: string;
+  last_name: string;
+  full_name?: string;
+  email: string | null;
+  phone: string | null;
+  marketing_consent: boolean;
+  preferred_contact: 'email' | 'sms' | 'phone' | 'none';
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClientMeUpdateData {
+  first_name?: string;
+  last_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  marketing_consent?: boolean;
+  preferred_contact?: 'email' | 'sms' | 'phone' | 'none';
+}
+
 // ============================================================================
 // SERVICE
 // ============================================================================
@@ -407,7 +432,7 @@ export interface ScheduleEntry {
   id?: number;
   weekday: Weekday;
   start_time: string; // HH:MM:SS
-  end_time: string;   // HH:MM:SS
+  end_time: string; // HH:MM:SS
 }
 
 export type ScheduleBreak =

@@ -547,6 +547,57 @@ class ClientDetailSerializer(serializers.ModelSerializer):
         return getattr(obj, "deleted_at", None) is not None
 
 
+# ==================== CLIENT "ME" (GDPR PROFILE) SERIALIZERS ====================
+
+class ClientMeUpdateSerializer(serializers.ModelSerializer):
+    """
+    Update profilu klienta (/clients/me/) – tylko pola klienta.
+    Bez internal_notes, bez user, bez number.
+    """
+    class Meta:
+        model = Client
+        fields = [
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "marketing_consent",
+            "preferred_contact",
+        ]
+
+class ClientMeSerializer(serializers.ModelSerializer):
+    """
+    Profil klienta dla endpointu /clients/me/
+    UWAGA: NIE zwracamy internal_notes (notatki salonu).
+    """
+    full_name = serializers.CharField(source="get_full_name", read_only=True)
+
+    class Meta:
+        model = Client
+        fields = [
+            "id",
+            "number",
+            "first_name",
+            "last_name",
+            "full_name",
+            "email",
+            "phone",
+            "marketing_consent",
+            "preferred_contact",
+            "deleted_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "number",
+            "full_name",
+            "deleted_at",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class ClientCreateUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Client
@@ -569,6 +620,7 @@ class ClientCreateUpdateSerializer(serializers.ModelSerializer):
             if not callable(is_client) or not is_client():
                 raise serializers.ValidationError("Wybrane konto nie ma roli klienta.")
         return value
+
 
 
 class ClientSoftDeleteSerializer(serializers.Serializer):

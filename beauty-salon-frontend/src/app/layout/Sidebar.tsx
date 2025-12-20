@@ -59,7 +59,9 @@ export function Sidebar(): ReactElement | null {
 
       // CLIENT
       { label: 'Klient', roles: ['client'], type: 'header' },
+      { label: 'Mój profil (RODO)', path: '/my-client-profile', roles: ['client'], type: 'link' },
       { label: 'Umów wizytę', path: '/book', roles: ['client'], type: 'link' },
+
 
       // MANAGER
       { label: 'Manager', roles: ['manager'], type: 'header' },

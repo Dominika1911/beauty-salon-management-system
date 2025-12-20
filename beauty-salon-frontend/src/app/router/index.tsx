@@ -37,6 +37,10 @@ import ManagerProfilePage from '@/pages/Manager/ManagerProfilePage';
 import { ServicesCatalogPage } from '@/pages/ServicesCatalogPage';
 import StatisticsPage from '@/pages/StatisticsPage';
 import SettingsPage from '@/pages/SettingsPage';
+
+import ClientMyProfilePage from '@/pages/Clients/MyProfilePage';
+
+
 // import ForgotPasswordPage from '@/pages/ForgotPasswordPage'; // usunięto reset hasła
 
 
@@ -290,6 +294,17 @@ const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
+
+              // CLIENT profile (RODO)
+      {
+        path: 'my-client-profile',
+        element: (
+          <ProtectedRoute allowedRoles={['client']}>
+            <ClientMyProfilePage />
+          </ProtectedRoute>
+        ),
+      },
+
     ],
   },
 
