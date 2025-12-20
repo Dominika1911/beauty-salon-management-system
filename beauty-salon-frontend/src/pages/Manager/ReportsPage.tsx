@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { isAxiosError } from 'axios';
-import { reportsAPI, type ReportPDF } from '@/shared/api/reports';
+import { reportsAPI, type ReportPDF } from '@/api/reports.ts';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -11,7 +11,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 type ModalVariant = 'info' | 'success' | 'error';
 

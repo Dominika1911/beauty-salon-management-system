@@ -1,0 +1,81 @@
+.filtersGrid {
+  display: grid;
+  grid-template-columns: 1fr 220px 260px auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.fieldLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldTitle {
+  font-weight: 800;
+}
+
+.banner {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid;
+  font-weight: 800;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bannerSuccess {
+  border-color: #9ad5b3;
+  background-color: #e9fff1;
+}
+
+.bannerError {
+  border-color: #f2a6b3;
+  background-color: #fff1f3;
+}
+
+.bannerText {
+  word-break: break-word;
+}
+
+.bannerCloseBtn {
+  padding: 6px 10px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.theadRow {
+  text-align: left;
+  border-bottom: 1px solid var(--beauty-border-accent-25);
+}
+
+.tr {
+  border-bottom: 1px solid var(--beauty-border-accent-12);
+}
+
+.th {
+  padding: 10px 8px;
+}
+
+.td {
+  padding: 10px 8px;
+  vertical-align: top;
+}
+
+.idCell {
+  font-weight: 900;
+}
+
+.message {
+  font-weight: 800;
+}
+
+.retryRow {
+  margin-top: 12px;
+}

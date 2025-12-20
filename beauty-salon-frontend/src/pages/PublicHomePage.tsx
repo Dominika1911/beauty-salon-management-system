@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '@/shared/hooks/useAuth';
+import { useAuth } from '@/hooks/useAuth.ts';
 
 const pageWrap: CSSProperties = {
   padding: 24,

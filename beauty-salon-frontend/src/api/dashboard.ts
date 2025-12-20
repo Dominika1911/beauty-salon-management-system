@@ -1,0 +1,15 @@
+import { api } from './axios.ts';
+import type { AxiosResponse } from 'axios';
+import type { DashboardResponse } from '@/types';
+
+interface DashboardApi {
+  get: () => Promise<AxiosResponse<DashboardResponse>>;
+}
+
+const ENDPOINTS = {
+  base: '/dashboard/',
+} as const;
+
+export const dashboardAPI: DashboardApi = {
+  get: () => api.get(ENDPOINTS.base),
+};

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import type { CSSProperties } from "react";
 import { isAxiosError } from "axios";
-import { appointmentsAPI } from "@/shared/api/appointments";
-import { AppointmentFormModal } from "@/features/manager/components/AppointmentFormModal";
-import type { AppointmentListItem, AppointmentStatus, PaginatedResponse } from "@/shared/types";
+import { appointmentsAPI } from "@/api/appointments.ts";
+import { AppointmentFormModal } from "@/components/Manager/AppointmentFormModal";
+
+import type { AppointmentListItem, AppointmentStatus, PaginatedResponse } from "@/types";
 import {
   beautyButtonSecondaryStyle,
   beautyButtonStyle,
@@ -15,7 +16,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from "@/shared/utils/ui";
+} from "@/utils/ui.ts";
 
 type ModalVariant = "info" | "confirm" | "error";
 

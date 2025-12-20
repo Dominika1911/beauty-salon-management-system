@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement, type CSSProperties } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
-import { clientsAPI } from '@/shared/api/clients';
-import type { Client, ClientCreateUpdateData } from '@/shared/types';
+import { clientsAPI } from '@/api/clients.ts';
+import type { Client, ClientCreateUpdateData } from '@/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -13,7 +13,7 @@ import {
   beautyInputStyle,
   beautyMutedTextStyle,
   beautyPageTitleStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 function extractErrorMessage(err: unknown): string {
   if (isAxiosError(err)) {

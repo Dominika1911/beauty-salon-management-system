@@ -1,13 +1,13 @@
 // src/pages/Employee/MySchedulePage.tsx
 
 import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
-import { useAuth } from '@/shared/hooks/useAuth';
-import type { Employee, TimeOff, ScheduleEntry, Weekday } from '@/shared/types';
-import { employeesAPI } from '@/shared/api/employees';
-import { scheduleAPI } from '@/shared/api/schedule';
-import { ScheduleEditor } from '@/features/schedule/components/ScheduleEditor';
-import { TimeOffForm } from '@/features/schedule/components/TimeOffForm';
-import { useNotification } from '@/shared/ui/Notification';
+import { useAuth } from '@/hooks/useAuth.ts';
+import type { Employee, TimeOff, ScheduleEntry, Weekday } from '@/types';
+import { employeesAPI } from '@/api/employees.ts';
+import { scheduleAPI } from '@/api/schedule.ts';
+import { ScheduleEditor } from '@/components/Schedule/ScheduleEditor.tsx';
+import { TimeOffForm } from '@/components/Schedule/TimeOffForm.tsx';
+import { useNotification } from '@/components/Notification';
 
 type PageState = 'idle' | 'loading' | 'ready' | 'error';
 

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import type { ReactElement } from 'react';
-import { useAuth } from '@/shared/hooks/useAuth';
-import { dashboardAPI, statisticsAPI } from "@/shared/api";
-import { Modal } from '@/shared/ui/Modal';
+import { useAuth } from '@/hooks/useAuth.ts';
+import { dashboardAPI, statisticsAPI } from "@/api";
+import { Modal } from '@/components/Modal.tsx';
 import type {
   DashboardData,
   ClientDashboardData,
@@ -10,8 +10,7 @@ import type {
   ManagerDashboardData,
   DashboardAppointment,
   StatisticsResponse,
-} from '@/shared/types';
-import '@/styles/pages/DashboardPage.css';
+} from '@/types';
 
 // --- DEFINICJE INTERFEJSÓW DLA PROPSÓW KOMPONENTÓW ---
 interface ClientProps { data: ClientDashboardData; }

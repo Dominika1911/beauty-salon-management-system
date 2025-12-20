@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import { isAxiosError } from 'axios';
-import { invoicesAPI } from '@/shared/api/invoices';
-import type { Invoice, PaginatedResponse } from '@/shared/types';
+import { invoicesAPI } from '@/api/invoices.ts';
+import type { Invoice, PaginatedResponse } from '@/types';
 import {
   beautyCardStyle,
   beautyCardHeaderStyle,
@@ -12,7 +12,7 @@ import {
   beautyInputStyle,
   beautyMutedTextStyle,
   beautySelectStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 type Msg = { type: 'success' | 'error'; text: string };
 type PaidFilter = 'all' | 'paid' | 'unpaid';

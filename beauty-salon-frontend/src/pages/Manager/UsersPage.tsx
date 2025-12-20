@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { isAxiosError } from 'axios';
 
-import { usersAPI } from '@/shared/api/users';
-import { Table, type ColumnDefinition } from '@/shared/ui/Table/Table';
-import type { PaginatedResponse, UserListItem, UserRole } from '@/shared/types';
+import { usersAPI } from '@/api/users.ts';
+import { Table, type ColumnDefinition } from '@/components/Table.tsx';
+import type { PaginatedResponse, UserListItem, UserRole } from '@/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -14,7 +14,7 @@ import {
   beautyMutedTextStyle,
   beautyPageTitleStyle,
   beautySelectStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 const USERS_PAGE_SIZE = 50;
 

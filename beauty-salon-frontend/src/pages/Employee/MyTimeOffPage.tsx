@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState, type ReactElement } from 'react';
-import { employeesAPI } from '@/shared/api/employees';
-import { scheduleAPI } from '@/shared/api/schedule';
-import type { Employee, TimeOff } from '@/shared/types';
-import { TimeOffForm } from '@/features/schedule/components/TimeOffForm';
-import { Modal } from '@/shared/ui/Modal';
-import { useNotification } from '@/shared/ui/Notification';
-import { useAuth } from '@/shared/hooks/useAuth';
+import { employeesAPI } from '@/api/employees.ts';
+import { scheduleAPI } from '@/api/schedule.ts';
+import type { Employee, TimeOff } from '@/types';
+import { TimeOffForm } from '@/components/Schedule/TimeOffForm.tsx';
+import { Modal } from '@/components/Modal.tsx';
+import { useNotification } from '@/components/Notification';
+import { useAuth } from '@/hooks/useAuth.ts';
 
 export const MyTimeOffPage: React.FC = (): ReactElement => {
   const { isEmployee } = useAuth();

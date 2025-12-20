@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
-import { invoicesAPI } from '@/shared/api/invoices';
-import type { Invoice } from '@/shared/types';
+import { invoicesAPI } from '@/api/invoices.ts';
+import type { Invoice } from '@/types';
 import {
   beautyCardStyle,
   beautyCardHeaderStyle,
@@ -10,7 +10,7 @@ import {
   beautyPageTitleStyle,
   beautyButtonSecondaryStyle,
   beautyMutedTextStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 type Msg = { type: 'success' | 'error'; text: string };
 

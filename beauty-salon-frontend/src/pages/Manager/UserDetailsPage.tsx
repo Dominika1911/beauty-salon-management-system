@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { usersAPI } from '@/shared/api/users';
-import type { User, UserAccountStatus } from '@/shared/types';
+import { usersAPI } from '@/api/users.ts';
+import type { User, UserAccountStatus } from '@/types';
 import {
   beautyButtonDangerStyle,
   beautyButtonSecondaryStyle,
@@ -11,7 +11,7 @@ import {
   beautyCardStyle,
   beautyMutedTextStyle,
   beautyPageTitleStyle,
-} from '@/shared/utils/ui';
+} from '@/utils/ui.ts';
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—';

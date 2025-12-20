@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { ChangeEvent, ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { clientsAPI, usersAPI } from '@/shared/api';
-import { Modal } from '@/shared/ui/Modal';
-import { useAuth } from '@/shared/hooks/useAuth';
-import type { ClientMe, ClientMeUpdateData } from '@/shared/types';
+import { clientsAPI, usersAPI } from '@/api';
+import { Modal } from '@/components/Modal.tsx';
+import { useAuth } from '@/hooks/useAuth.ts';
+import type { ClientMe, ClientMeUpdateData } from '@/types';
 
 type PreferredContact = 'email' | 'sms' | 'phone' | 'none';
 

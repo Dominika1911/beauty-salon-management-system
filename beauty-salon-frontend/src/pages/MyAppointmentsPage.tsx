@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement, type CSSProperties } from "react";
 import { isAxiosError } from "axios";
 
-import { appointmentsAPI } from "@/shared/api/appointments";
-import { availabilityAPI, type AvailabilitySlot } from "@/shared/api/availability";
-import { employeesAPI } from "@/shared/api/employees";
-import { clientsAPI } from "@/shared/api/clients";
+import { appointmentsAPI } from "@/api/appointments.ts";
+import { availabilityAPI, type AvailabilitySlot } from "@/api/availability.ts";
+import { employeesAPI } from "@/api/employees.ts";
+import { clientsAPI } from "@/api/clients.ts";
 
-import type { AppointmentCreateData, AppointmentListItem, AppointmentStatus, Client, Employee, Service } from "@/shared/types";
-import { useAuth } from "@/shared/hooks/useAuth";
-import { AppointmentDetailsModal } from "@/features/appointments/components/AppointmentDetailsModal";
+import type { AppointmentCreateData, AppointmentListItem, AppointmentStatus, Client, Employee, Service } from "@/types";
+import { useAuth } from "@/hooks/useAuth.ts";
+import { AppointmentDetailsModal } from "@/components/AppointmentDetailsModal";
 import {
   beautyButtonSecondaryStyle,
   beautyButtonStyle,
@@ -20,7 +20,7 @@ import {
   beautyPageTitleStyle,
   beautyColors,
   beautySelectStyle,
-} from "@/shared/utils/ui";
+} from "@/utils/ui.ts";
 
 // Zamiast stanu zakładek (tab) pokazujemy osobne sekcje dla wizyt dzisiaj oraz nadchodzących.
 
