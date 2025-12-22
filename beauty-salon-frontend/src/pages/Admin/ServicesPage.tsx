@@ -38,7 +38,9 @@ const AdminServicesPage: React.FC = () => {
 
   const fetchServices = async () => {
     try {
+      console.log('Pobieram usługi...');
       const data = await getServices();
+      console.log('Otrzymane usługi:', data);
       setServices(data);
     } catch (err) {
       console.error(err);
@@ -82,7 +84,7 @@ const AdminServicesPage: React.FC = () => {
         category: formData.category,
         description: formData.description,
         price: formData.price,
-        duration_minutes: parseInt(formData.duration_minutes),
+        duration_minutes: parseInt(formData.duration_minutes) || 0,
         is_active: true,
       };
 
@@ -92,14 +94,15 @@ const AdminServicesPage: React.FC = () => {
         await createService(serviceData);
       }
 
-      // Najpierw odśwież listę
       await fetchServices();
-
-      // Potem zamknij dialog
       handleCloseDialog();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Błąd podczas zapisywania usługi');
+      // Pokaż błędy z backendu
+      const errorMessage = err.response?.data?.detail
+        || JSON.stringify(err.response?.data)
+        || 'Błąd podczas zapisywania usługi';
+      alert(errorMessage);
     }
   };
 
@@ -204,6 +207,7 @@ const AdminServicesPage: React.FC = () => {
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             margin="normal"
+            required
           />
           <TextField
             fullWidth
@@ -211,6 +215,7 @@ const AdminServicesPage: React.FC = () => {
             value={formData.category}
             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
             margin="normal"
+            required
           />
           <TextField
             fullWidth
@@ -228,6 +233,7 @@ const AdminServicesPage: React.FC = () => {
             value={formData.price}
             onChange={(e) => setFormData({ ...formData, price: e.target.value })}
             margin="normal"
+            required
           />
           <TextField
             fullWidth
@@ -236,6 +242,7 @@ const AdminServicesPage: React.FC = () => {
             value={formData.duration_minutes}
             onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
             margin="normal"
+            required
           />
         </DialogContent>
         <DialogActions>
