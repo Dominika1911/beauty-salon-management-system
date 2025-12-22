@@ -7,14 +7,14 @@ import type { Employee } from '../types';
 
 // Pobierz wszystkich pracowników
 export const getEmployees = async (): Promise<Employee[]> => {
-  const response = await axiosInstance.get<Employee[]>('/employees/');
-  return response.data;
+  const response = await axiosInstance.get('/employees/');
+  return response.data.results || response.data;
 };
 
 // Pobierz aktywnych pracowników
 export const getActiveEmployees = async (): Promise<Employee[]> => {
-  const response = await axiosInstance.get<Employee[]>('/employees/?is_active=true');
-  return response.data;
+  const response = await axiosInstance.get('/employees/?is_active=true');
+  return response.data.results || response.data;
 };
 
 // Pobierz pracownika po ID

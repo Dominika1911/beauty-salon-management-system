@@ -1,20 +1,16 @@
 import axiosInstance from './axios';
 import type { Client } from '../types';
 
-/**
- * API dla klientów
- */
-
 // Pobierz wszystkich klientów
 export const getClients = async (): Promise<Client[]> => {
-  const response = await axiosInstance.get<Client[]>('/clients/');
-  return response.data;
+  const response = await axiosInstance.get('/clients/');
+  return response.data.results || response.data;
 };
 
 // Pobierz aktywnych klientów
 export const getActiveClients = async (): Promise<Client[]> => {
-  const response = await axiosInstance.get<Client[]>('/clients/?is_active=true');
-  return response.data;
+  const response = await axiosInstance.get('/clients/?is_active=true');
+  return response.data.results || response.data;
 };
 
 // Pobierz klienta po ID

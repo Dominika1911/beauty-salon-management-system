@@ -7,14 +7,14 @@ import type { Service } from '../types';
 
 // Pobierz wszystkie usługi
 export const getServices = async (): Promise<Service[]> => {
-  const response = await axiosInstance.get<Service[]>('/services/');
-  return response.data;
+  const response = await axiosInstance.get('/services/');
+  return response.data.results || response.data;
 };
 
 // Pobierz aktywne usługi
 export const getActiveServices = async (): Promise<Service[]> => {
-  const response = await axiosInstance.get<Service[]>('/services/?is_active=true');
-  return response.data;
+  const response = await axiosInstance.get('/services/?is_active=true');
+  return response.data.results || response.data;
 };
 
 // Pobierz usługę po ID
