@@ -1,24 +1,29 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Grid, Paper, Typography, Card, CardContent } from '@mui/material';
-import {
-  Event,
-  People,
-  Person,
-  ContentCut,
-  AttachMoney,
-  TrendingUp,
-} from '@mui/icons-material';
-import { useQuery } from '@tanstack/react-query';
+import { Event, People, Person, ContentCut, AttachMoney } from '@mui/icons-material';
 import { getDashboard } from '../../api/dashboard';
 import type { AdminDashboard } from '../../types';
 
 const AdminDashboardPage: React.FC = () => {
-  const { data, isLoading } = useQuery<AdminDashboard>({
-    queryKey: ['admin-dashboard'],
-    queryFn: getDashboard,
-  });
+  const [data, setData] = useState<AdminDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  if (isLoading) {
+  useEffect(() => {
+    const fetchDashboard = async () => {
+      try {
+        const result = await getDashboard();
+        setData(result as AdminDashboard);
+      } catch (err) {
+        console.error('Błąd ładowania dashboard:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
     return <Typography>Ładowanie...</Typography>;
   }
 

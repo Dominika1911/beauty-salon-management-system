@@ -1,26 +1,15 @@
 import { RouterProvider } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import router from './router';
 
-// Konfiguracja React Query
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
 
-// Konfiguracja Material-UI Theme
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#9c27b0', // Fioletowy - typowy dla salonów kosmetycznych
+      main: '#9c27b0',
     },
     secondary: {
-      main: '#ff4081', // Różowy
+      main: '#ff4081',
     },
   },
   typography: {
@@ -30,12 +19,10 @@ const theme = createTheme({
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <RouterProvider router={router} />
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <RouterProvider router={router} />
+    </ThemeProvider>
   );
 }
 

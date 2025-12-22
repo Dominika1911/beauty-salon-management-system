@@ -1,9 +1,6 @@
 import axiosInstance from './axios';
 import type { Appointment, BookingCreate, AvailableSlot } from '../types';
 
-/**
- * API dla wizyt
- */
 
 // Pobierz wszystkie wizyty
 export const getAppointments = async (params?: {
@@ -13,8 +10,9 @@ export const getAppointments = async (params?: {
   date_from?: string;
   date_to?: string;
 }): Promise<Appointment[]> => {
-  const response = await axiosInstance.get<Appointment[]>('/appointments/', { params });
-  return response.data;
+  const response = await axiosInstance.get('/appointments/', { params });
+  // Jeśli API zwraca paginację, pobierz 'results', w przeciwnym razie zwróć całą response
+  return response.data.results || response.data;
 };
 
 // Pobierz wizytę po ID
