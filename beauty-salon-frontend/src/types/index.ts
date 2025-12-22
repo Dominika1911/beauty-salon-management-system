@@ -69,6 +69,7 @@ export interface Client {
   email: string;
   phone: string;
   internal_notes: string;
+  password?: string;  // Tylko przy tworzeniu
   is_active: boolean;
   appointments_count: number;
   created_at: string;

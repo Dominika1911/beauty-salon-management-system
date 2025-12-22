@@ -335,16 +335,23 @@ class ClientSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
     appointments_count = serializers.SerializerMethodField()
 
+    # Pola do tworzenia nowego użytkownika (tylko przy dodawaniu)
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+
     class Meta:
         model = ClientProfile
         fields = [
             'id', 'user', 'user_username',
             'client_number', 'first_name', 'last_name',
             'email', 'phone', 'internal_notes',
+            'password',  # Dodane pole
             'is_active', 'appointments_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'client_number', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'user': {'required': False}  # Nie wymagane - zostanie stworzone automatycznie
+        }
 
     def get_appointments_count(self, obj):
         """Liczba wszystkich wizyt klienta"""
@@ -352,7 +359,14 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         """Walidacja danych klienta"""
-        # Jeśli przypisano użytkownika, sprawdź czy ma rolę CLIENT
+        # Przy tworzeniu (POST) - sprawdź czy są email i password
+        if not self.instance:  # Tworzenie nowego
+            if 'email' not in data or 'password' not in data:
+                raise serializers.ValidationError(
+                    'Email i hasło są wymagane przy tworzeniu klienta z kontem.'
+                )
+
+        # Sprawdź czy użytkownik ma rolę CLIENT (jeśli podano user)
         user = data.get('user')
         if user and user.role != User.Role.CLIENT:
             raise serializers.ValidationError({
@@ -360,7 +374,41 @@ class ClientSerializer(serializers.ModelSerializer):
             })
         return data
 
+    def create(self, validated_data):
+        """Tworzy użytkownika i profil klienta w jednej transakcji"""
+        email = validated_data.get('email')
+        password = validated_data.pop('password', None)
 
+        with transaction.atomic():
+            # 1. Stwórz użytkownika (jeśli podano hasło)
+            if password:
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=password,
+                    role=User.Role.CLIENT,
+                    first_name=validated_data.get('first_name', ''),
+                    last_name=validated_data.get('last_name', '')
+                )
+                validated_data['user'] = user
+
+            # 2. Stwórz profil klienta
+            client = ClientProfile.objects.create(**validated_data)
+
+        return client
+
+    def update(self, instance, validated_data):
+        """Aktualizacja profilu klienta"""
+        # Usuń pola które nie mogą być aktualizowane
+        validated_data.pop('password', None)
+        validated_data.pop('user', None)
+
+        # Aktualizuj profil
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        return instance
 # =============================================================================
 # APPOINTMENT SERIALIZERS
 # =============================================================================
