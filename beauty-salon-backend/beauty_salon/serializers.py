@@ -210,102 +210,84 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
         # Sprawdź czy użytkownik ma rolę EMPLOYEE (jeśli podano user)
         user = data.get('user')
-        if user and user.role != User.Role.EMPLOYEE:
-            raise serializers.ValidationError({
-                'user': 'Użytkownik musi mieć rolę EMPLOYEE.'
-            })
+        if user and user.role != 'EMPLOYEE':
+            raise serializers.ValidationError('Użytkownik musi mieć rolę EMPLOYEE.')
+
         return data
 
     def create(self, validated_data):
-        """Tworzy użytkownika i profil pracownika w jednej transakcji"""
+        """Tworzy nowego pracownika wraz z użytkownikiem"""
         email = validated_data.pop('email', None)
         password = validated_data.pop('password', None)
-        skills = validated_data.pop('skills', [])
+        skills_data = validated_data.pop('skills', [])
 
         with transaction.atomic():
-            # 1. Stwórz użytkownika
-            user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=password,
-                role=User.Role.EMPLOYEE,
-                first_name=validated_data.get('first_name', ''),
-                last_name=validated_data.get('last_name', '')
-            )
+            # Jeśli nie podano user, utwórz nowego
+            if 'user' not in validated_data:
+                # Generuj unikalny username
+                base_username = f"employee-{validated_data.get('first_name', 'user').lower()}"
+                username = base_username
+                counter = 1
+                while User.objects.filter(username=username).exists():
+                    username = f"{base_username}-{counter}"
+                    counter += 1
 
-            # 2. Stwórz profil pracownika
-            validated_data['user'] = user
+                user = User.objects.create(
+                    username=username,
+                    email=email,
+                    first_name=validated_data.get('first_name', ''),
+                    last_name=validated_data.get('last_name', ''),
+                    role='EMPLOYEE',
+                    is_active=True
+                )
+                user.set_password(password)
+                user.save()
+
+                validated_data['user'] = user
+
+            # Utwórz profil pracownika
             employee = EmployeeProfile.objects.create(**validated_data)
 
-            # 3. Przypisz umiejętności
-            if skills:
-                employee.skills.set(skills)
+            # Dodaj umiejętności
+            if skills_data:
+                employee.skills.set(skills_data)
 
         return employee
 
     def update(self, instance, validated_data):
-        """Aktualizacja profilu pracownika"""
-        # Usuń pola które nie mogą być aktualizowane
-        validated_data.pop('email', None)
-        validated_data.pop('password', None)
-        validated_data.pop('user', None)
+        """Aktualizuje profil pracownika"""
+        skills_data = validated_data.pop('skills', None)
+        email = validated_data.pop('email', None)
+        password = validated_data.pop('password', None)
 
-        skills = validated_data.pop('skills', None)
-
-        # Aktualizuj profil
+        # Aktualizuj pola profilu
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
         # Aktualizuj umiejętności
-        if skills is not None:
-            instance.skills.set(skills)
+        if skills_data is not None:
+            instance.skills.set(skills_data)
+
+        # Aktualizuj dane użytkownika jeśli podano
+        if email or password:
+            user = instance.user
+            if email:
+                user.email = email
+            if password:
+                user.set_password(password)
+            user.save()
 
         return instance
 
 
 class EmployeeScheduleSerializer(serializers.ModelSerializer):
     """Serializer dla grafiku pracownika"""
-    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
 
     class Meta:
         model = EmployeeSchedule
-        fields = ['id', 'employee', 'employee_name', 'weekly_hours', 'created_at', 'updated_at']
+        fields = ['id', 'employee', 'weekly_hours', 'created_at', 'updated_at']
         read_only_fields = ['id', 'employee', 'created_at', 'updated_at']
-
-    def validate_weekly_hours(self, value):
-        """
-        Walidacja struktury grafiku tygodniowego.
-        Format: {"mon": [{"start": "09:00", "end": "17:00"}], ...}
-        """
-        if not isinstance(value, dict):
-            raise serializers.ValidationError('Grafik musi być słownikiem.')
-
-        valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
-
-        for day, periods in value.items():
-            if day not in valid_days:
-                raise serializers.ValidationError(f'Nieprawidłowy dzień: {day}')
-
-            if not isinstance(periods, list):
-                raise serializers.ValidationError(f'Okresy dla {day} muszą być listą.')
-
-            for period in periods:
-                if not isinstance(period, dict):
-                    raise serializers.ValidationError(f'Każdy okres musi być słownikiem.')
-
-                if 'start' not in period or 'end' not in period:
-                    raise serializers.ValidationError(f'Okres musi zawierać "start" i "end".')
-
-                # Walidacja formatu czasu HH:MM
-                try:
-                    from datetime import datetime
-                    datetime.strptime(period['start'], '%H:%M')
-                    datetime.strptime(period['end'], '%H:%M')
-                except ValueError:
-                    raise serializers.ValidationError(f'Czas musi być w formacie HH:MM.')
-
-        return value
 
 
 class TimeOffSerializer(serializers.ModelSerializer):
@@ -315,15 +297,7 @@ class TimeOffSerializer(serializers.ModelSerializer):
     class Meta:
         model = TimeOff
         fields = ['id', 'employee', 'employee_name', 'date_from', 'date_to', 'reason', 'created_at']
-        read_only_fields = ['id', 'employee', 'created_at']
-
-    def validate(self, data):
-        """Walidacja dat nieobecności"""
-        if data['date_to'] < data['date_from']:
-            raise serializers.ValidationError({
-                'date_to': 'Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.'
-            })
-        return data
+        read_only_fields = ['id', 'created_at']
 
 
 # =============================================================================
@@ -332,83 +306,96 @@ class TimeOffSerializer(serializers.ModelSerializer):
 
 class ClientSerializer(serializers.ModelSerializer):
     """Serializer dla profili klientów"""
-    user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
-    appointments_count = serializers.SerializerMethodField()
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
 
-    # Pola do tworzenia nowego użytkownika (tylko przy dodawaniu)
+    # Pola do tworzenia nowego użytkownika
+    email = serializers.EmailField(write_only=True, required=False)
     password = serializers.CharField(write_only=True, required=False, min_length=8)
 
     class Meta:
         model = ClientProfile
         fields = [
-            'id', 'user', 'user_username',
+            'id', 'user', 'user_username', 'user_email',
             'client_number', 'first_name', 'last_name',
-            'email', 'phone', 'internal_notes',
-            'password',  # Dodane pole
-            'is_active', 'appointments_count',
+            'email', 'phone', 'password',
+            'date_of_birth', 'is_active',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'client_number', 'created_at', 'updated_at']
         extra_kwargs = {
-            'user': {'required': False}  # Nie wymagane - zostanie stworzone automatycznie
+            'user': {'required': False}
         }
-
-    def get_appointments_count(self, obj):
-        """Liczba wszystkich wizyt klienta"""
-        return obj.appointments.count()
 
     def validate(self, data):
         """Walidacja danych klienta"""
-        # Przy tworzeniu (POST) - sprawdź czy są email i password
         if not self.instance:  # Tworzenie nowego
             if 'email' not in data or 'password' not in data:
                 raise serializers.ValidationError(
-                    'Email i hasło są wymagane przy tworzeniu klienta z kontem.'
+                    'Email i hasło są wymagane przy tworzeniu klienta.'
                 )
 
-        # Sprawdź czy użytkownik ma rolę CLIENT (jeśli podano user)
         user = data.get('user')
-        if user and user.role != User.Role.CLIENT:
-            raise serializers.ValidationError({
-                'user': 'Użytkownik musi mieć rolę CLIENT.'
-            })
+        if user and user.role != 'CLIENT':
+            raise serializers.ValidationError('Użytkownik musi mieć rolę CLIENT.')
+
         return data
 
     def create(self, validated_data):
-        """Tworzy użytkownika i profil klienta w jednej transakcji"""
-        email = validated_data.get('email')
+        """Tworzy nowego klienta wraz z użytkownikiem"""
+        email = validated_data.pop('email', None)
         password = validated_data.pop('password', None)
 
         with transaction.atomic():
-            # 1. Stwórz użytkownika (jeśli podano hasło)
-            if password:
-                user = User.objects.create_user(
-                    username=email,
+            if 'user' not in validated_data:
+                # Generuj unikalny username
+                base_username = f"client-{validated_data.get('first_name', 'user').lower()}"
+                username = base_username
+                counter = 1
+                while User.objects.filter(username=username).exists():
+                    username = f"{base_username}-{counter}"
+                    counter += 1
+
+                user = User.objects.create(
+                    username=username,
                     email=email,
-                    password=password,
-                    role=User.Role.CLIENT,
                     first_name=validated_data.get('first_name', ''),
-                    last_name=validated_data.get('last_name', '')
+                    last_name=validated_data.get('last_name', ''),
+                    role='CLIENT',
+                    is_active=True
                 )
+                user.set_password(password)
+                user.save()
+
                 validated_data['user'] = user
 
-            # 2. Stwórz profil klienta
+            # Utwórz profil klienta
             client = ClientProfile.objects.create(**validated_data)
 
         return client
 
     def update(self, instance, validated_data):
-        """Aktualizacja profilu klienta"""
-        # Usuń pola które nie mogą być aktualizowane
-        validated_data.pop('password', None)
-        validated_data.pop('user', None)
+        """Aktualizuje profil klienta"""
+        email = validated_data.pop('email', None)
+        password = validated_data.pop('password', None)
 
-        # Aktualizuj profil
+        # Aktualizuj pola profilu
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
+        # Aktualizuj dane użytkownika jeśli podano
+        if email or password:
+            user = instance.user
+            if email:
+                user.email = email
+            if password:
+                user.set_password(password)
+            user.save()
+
         return instance
+
+
 # =============================================================================
 # APPOINTMENT SERIALIZERS
 # =============================================================================
@@ -462,104 +449,27 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'employee': 'Pracownik ma już zajęty termin w tym czasie.'
                 })
+        # Sprawdź konflikty czasowe dla klienta
+        client = data.get('client')
+        if client and start and end:
+            instance_id = self.instance.id if self.instance else None
+
+            client_conflicts = Appointment.objects.filter(
+                client=client,
+                start__lt=end,
+                end__gt=start
+            ).exclude(status=Appointment.Status.CANCELLED)
+
+            if instance_id:
+                client_conflicts = client_conflicts.exclude(id=instance_id)
+
+            if client_conflicts.exists():
+                raise serializers.ValidationError({
+                    'client': 'Klient ma już zarezerwowaną wizytę w tym czasie.'
+                })
+
 
         return data
-
-
-class BookingCreateSerializer(serializers.Serializer):
-    """
-    Serializer do tworzenia rezerwacji wizyty.
-    Obsługuje rezerwację przez:
-    - klienta (automatycznie przypisuje jego profil)
-    - pracownika/admina (wymaga podania client_id)
-    """
-    client_id = serializers.IntegerField(required=False, allow_null=True)
-    employee_id = serializers.IntegerField(required=True)
-    service_id = serializers.IntegerField(required=True)
-    start = serializers.DateTimeField(required=True)
-
-    def validate(self, data):
-        """Walidacja danych rezerwacji"""
-        request = self.context.get('request')
-        user = request.user if request else None
-
-        # Pobierz obiekty
-        try:
-            employee = EmployeeProfile.objects.get(pk=data['employee_id'], is_active=True)
-        except EmployeeProfile.DoesNotExist:
-            raise serializers.ValidationError({'employee_id': 'Nie znaleziono aktywnego pracownika.'})
-
-        try:
-            service = Service.objects.get(pk=data['service_id'], is_active=True)
-        except Service.DoesNotExist:
-            raise serializers.ValidationError({'service_id': 'Nie znaleziono aktywnej usługi.'})
-
-        # Określ klienta
-        if user and user.is_client:
-            # Klient rezerwuje dla siebie
-            try:
-                client = user.client_profile
-            except ClientProfile.DoesNotExist:
-                raise serializers.ValidationError('Brak profilu klienta dla tego użytkownika.')
-        elif data.get('client_id'):
-            # Pracownik/admin rezerwuje dla klienta
-            try:
-                client = ClientProfile.objects.get(pk=data['client_id'], is_active=True)
-            except ClientProfile.DoesNotExist:
-                raise serializers.ValidationError({'client_id': 'Nie znaleziono aktywnego klienta.'})
-        else:
-            raise serializers.ValidationError({
-                'client_id': 'Wymagane podanie client_id przy rezerwacji przez pracownika/admina.'
-            })
-
-        # Oblicz czas zakończenia
-        settings = SystemSettings.get_settings()
-        buffer_minutes = settings.buffer_minutes
-        duration = service.duration + timedelta(minutes=buffer_minutes)
-        end = data['start'] + duration
-
-        # Sprawdź czy termin nie jest w przeszłości
-        if data['start'] < timezone.now():
-            raise serializers.ValidationError({'start': 'Nie można rezerwować wizyt w przeszłości.'})
-
-        # Sprawdź konflikty czasowe
-        conflicts = Appointment.objects.filter(
-            employee=employee,
-            start__lt=end,
-            end__gt=data['start']
-        ).exclude(status=Appointment.Status.CANCELLED)
-
-        if conflicts.exists():
-            raise serializers.ValidationError('Ten termin jest już zajęty.')
-
-        # Sprawdź czy pracownik jest dostępny w tym dniu (time-off)
-        date = data['start'].date()
-        if TimeOff.objects.filter(
-                employee=employee,
-                date_from__lte=date,
-                date_to__gte=date
-        ).exists():
-            raise serializers.ValidationError('Pracownik jest nieobecny w tym dniu.')
-
-        # Dodaj przetwor obiektów do validated_data
-        data['employee'] = employee
-        data['service'] = service
-        data['client'] = client
-        data['end'] = end
-
-        return data
-
-    def create(self, validated_data):
-        """Utwórz wizytę"""
-        appointment = Appointment.objects.create(
-            client=validated_data['client'],
-            employee=validated_data['employee'],
-            service=validated_data['service'],
-            start=validated_data['start'],
-            end=validated_data['end'],
-            status=Appointment.Status.PENDING
-        )
-        return appointment
 
 
 # =============================================================================
@@ -614,3 +524,123 @@ class SystemLogSerializer(serializers.ModelSerializer):
             'timestamp'
         ]
         read_only_fields = fields  # Wszystkie pola read-only - logi nie są edytowalne
+
+
+# =============================================================================
+# BOOKING SERIALIZER - NAPRAWIONY
+# =============================================================================
+
+class BookingCreateSerializer(serializers.Serializer):
+    """
+    Serializer do tworzenia rezerwacji wizyty.
+    Wzorowany na systemie biblioteki - automatycznie przypisuje klienta z request.user
+    """
+    service_id = serializers.IntegerField(required=True)
+    employee_id = serializers.IntegerField(required=True)
+    start = serializers.DateTimeField(required=True)
+
+class BookingCreateSerializer(serializers.Serializer):
+    """
+    Serializer do tworzenia rezerwacji wizyty.
+    Automatycznie przypisuje klienta z request.user
+    """
+    service_id = serializers.IntegerField(required=True)
+    employee_id = serializers.IntegerField(required=True)
+    start = serializers.DateTimeField(required=True)
+
+    def validate(self, data):
+        """Walidacja danych rezerwacji"""
+        request = self.context.get('request')
+
+        # Sprawdź czy user jest zalogowany
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError('Musisz być zalogowany aby zarezerwować wizytę.')
+
+        user = request.user
+
+        # Sprawdź czy user ma profil klienta
+        if not hasattr(user, 'client_profile'):
+            raise serializers.ValidationError('Użytkownik nie ma profilu klienta. Skontaktuj się z administratorem.')
+
+        try:
+            client = user.client_profile
+        except Exception:
+            raise serializers.ValidationError('Nie można pobrać profilu klienta. Skontaktuj się z administratorem.')
+
+        # Pobierz service i employee z bazy
+        try:
+            service = Service.objects.get(id=data['service_id'], is_active=True)
+        except Service.DoesNotExist:
+            raise serializers.ValidationError({'service_id': 'Nie znaleziono usługi.'})
+
+        try:
+            employee = EmployeeProfile.objects.get(id=data['employee_id'], is_active=True)
+        except EmployeeProfile.DoesNotExist:
+            raise serializers.ValidationError({'employee_id': 'Nie znaleziono pracownika.'})
+
+        start = data.get('start')
+
+        # Sprawdź czy pracownik ma umiejętność tej usługi
+        if not employee.skills.filter(id=service.id).exists():
+            raise serializers.ValidationError('Ten pracownik nie wykonuje wybranej usługi.')
+
+        # Oblicz czas zakończenia
+        settings = SystemSettings.get_settings()
+        buffer_minutes = settings.buffer_minutes
+        duration = timedelta(minutes=service.duration_minutes + buffer_minutes)
+        end = start + duration
+
+        # Sprawdź czy termin nie jest w przeszłości
+        if start < timezone.now():
+            raise serializers.ValidationError('Nie można rezerwować wizyt w przeszłości.')
+
+        # Sprawdź konflikty czasowe dla pracownika
+        employee_conflicts = Appointment.objects.filter(
+            employee=employee,
+            start__lt=end,
+            end__gt=start
+        ).exclude(status=Appointment.Status.CANCELLED)
+
+        if employee_conflicts.exists():
+            raise serializers.ValidationError('Ten pracownik ma już zajęty termin w tym czasie.')
+
+        # Sprawdź konflikty czasowe dla klienta
+        client_conflicts = Appointment.objects.filter(
+            client=client,
+            start__lt=end,
+            end__gt=start
+        ).exclude(status=Appointment.Status.CANCELLED)
+
+        if client_conflicts.exists():
+            raise serializers.ValidationError('Masz już zarezerwowaną wizytę w tym czasie.')
+
+        # Sprawdź czy pracownik jest dostępny w tym dniu (urlopy)
+        date = start.date()
+        if TimeOff.objects.filter(
+                employee=employee,
+                date_from__lte=date,
+                date_to__gte=date
+        ).exists():
+            raise serializers.ValidationError('Pracownik jest nieobecny w tym dniu.')
+
+        # Dodaj przetworzone dane do validated_data
+        data['end'] = end
+        data['client'] = client
+        data['service'] = service
+        data['employee'] = employee
+
+        return data
+
+    def create(self, validated_data):
+        """Utwórz wizytę"""
+        with transaction.atomic():
+            appointment = Appointment.objects.create(
+                client=validated_data['client'],
+                employee=validated_data['employee'],
+                service=validated_data['service'],
+                start=validated_data['start'],
+                end=validated_data['end'],
+                status=Appointment.Status.PENDING
+            )
+
+        return appointment

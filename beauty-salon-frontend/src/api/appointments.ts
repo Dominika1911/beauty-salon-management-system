@@ -1,6 +1,9 @@
 import axiosInstance from './axios';
 import type { Appointment, BookingCreate, AvailableSlot } from '../types';
 
+/**
+ * API dla wizyt
+ */
 
 // Pobierz wszystkie wizyty
 export const getAppointments = async (params?: {
@@ -10,8 +13,9 @@ export const getAppointments = async (params?: {
   date_from?: string;
   date_to?: string;
 }): Promise<Appointment[]> => {
-  const response = await axiosInstance.get('/appointments/', { params });
-  // Jeśli API zwraca paginację, pobierz 'results', w przeciwnym razie zwróć całą response
+  const response = await axiosInstance.get('/appointments/', {
+    params: { ...params, page_size: 1000 }
+  });
   return response.data.results || response.data;
 };
 
@@ -25,6 +29,18 @@ export const getAppointment = async (id: number): Promise<Appointment> => {
 export const bookAppointment = async (data: BookingCreate): Promise<Appointment> => {
   const response = await axiosInstance.post<Appointment>('/appointments/book/', data);
   return response.data;
+};
+
+// Pobierz dostępne sloty
+export const getAvailableSlots = async (
+  employeeId: number,
+  serviceId: number,
+  date: string
+): Promise<AvailableSlot[]> => {
+  const response = await axiosInstance.get('/appointments/available-slots/', {
+    params: { employee_id: employeeId, service_id: serviceId, date }
+  });
+  return response.data.slots || [];
 };
 
 // Potwierdź wizytę
@@ -42,16 +58,6 @@ export const cancelAppointment = async (id: number): Promise<Appointment> => {
 // Oznacz wizytę jako zakończoną
 export const completeAppointment = async (id: number): Promise<Appointment> => {
   const response = await axiosInstance.post<Appointment>(`/appointments/${id}/complete/`);
-  return response.data;
-};
-
-// Pobierz dostępne sloty czasowe
-export const getAvailableSlots = async (params: {
-  employee_id?: number;
-  service_id: number;
-  date: string;
-}): Promise<AvailableSlot[]> => {
-  const response = await axiosInstance.get<AvailableSlot[]>('/availability/slots/', { params });
   return response.data;
 };
 

@@ -242,6 +242,13 @@ const AdminEmployeesPage: React.FC = () => {
                   </Button>
                   <Button
                     size="small"
+                    color="primary"
+                    onClick={() => window.location.href = `/admin/employees/${employee.id}/schedule`}
+                  >
+                    Grafik
+                  </Button>
+                  <Button
+                    size="small"
                     color="error"
                     startIcon={<Delete />}
                     onClick={() => handleDelete(employee.id)}

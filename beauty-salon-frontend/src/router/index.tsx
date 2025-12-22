@@ -13,6 +13,7 @@ import AccessDeniedPage from '../pages/AccessDeniedPage';
 import AdminDashboardPage from '../pages/Admin/DashboardPage';
 import AdminAppointmentsPage from '../pages/Admin/AppointmentsPage';
 import AdminEmployeesPage from '../pages/Admin/EmployeesPage';
+import AdminEmployeeSchedulePage from '../pages/Admin/EmployeesSchedulePage.tsx';
 import AdminClientsPage from '../pages/Admin/ClientsPage';
 import AdminServicesPage from '../pages/Admin/ServicesPage';
 import AdminReportsPage from '../pages/Admin/ReportsPage';
@@ -77,6 +78,10 @@ const router = createBrowserRouter([
           {
             path: 'employees',
             element: <AdminEmployeesPage />,
+          },
+          {
+            path: 'employees/:id/schedule',
+            element: <AdminEmployeeSchedulePage />,
           },
           {
             path: 'clients',

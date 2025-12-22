@@ -28,14 +28,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const checkAuth = async () => {
     try {
+      console.log('🔍 Checking authentication status...');
       const response = await checkAuthStatus();
+
+      console.log('Auth response:', response);
+
       if (response.isAuthenticated && response.user) {
+        console.log('✓ User authenticated:', response.user);
+        console.log('User role:', response.user.role);
+        console.log('Client profile:', response.user.client_profile);
+
+        //WAŻNE: Sprawdź czy client_profile nie jest pustym obiektem
+        if (response.user.role === 'CLIENT') {
+          if (!response.user.client_profile || !response.user.client_profile.id) {
+            console.error('❌ ERROR: User has CLIENT role but NO client_profile!');
+            console.error('This will cause booking to fail!');
+            console.error('User data:', response.user);
+          } else {
+            console.log('✓ Client profile OK:', response.user.client_profile);
+          }
+        }
+
         setUser(response.user);
       } else {
+        console.log('❌ User not authenticated');
         setUser(null);
       }
     } catch (error) {
-      console.error('Błąd sprawdzania autoryzacji:', error);
+      console.error('❌ Błąd sprawdzania autoryzacji:', error);
       setUser(null);
     } finally {
       setLoading(false);

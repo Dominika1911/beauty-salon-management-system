@@ -907,6 +907,14 @@ class AvailabilitySlotsAPIView(APIView):
             return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
                             status=status.HTTP_400_BAD_REQUEST)
 
+        # WALIDACJA: Sprawdź czy data nie jest z przeszłości
+        today = timezone.now().date()
+        if day < today:
+            return Response(
+                {"detail": "Nie można rezerwować wizyt w przeszłości."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         if TimeOff.objects.filter(employee=employee, date_from__lte=day, date_to__gte=day).exists():
             return Response({"date": date_str, "slots": []})
 
@@ -922,7 +930,7 @@ class AvailabilitySlotsAPIView(APIView):
         slot_minutes = int(settings_obj.slot_minutes)
         buffer_minutes = int(settings_obj.buffer_minutes)
 
-        duration = service.duration + timedelta(minutes=buffer_minutes)
+        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
 
         day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
         day_end = timezone.make_aware(datetime.combine(day, time(23, 59, 59)))
@@ -932,7 +940,7 @@ class AvailabilitySlotsAPIView(APIView):
             .values_list("start", "end")
         )
 
-        slots: list[str] = []
+        slots: list[dict] = []
         for p in periods:
             try:
                 p_start = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("start", ""))))
@@ -945,34 +953,51 @@ class AvailabilitySlotsAPIView(APIView):
                 candidate_start = cursor
                 candidate_end = cursor + duration
 
+                # Sprawdź czy slot nie jest w przeszłości
+                if candidate_start < timezone.now():
+                    cursor += timedelta(minutes=slot_minutes)
+                    continue
+
                 overlap = any(b_start < candidate_end and b_end > candidate_start for b_start, b_end in busy)
                 if not overlap:
-                    slots.append(candidate_start.strftime("%H:%M"))
+                    # POPRAWIONE: Zwracaj pełne ISO timestamps
+                    slots.append({
+                        "start": candidate_start.isoformat(),
+                        "end": candidate_end.isoformat()
+                    })
 
                 cursor += timedelta(minutes=slot_minutes)
 
         return Response({"date": date_str, "slots": slots})
 
 
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+# ============================================================================
+# REZERWACJA WIZYT - BOOKING
+# ============================================================================
+
 class BookingCreateAPIView(APIView):
     """
     POST /appointments/book/
     Tworzy Appointment (rezerwacja).
-    - CLIENT: bookuje dla siebie (client_profile)
-    - ADMIN/EMPLOYEE: może bookować dla klienta podając client_id
+    - CLIENT rezerwuje dla siebie (automatycznie przypisuje client z request.user)
+    - ADMIN/EMPLOYEE może rezerwować podając client_id
     """
     permission_classes = [permissions.IsAuthenticated]
 
     @transaction.atomic
     def post(self, request):
+
         ser = BookingCreateSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         appointment = ser.save()
 
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
         return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
-
-
 # =============================================================================
 # NOWE: Sprawdzanie dostępności terminu
 # =============================================================================
@@ -1042,7 +1067,7 @@ class CheckAvailabilityView(APIView):
         # Oblicz czas zakończenia
         settings_obj = SystemSettings.get_settings()
         buffer_minutes = int(settings_obj.buffer_minutes)
-        duration = service.duration + timedelta(minutes=buffer_minutes)
+        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
         end = start + duration
 
         # Sprawdź konflikty z istniejącymi wizytami

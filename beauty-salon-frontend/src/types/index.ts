@@ -107,10 +107,8 @@ export interface BookingCreate {
 
 // Dostępne sloty
 export interface AvailableSlot {
-  start: string;
-  end: string;
-  employee: number;
-  employee_name: string;
+  start: string;  // ISO timestamp: "2025-12-25T09:00:00+01:00"
+  end: string;    // ISO timestamp: "2025-12-25T09:45:00+01:00"
 }
 
 // Dashboard - Admin
