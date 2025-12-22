@@ -1,72 +1,26 @@
-import { api } from './axios.ts';
-import type { User, LoginCredentials } from '@/types';
-import type { AxiosResponse } from 'axios';
-
-// Typy odpowiedzi API
-interface CsrfResponse {
-  detail?: string;
-}
-
-interface LoginResponse {
-  message: string;
-  user: User;
-}
-
-interface LogoutResponse {
-  message: string;
-}
-
-interface StatusResponse {
-  authenticated: boolean;
-  user: User | null;
-}
-
-interface AuthApi {
-  csrf: () => Promise<AxiosResponse<CsrfResponse>>;
-  login: (credentials: LoginCredentials) => Promise<AxiosResponse<LoginResponse>>;
-  logout: () => Promise<AxiosResponse<LogoutResponse>>;
-  status: () => Promise<AxiosResponse<StatusResponse>>;
-}
-
-// Endpointy API
-const ENDPOINTS = {
-  csrf: '/auth/csrf/',
-  login: '/auth/login/',
-  logout: '/auth/logout/',
-  status: '/auth/status/',
-} as const;
+import axiosInstance, { getCsrfToken } from './axios';
+import type { LoginRequest, LoginResponse, AuthStatusResponse } from '../types';
 
 /**
- * API do zarządzania autentykacją użytkowników
+ * API dla autoryzacji użytkownika
  */
-export const authAPI: AuthApi = {
-  /**
-   * Ustawia cookie CSRF (csrftoken)
-   */
-  csrf: (): Promise<AxiosResponse<CsrfResponse>> => {
-    return api.get<CsrfResponse>(ENDPOINTS.csrf);
-  },
 
-  /**
-   * Loguje użytkownika do systemu
-   */
-  login: async (credentials: LoginCredentials): Promise<AxiosResponse<LoginResponse>> => {
-    await authAPI.csrf(); // ustawia/odświeża csrftoken tuż przed POST
-    return api.post<LoginResponse>(ENDPOINTS.login, credentials);
-},
+// Logowanie użytkownika
+export const login = async (credentials: LoginRequest): Promise<LoginResponse> => {
+  // Najpierw pobierz CSRF token
+  await getCsrfToken();
+  
+  const response = await axiosInstance.post<LoginResponse>('/auth/login/', credentials);
+  return response.data;
+};
 
+// Wylogowanie użytkownika
+export const logout = async (): Promise<void> => {
+  await axiosInstance.post('/auth/logout/');
+};
 
-  /**
-   * Wylogowuje użytkownika
-   */
-  logout: (): Promise<AxiosResponse<LogoutResponse>> => {
-    return api.post<LogoutResponse>(ENDPOINTS.logout);
-  },
-
-  /**
-   * Sprawdza status autentykacji
-   */
-  status: (): Promise<AxiosResponse<StatusResponse>> => {
-    return api.get<StatusResponse>(ENDPOINTS.status);
-  },
+// Sprawdzenie statusu autoryzacji
+export const checkAuthStatus = async (): Promise<AuthStatusResponse> => {
+  const response = await axiosInstance.get<AuthStatusResponse>('/auth/status/');
+  return response.data;
 };

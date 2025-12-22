@@ -1,130 +1,157 @@
-from typing import Any
 from django.contrib.auth import authenticate, login, logout
-from django.utils import timezone
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
-from rest_framework import permissions, status
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from django.middleware.csrf import get_token
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_http_methods
+from rest_framework import status
 from rest_framework.response import Response
-from rest_framework.request import Request
 from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from django.http import JsonResponse
 
+from .models import SystemLog
 from .serializers import UserDetailSerializer
 
 
 @ensure_csrf_cookie
-@api_view(['GET'])
-@permission_classes([])
-@authentication_classes([])
-def csrf(request: Request) -> Response:
+@require_http_methods(["GET"])
+def csrf(request):
     """
-    Ustawia cookie CSRF.
+    Endpoint do pobierania tokena CSRF.
+    Frontend musi wywołać ten endpoint przed logowaniem.
+
     GET /api/auth/csrf/
+
+    Response:
+    {
+        "csrfToken": "..."
+    }
     """
-    return Response({'detail': 'CSRF cookie set'})
+    return JsonResponse({'csrfToken': get_token(request)})
 
 
 class SessionLoginView(APIView):
     """
-    Logowanie użytkownika przy użyciu Django sesji.
+    Endpoint do logowania użytkownika przez sesję.
+
     POST /api/auth/login/
+
+    Body:
+    {
+        "username": "admin-1234",
+        "password": "password123"
+    }
+
+    Response (sukces):
+    {
+        "detail": "Zalogowano pomyślnie.",
+        "user": {...}
+    }
+
+    Response (błąd):
+    {
+        "detail": "Nieprawidłowe dane logowania."
+    }
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [AllowAny]
 
-    @method_decorator(csrf_exempt)
-    def dispatch(self, *args: Any, **kwargs: Any) -> Any:
-        return super().dispatch(*args, **kwargs)
-
-    def post(self, request: Request) -> Response:
-        email = request.data.get('email')
+    def post(self, request):
+        username = request.data.get('username')
         password = request.data.get('password')
 
-        if not email or not password:
+        if not username or not password:
             return Response(
-                {'error': 'Email and password are required.'},
+                {'detail': 'Wymagane pola: username i password.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        user = authenticate(request, email=email, password=password)
+        # Autentykacja
+        user = authenticate(request, username=username, password=password)
 
         if user is None:
             return Response(
-                {'error': 'Invalid credentials.'},
+                {'detail': 'Nieprawidłowe dane logowania.'},
                 status=status.HTTP_401_UNAUTHORIZED
             )
 
         if not user.is_active:
             return Response(
-                {'error': 'User account is disabled.'},
+                {'detail': 'Konto jest nieaktywne.'},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if user.account_locked_until and user.account_locked_until > timezone.now():
-            return Response(
-                {
-                    'error': 'Account is temporarily locked.',
-                    'locked_until': user.account_locked_until.isoformat()
-                },
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        if user.is_superuser:
-            return Response(
-                {
-                    'error': 'superuser_login_not_allowed',
-                    'detail': 'Superuser must log in through /admin/',
-                },
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+        # Zaloguj użytkownika
         login(request, user)
 
-        user.last_login_ip = request.META.get('REMOTE_ADDR')
-        user.failed_login_attempts = 0
-        user.account_locked_until = None
-        user.save(update_fields=['last_login_ip',
-                                 'failed_login_attempts',
-                                 'account_locked_until'])
+        # Loguj akcję w systemie
+        SystemLog.log(
+            action=SystemLog.Action.AUTH_LOGIN,
+            performed_by=user
+        )
 
         return Response({
-            'message': 'Logged in successfully.',
+            'detail': 'Zalogowano pomyślnie.',
             'user': UserDetailSerializer(user).data
         }, status=status.HTTP_200_OK)
 
 
 class SessionLogoutView(APIView):
     """
-    Wylogowanie użytkownika (niszczy sesję).
+    Endpoint do wylogowania użytkownika.
+
     POST /api/auth/logout/
+
+    Response:
+    {
+        "detail": "Wylogowano pomyślnie."
+    }
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
-    @method_decorator(csrf_exempt)
-    def dispatch(self, *args: Any, **kwargs: Any) -> Any:
-        return super().dispatch(*args, **kwargs)
+    def post(self, request):
+        # Loguj akcję przed wylogowaniem
+        SystemLog.log(
+            action=SystemLog.Action.AUTH_LOGOUT,
+            performed_by=request.user
+        )
 
-    def post(self, request: Request) -> Response:
+        # Wyloguj użytkownika
         logout(request)
-        return Response({
-            'message': 'Logged out successfully.'
-        }, status=status.HTTP_200_OK)
+
+        return Response(
+            {'detail': 'Wylogowano pomyślnie.'},
+            status=status.HTTP_200_OK
+        )
 
 
 class AuthStatusView(APIView):
     """
-    Sprawdza czy użytkownik jest zalogowany.
-    GET /api/auth/status/
-    """
-    permission_classes = [permissions.AllowAny]
+    Endpoint sprawdzający status autoryzacji użytkownika.
+    Używany przez frontend do sprawdzenia czy użytkownik jest zalogowany.
 
-    def get(self, request: Request) -> Response:
+    GET /api/auth/status/
+
+    Response (zalogowany):
+    {
+        "isAuthenticated": true,
+        "user": {...}
+    }
+
+    Response (niezalogowany):
+    {
+        "isAuthenticated": false,
+        "user": null
+    }
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
         if request.user.is_authenticated:
             return Response({
-                'authenticated': True,
+                'isAuthenticated': True,
                 'user': UserDetailSerializer(request.user).data
             })
-        else:
-            return Response({
-                'authenticated': False,
-                'user': None
-            })
+
+        return Response({
+            'isAuthenticated': False,
+            'user': None
+        })

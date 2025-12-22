@@ -1,29 +1,30 @@
-import { Outlet } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth.ts";
-import { Sidebar } from "./Sidebar.tsx";
-import styles from "./Layout.module.css";
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+import { Box, Toolbar } from '@mui/material';
+import Sidebar from './Sidebar';
+import Navbar from './Navbar';
 
-export function Layout() {
-  const { loading, user } = useAuth();
+const drawerWidth = 240;
 
-  if (loading) {
-    return (
-      <div className={styles.layoutLoading}>
-        <span className={styles.spinnerLarge} />
-        Ładowanie aplikacji i sprawdzanie sesji...
-      </div>
-    );
-  }
-
-  const hasSidebar = user !== null;
-
+const Layout: React.FC = () => {
   return (
-    <div className={[styles.appLayout, !hasSidebar ? styles.appLayoutNoSidebar : ""].filter(Boolean).join(" ")}>
+    <Box sx={{ display: 'flex' }}>
+      <Navbar />
       <Sidebar />
-
-      <main className={styles.layoutContent}>
-        <Outlet />
-      </main>
-    </div>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          bgcolor: 'background.default',
+          p: 3,
+          width: `calc(100% - ${drawerWidth}px)`,
+        }}
+      >
+        <Toolbar /> {/* Spacer dla AppBar */}
+        <Outlet /> {/* Renderuje zagnieżdżone trasy */}
+      </Box>
+    </Box>
   );
-}
+};
+
+export default Layout;

@@ -1,22 +1,20 @@
+"""
+URL configuration for beauty_salon_project project.
+"""
+from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.views.generic import RedirectView
-
-from beauty_salon.admin import admin_site
 
 urlpatterns = [
-    # Strona główna → panel admina
-    path("", RedirectView.as_view(url="/admin/", permanent=False)),
+    # Django Admin
+    path('admin/', admin.site.urls),  # ← Standardowy admin Django
 
-    # Customowy admin site
-    path("admin/", admin_site.urls),
-
-    # Całe API salonu pod /api/
-    path("api/", include("beauty_salon.urls")),
+    # API endpoints
+    path('api/', include('beauty_salon.urls')),
 ]
 
-# W trybie deweloperskim serwuj pliki mediów
+# Serve media files in development
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

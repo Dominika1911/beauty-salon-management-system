@@ -1,114 +1,171 @@
-import { useMemo } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth.ts";
-import type { UserRole } from "@/types";
-import styles from "./Sidebar.module.css";
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import {
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Toolbar,
+  Divider,
+  Box,
+  Typography,
+} from '@mui/material';
+import {
+  Dashboard,
+  Event,
+  People,
+  ContentCut,
+  Person,
+  Assessment,
+  Settings,
+  CalendarMonth,
+  Schedule,
+} from '@mui/icons-material';
+import { useAuth } from '../../context/AuthContext';
 
-type NavItem = {
-  label: string;
-  path?: string;
-  roles: UserRole[];
-  type?: "link" | "header";
-};
+const drawerWidth = 240;
 
-export function Sidebar() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
+interface MenuItem {
+  text: string;
+  icon: React.ReactElement;
+  path: string;
+  roles: ('ADMIN' | 'EMPLOYEE' | 'CLIENT')[];
+}
 
-  const navItems: NavItem[] = useMemo(() => {
-    if (!user) return [];
+const menuItems: MenuItem[] = [
+  // Admin
+  {
+    text: 'Dashboard',
+    icon: <Dashboard />,
+    path: '/admin/dashboard',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Wizyty',
+    icon: <Event />,
+    path: '/admin/appointments',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Pracownicy',
+    icon: <People />,
+    path: '/admin/employees',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Klienci',
+    icon: <Person />,
+    path: '/admin/clients',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Usługi',
+    icon: <ContentCut />,
+    path: '/admin/services',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Raporty',
+    icon: <Assessment />,
+    path: '/admin/reports',
+    roles: ['ADMIN'],
+  },
+  {
+    text: 'Ustawienia',
+    icon: <Settings />,
+    path: '/admin/settings',
+    roles: ['ADMIN'],
+  },
 
-    return [
-      { label: "Dashboard", path: "/dashboard", roles: ["manager", "employee", "client"], type: "link" },
+  // Employee
+  {
+    text: 'Dashboard',
+    icon: <Dashboard />,
+    path: '/employee/dashboard',
+    roles: ['EMPLOYEE'],
+  },
+  {
+    text: 'Moje wizyty',
+    icon: <Event />,
+    path: '/employee/appointments',
+    roles: ['EMPLOYEE'],
+  },
+  {
+    text: 'Grafik',
+    icon: <Schedule />,
+    path: '/employee/schedule',
+    roles: ['EMPLOYEE'],
+  },
 
-      // EMPLOYEE
-      { label: "Pracownik", roles: ["employee"], type: "header" },
-      { label: "Mój profil", path: "/my-profile", roles: ["employee"], type: "link" },
-      { label: "Moja dostępność", path: "/my-availability", roles: ["employee"], type: "link" },
-      { label: "Mój grafik", path: "/my-schedule", roles: ["employee"], type: "link" },
-      { label: "Moje urlopy", path: "/my-time-off", roles: ["employee"], type: "link" },
+  // Client
+  {
+    text: 'Dashboard',
+    icon: <Dashboard />,
+    path: '/client/dashboard',
+    roles: ['CLIENT'],
+  },
+  {
+    text: 'Rezerwacja',
+    icon: <CalendarMonth />,
+    path: '/client/booking',
+    roles: ['CLIENT'],
+  },
+  {
+    text: 'Moje wizyty',
+    icon: <Event />,
+    path: '/client/appointments',
+    roles: ['CLIENT'],
+  },
+];
 
-      // SERVICES
-      {
-        label: user.role === "manager" ? "Usługi (zarządzanie)" : "Usługi",
-        path: "/services",
-        roles: ["manager", "employee", "client"],
-        type: "link",
-      },
-
-      // SHARED
-      { label: "Moje wizyty", path: "/my-appointments", roles: ["employee", "client"], type: "link" },
-
-      // CLIENT
-      { label: "Klient", roles: ["client"], type: "header" },
-      { label: "Mój profil (RODO)", path: "/my-client-profile", roles: ["client"], type: "link" },
-      { label: "Umów wizytę", path: "/book", roles: ["client"], type: "link" },
-
-      // MANAGER
-      { label: "Manager", roles: ["manager"], type: "header" },
-      { label: "Profil", path: "/profile", roles: ["manager"], type: "link" },
-      { label: "Wizyty (kalendarz)", path: "/appointments", roles: ["manager"], type: "link" },
-      { label: "Wizyty (lista)", path: "/appointments-management", roles: ["manager"], type: "link" },
-      { label: "Grafik (zarządzanie)", path: "/schedule", roles: ["manager"], type: "link" },
-      { label: "Klienci", path: "/clients", roles: ["manager"], type: "link" },
-      { label: "Pracownicy", path: "/employees", roles: ["manager"], type: "link" },
-      { label: "Płatności", path: "/payments", roles: ["manager"], type: "link" },
-      { label: "Faktury", path: "/invoices", roles: ["manager"], type: "link" },
-      { label: "Powiadomienia", path: "/notifications", roles: ["manager"], type: "link" },
-      { label: "Raporty", path: "/reports", roles: ["manager"], type: "link" },
-      { label: "Logi systemowe", path: "/audit-logs", roles: ["manager"], type: "link" },
-      { label: "Statystyki", path: "/statistics", roles: ["manager"], type: "link" },
-      { label: "Ustawienia", path: "/settings", roles: ["manager"], type: "link" },
-    ];
-  }, [user]);
+const Sidebar: React.FC = () => {
+  const { user } = useAuth();
+  const location = useLocation();
 
   if (!user) return null;
 
-  const visibleItems = navItems.filter((it) => it.roles.includes(user.role));
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login", { replace: true });
-  };
+  // Filtruj menu items dla aktualnej roli
+  const filteredItems = menuItems.filter((item) => item.roles.includes(user.role));
 
   return (
-    <aside className={styles.sidebar}>
-      <nav className={styles.sidebarNav}>
-        {visibleItems.map((item) => {
-          if (item.type === "header") {
-            return (
-              <div key={`h-${item.label}`} className={styles.sectionHeader}>
-                {item.label}
-              </div>
-            );
-          }
-
-          if (!item.path) return null;
-
-          return (
-            <NavLink
-              key={`${item.path}-${item.label}`}
+    <Drawer
+      variant="permanent"
+      sx={{
+        width: drawerWidth,
+        flexShrink: 0,
+        '& .MuiDrawer-paper': {
+          width: drawerWidth,
+          boxSizing: 'border-box',
+        },
+      }}
+    >
+      <Toolbar>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ContentCut color="primary" />
+          <Typography variant="h6" noWrap component="div">
+            Beauty Salon
+          </Typography>
+        </Box>
+      </Toolbar>
+      <Divider />
+      <List>
+        {filteredItems.map((item) => (
+          <ListItem key={item.path} disablePadding>
+            <ListItemButton
+              component={Link}
               to={item.path}
-              className={({ isActive }) =>
-                [styles.navLink, isActive ? styles.navLinkActive : ""].filter(Boolean).join(" ")
-              }
+              selected={location.pathname === item.path}
             >
-              {item.label}
-            </NavLink>
-          );
-        })}
-      </nav>
-
-      <button
-        type="button"
-        className={styles.logoutBtn}
-        onClick={() => {
-          const confirmed = window.confirm("Czy na pewno chcesz się wylogować?");
-          if (confirmed) void handleLogout();
-        }}
-      >
-        Wyloguj
-      </button>
-    </aside>
+              <ListItemIcon>{item.icon}</ListItemIcon>
+              <ListItemText primary={item.text} />
+            </ListItemButton>
+          </ListItem>
+        ))}
+      </List>
+    </Drawer>
   );
-}
+};
+
+export default Sidebar;

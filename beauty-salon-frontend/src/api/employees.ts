@@ -1,117 +1,41 @@
-import { api } from './axios.ts';
-import type { Employee, EmployeeCreateData, Appointment, Service, PaginatedResponse } from '@/types';
-import type { AxiosResponse } from 'axios';
-
-// Parametry filtrowania i paginacji
-interface EmployeeListParams {
-  is_active?: boolean;
-  search?: string;
-  page?: number;
-  page_size?: number;
-}
-
-interface EmployeesApi {
-  list: (params?: EmployeeListParams) => Promise<AxiosResponse<PaginatedResponse<Employee>>>;
-  active: () => Promise<AxiosResponse<Employee[]>>;
-  me: () => Promise<AxiosResponse<Employee>>;
-  detail: (id: number) => Promise<AxiosResponse<Employee>>;
-  services: (id: number) => Promise<AxiosResponse<Service[]>>;
-  upcomingAppointments: (id: number) => Promise<AxiosResponse<Appointment[]>>;
-  create: (data: EmployeeCreateData) => Promise<AxiosResponse<Employee>>;
-  update: (id: number, data: Partial<Employee>) => Promise<AxiosResponse<Employee>>;
-  delete: (id: number) => Promise<AxiosResponse<void>>;
-}
-
-// Endpointy API
-const ENDPOINTS = {
-  base: '/employees/',
-  active: '/employees/active/',
-  me: '/employees/me/',
-  detail: (id: number) => `/employees/${id}/`,
-  services: (id: number) => `/employees/${id}/services/`,
-  upcomingAppointments: (id: number) => `/employees/${id}/upcoming_appointments/`,
-} as const;
+import axiosInstance from './axios';
+import type { Employee } from '../types';
 
 /**
- * API do zarządzania pracownikami
+ * API dla pracowników
  */
-export const employeesAPI: EmployeesApi = {
-  /**
-   * Lista wszystkich pracowników
-   * Zwraca format paginacji DRF
-   */
-  list: (params?: EmployeeListParams): Promise<AxiosResponse<PaginatedResponse<Employee>>> => {
-    return api.get<PaginatedResponse<Employee>>(ENDPOINTS.base, { params });
-  },
 
-  /**
-   * Tylko aktywni pracownicy
-   */
-  active: (): Promise<AxiosResponse<Employee[]>> => {
-    return api.get<Employee[]>(ENDPOINTS.active);
-  },
+// Pobierz wszystkich pracowników
+export const getEmployees = async (): Promise<Employee[]> => {
+  const response = await axiosInstance.get<Employee[]>('/employees/');
+  return response.data;
+};
 
-  /**
-   * Profil zalogowanego pracownika
-   */
-  me: (): Promise<AxiosResponse<Employee>> => {
-    return api.get<Employee>(ENDPOINTS.me);
-  },
+// Pobierz aktywnych pracowników
+export const getActiveEmployees = async (): Promise<Employee[]> => {
+  const response = await axiosInstance.get<Employee[]>('/employees/?is_active=true');
+  return response.data;
+};
 
-  /**
-   * Szczegóły pracownika
-   */
-  detail: (id: number): Promise<AxiosResponse<Employee>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid employee ID'));
-    }
-    return api.get<Employee>(ENDPOINTS.detail(id));
-  },
+// Pobierz pracownika po ID
+export const getEmployee = async (id: number): Promise<Employee> => {
+  const response = await axiosInstance.get<Employee>(`/employees/${id}/`);
+  return response.data;
+};
 
-  /**
-   * Usługi pracownika
-   */
-  services: (id: number): Promise<AxiosResponse<Service[]>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid employee ID'));
-    }
-    return api.get<Service[]>(ENDPOINTS.services(id));
-  },
+// Utwórz pracownika
+export const createEmployee = async (data: Partial<Employee>): Promise<Employee> => {
+  const response = await axiosInstance.post<Employee>('/employees/', data);
+  return response.data;
+};
 
-  /**
-   * Nadchodzące wizyty pracownika
-   */
-  upcomingAppointments: (id: number): Promise<AxiosResponse<Appointment[]>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid employee ID'));
-    }
-    return api.get<Appointment[]>(ENDPOINTS.upcomingAppointments(id));
-  },
+// Zaktualizuj pracownika
+export const updateEmployee = async (id: number, data: Partial<Employee>): Promise<Employee> => {
+  const response = await axiosInstance.patch<Employee>(`/employees/${id}/`, data);
+  return response.data;
+};
 
-  /**
-   * Utwórz pracownika
-   */
-  create: (data: EmployeeCreateData): Promise<AxiosResponse<Employee>> => {
-    return api.post<Employee>(ENDPOINTS.base, data);
-  },
-
-  /**
-   * Aktualizuj pracownika
-   */
-  update: (id: number, data: Partial<Employee>): Promise<AxiosResponse<Employee>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid employee ID'));
-    }
-    return api.patch<Employee>(ENDPOINTS.detail(id), data);
-  },
-
-  /**
-   * Usuń pracownika
-   */
-  delete: (id: number): Promise<AxiosResponse<void>> => {
-    if (!id || id <= 0) {
-      return Promise.reject(new Error('Invalid employee ID'));
-    }
-    return api.delete<void>(ENDPOINTS.detail(id));
-  },
+// Usuń pracownika
+export const deleteEmployee = async (id: number): Promise<void> => {
+  await axiosInstance.delete(`/employees/${id}/`);
 };

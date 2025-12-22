@@ -19,7 +19,7 @@ venv/
 */venv/
 
 # --- Pliki środowiskowe / sekrety ---
-.env
+beauty-salon-backend/.env
 *.env
 *.env.*
 *.local

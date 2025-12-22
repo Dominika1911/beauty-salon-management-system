@@ -1,15 +1,52 @@
-import { api } from './axios.ts';
-import type { AxiosResponse } from 'axios';
-import type { DashboardResponse } from '@/types';
+import axiosInstance from './axios';
+import type {
+  AdminDashboard,
+  EmployeeDashboard,
+  ClientDashboard,
+  RevenueReport,
+  EmployeePerformance,
+  PopularService,
+} from '../types';
 
-interface DashboardApi {
-  get: () => Promise<AxiosResponse<DashboardResponse>>;
-}
+/**
+ * API dla dashboardu i raportów
+ */
 
-const ENDPOINTS = {
-  base: '/dashboard/',
-} as const;
+// Dashboard (zróżnicowany dla każdej roli)
+export const getDashboard = async (): Promise<
+  AdminDashboard | EmployeeDashboard | ClientDashboard
+> => {
+  const response = await axiosInstance.get('/dashboard/');
+  return response.data;
+};
 
-export const dashboardAPI: DashboardApi = {
-  get: () => api.get(ENDPOINTS.base),
+// Raport przychodów
+export const getRevenueReport = async (params?: {
+  date_from?: string;
+  date_to?: string;
+  group_by?: 'day' | 'month';
+}): Promise<RevenueReport> => {
+  const response = await axiosInstance.get<RevenueReport>('/reports/revenue/', { params });
+  return response.data;
+};
+
+// Raport wydajności pracowników
+export const getEmployeePerformance = async (params?: {
+  date_from?: string;
+  date_to?: string;
+}): Promise<EmployeePerformance[]> => {
+  const response = await axiosInstance.get<EmployeePerformance[]>('/reports/employee-performance/', {
+    params,
+  });
+  return response.data;
+};
+
+// Raport popularnych usług
+export const getPopularServices = async (params?: {
+  limit?: number;
+}): Promise<PopularService[]> => {
+  const response = await axiosInstance.get<PopularService[]>('/reports/popular-services/', {
+    params,
+  });
+  return response.data;
 };

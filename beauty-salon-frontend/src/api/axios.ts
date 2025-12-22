@@ -1,78 +1,79 @@
-import axios, { type AxiosInstance, type AxiosError, type AxiosResponse } from "axios";
-import type { InternalAxiosRequestConfig } from "axios";
-import { notify } from "@/utils/notificationService.ts";
+import axios from 'axios';
 
-const API_BASE_URL: string = "/api";
+// Bazowy URL API - zmień w produkcji
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-export const api: AxiosInstance = axios.create({
+// Instancja axios z konfiguracją
+const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true,
-  timeout: 30000,
+  withCredentials: true, // Ważne dla session cookies i CSRF
   headers: {
-    "Content-Type": "application/json",
+    'Content-Type': 'application/json',
   },
 });
 
-function getCookie(name: string): string | null {
-  const value: string = `; ${document.cookie}`;
-  const parts: string[] = value.split(`; ${name}=`);
-  if (parts.length === 2) {
-    return parts.pop()?.split(";").shift() || null;
+// Funkcja do pobierania tokenu CSRF
+export const getCsrfToken = async (): Promise<string> => {
+  try {
+    const response = await axiosInstance.get('/auth/csrf/');
+    return response.data.csrfToken;
+  } catch (error) {
+    console.error('Błąd pobierania CSRF token:', error);
+    throw error;
   }
-  return null;
-}
+};
 
-api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
-    const csrfToken: string | null = getCookie("csrftoken");
-    if (csrfToken && config.headers) {
-      config.headers["X-CSRFToken"] = csrfToken;
+// Interceptor - dodawanie CSRF tokenu do każdego żądania
+axiosInstance.interceptors.request.use(
+  async (config) => {
+    // Dodaj CSRF token dla metod POST, PUT, PATCH, DELETE
+    if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
+      // Pobierz token z cookies
+      const csrfToken = document.cookie
+        .split('; ')
+        .find((row) => row.startsWith('csrftoken='))
+        ?.split('=')[1];
+
+      if (csrfToken) {
+        config.headers['X-CSRFToken'] = csrfToken;
+      }
     }
     return config;
   },
-  (error: AxiosError): Promise<never> => Promise.reject(error),
+  (error) => {
+    return Promise.reject(error);
+  }
 );
 
-api.interceptors.response.use(
-  (response: AxiosResponse): AxiosResponse => response,
-  (error: AxiosError<{ detail?: string; error?: string }>): Promise<never> => {
-    const status = error.response?.status;
-
-    const serverMsg =
-      (error.response?.data && (error.response.data.detail || error.response.data.error)) ||
-      undefined;
-
-    if (status === 401) {
-      notify(serverMsg ?? "Sesja wygasła. Zaloguj się ponownie.", "error");
-      if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-        window.location.href = "/login";
+// Interceptor - obsługa błędów
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // 401 - Unauthorized (wyloguj użytkownika)
+    if (error.response?.status === 401) {
+      // Przekieruj do logowania
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
       }
-      return Promise.reject(error);
     }
 
-    if (status === 403) {
-      notify(serverMsg ?? "Brak uprawnień do wykonania tej operacji.", "error");
-      return Promise.reject(error);
+    // 403 - Forbidden
+    if (error.response?.status === 403) {
+      console.error('Brak uprawnień do tego zasobu');
     }
 
-    // Nie spamujemy globalnie 404
-    if (status === 404) {
-      return Promise.reject(error);
+    // 404 - Not Found
+    if (error.response?.status === 404) {
+      console.error('Zasób nie znaleziony');
     }
 
-    if (status && status >= 500) {
-      notify(serverMsg ?? "Wystąpił błąd serwera. Spróbuj ponownie później.", "error");
-      return Promise.reject(error);
+    // 500 - Internal Server Error
+    if (error.response?.status === 500) {
+      console.error('Błąd serwera');
     }
-
-    if (!error.response) {
-      notify("Błąd połączenia. Sprawdź internet i spróbuj ponownie.", "error");
-      return Promise.reject(error);
-    }
-
-    if (status === 400 && serverMsg) notify(serverMsg, "error");
-    if (status === 409 && serverMsg) notify(serverMsg, "error");
 
     return Promise.reject(error);
-  },
+  }
 );
+
+export default axiosInstance;

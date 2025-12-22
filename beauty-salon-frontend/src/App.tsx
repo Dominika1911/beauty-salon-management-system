@@ -1,22 +1,41 @@
-import React from 'react';
+import { RouterProvider } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import router from './router';
 
-import { AppRouter } from '@/router';
-import { AuthProvider } from '@/context/AuthProvider';
-import { NotificationProvider } from '@/components/Notification';
+// Konfiguracja React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
-/**
- * Główny komponent aplikacji (root).
- * Trzyma globalne providery oraz router.
- */
-export function App(): React.ReactElement {
+// Konfiguracja Material-UI Theme
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#9c27b0', // Fioletowy - typowy dla salonów kosmetycznych
+    },
+    secondary: {
+      main: '#ff4081', // Różowy
+    },
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+  },
+});
+
+function App() {
   return (
-    <React.StrictMode>
-      <NotificationProvider>
-        <AuthProvider>
-          <AppRouter />
-        </AuthProvider>
-      </NotificationProvider>
-    </React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <RouterProvider router={router} />
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
 

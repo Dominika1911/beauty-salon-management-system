@@ -1,97 +1,41 @@
-import type { AxiosResponse } from 'axios';
-import { api } from './axios.ts';
-import type {
-  AppointmentListItem,
-  Client,
-  ClientCreateUpdateData,
-  ClientMe,
-  ClientMeUpdateData,
-  PaginatedResponse,
-} from '@/types';
-
-type PreferredContact = 'email' | 'sms' | 'phone' | 'none';
-
-export interface ClientListParams {
-  email?: string;
-  marketing_consent?: boolean;
-  preferred_contact?: PreferredContact;
-  deleted_at?: string;
-  /**
-   * Nie zgadujemy pól backendu – zostaje string.
-   */
-  ordering?: string;
-  search?: string;
-  page?: number;
-  page_size?: number;
-}
+import axiosInstance from './axios';
+import type { Client } from '../types';
 
 /**
- * Payload wymagany przez backend:
- * POST /clients/soft_delete/
+ * API dla klientów
  */
-export interface ClientSoftDeletePayload {
-  client: number;
-}
 
-export interface DetailResponse {
-  detail: string;
-}
+// Pobierz wszystkich klientów
+export const getClients = async (): Promise<Client[]> => {
+  const response = await axiosInstance.get<Client[]>('/clients/');
+  return response.data;
+};
 
-export interface ClientsApi {
-  list: (params?: ClientListParams) => Promise<AxiosResponse<PaginatedResponse<Client>>>;
-  detail: (id: number) => Promise<AxiosResponse<Client>>;
-  create: (data: ClientCreateUpdateData) => Promise<AxiosResponse<Client>>;
-  update: (id: number, data: Partial<ClientCreateUpdateData>) => Promise<AxiosResponse<Client>>;
-  delete: (id: number) => Promise<AxiosResponse<void>>;
+// Pobierz aktywnych klientów
+export const getActiveClients = async (): Promise<Client[]> => {
+  const response = await axiosInstance.get<Client[]>('/clients/?is_active=true');
+  return response.data;
+};
 
-  // Profil klienta (RODO)
-  me: () => Promise<AxiosResponse<ClientMe>>;
-  updateMe: (data: ClientMeUpdateData) => Promise<AxiosResponse<ClientMe>>;
-  deleteMe: () => Promise<AxiosResponse<void>>;
+// Pobierz klienta po ID
+export const getClient = async (id: number): Promise<Client> => {
+  const response = await axiosInstance.get<Client>(`/clients/${id}/`);
+  return response.data;
+};
 
-  myAppointments: () => Promise<AxiosResponse<AppointmentListItem[]>>;
+// Utwórz klienta
+export const createClient = async (data: Partial<Client>): Promise<Client> => {
+  const response = await axiosInstance.post<Client>('/clients/', data);
+  return response.data;
+};
 
-  softDeleted: (params?: ClientListParams) => Promise<AxiosResponse<Client[]>>;
+// Zaktualizuj klienta
+export const updateClient = async (id: number, data: Partial<Client>): Promise<Client> => {
+  const response = await axiosInstance.patch<Client>(`/clients/${id}/`, data);
+  return response.data;
+};
 
-  /**
-   *  POPRAWNE
-   * POST /clients/soft_delete/
-   * body: { client: number }
-   */
-  softDelete: (id: number) => Promise<AxiosResponse<DetailResponse>>;
-}
-
-const ENDPOINTS = {
-  base: '/clients/',
-  detail: (id: number) => `/clients/${id}/`,
-  me: '/clients/me/',
-  myAppointments: '/clients/my_appointments/',
-  softDeleted: '/clients/soft_deleted/',
-  softDelete: '/clients/soft_delete/',
-} as const;
-
-export const clientsAPI: ClientsApi = {
-  list: (params) => api.get<PaginatedResponse<Client>>(ENDPOINTS.base, { params }),
-
-  detail: (id) => api.get<Client>(ENDPOINTS.detail(id)),
-
-  create: (data) => api.post<Client>(ENDPOINTS.base, data),
-
-  update: (id, data) => api.patch<Client>(ENDPOINTS.detail(id), data),
-
-  delete: (id) => api.delete<void>(ENDPOINTS.detail(id)),
-
-  // RODO: profil klienta
-  me: () => api.get<ClientMe>(ENDPOINTS.me),
-  updateMe: (data) => api.patch<ClientMe>(ENDPOINTS.me, data),
-  deleteMe: () => api.delete<void>(ENDPOINTS.me),
-
-  myAppointments: () => api.get<AppointmentListItem[]>(ENDPOINTS.myAppointments),
-
-  softDeleted: (params) => api.get<Client[]>(ENDPOINTS.softDeleted, { params }),
-
-  softDelete: (id) =>
-    api.post<DetailResponse>(ENDPOINTS.softDelete, {
-      client: id,
-    } satisfies ClientSoftDeletePayload),
+// Usuń klienta
+export const deleteClient = async (id: number): Promise<void> => {
+  await axiosInstance.delete(`/clients/${id}/`);
 };

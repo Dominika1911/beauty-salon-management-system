@@ -1,1426 +1,506 @@
-from decimal import Decimal
-import secrets
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, cast
-from django.db import transaction
-from django.db.utils import IntegrityError
-from django.utils import timezone
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractBaseUser
-from rest_framework import serializers
-from django.core.validators import RegexValidator
+from __future__ import annotations
 
+import secrets
+from datetime import timedelta
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils import timezone
+from rest_framework import serializers
 
 from .models import (
     Service,
-    Employee,
-    Schedule,
+    EmployeeProfile,
+    ClientProfile,
+    EmployeeSchedule,
     TimeOff,
-    Client,
     Appointment,
-    Note,
-    MediaAsset,
-    Payment,
-    Invoice,
-    Notification,
-    ReportPDF,
-    AuditLog,
     SystemSettings,
-    StatsSnapshot,
+    SystemLog,
 )
 
 User = get_user_model()
 
 
-# ==================== MIXINS & UTILITIES ====================
-
-
-class ServicePriceMixin(serializers.Serializer):
-    """
-    Mixin do wyliczania ceny z promocją,
-    korzysta z metody modelu: Service.get_price_with_promotion().
-    """
-    price_with_promotion = serializers.DecimalField(
-        source="get_price_with_promotion",
-        max_digits=10,
-        decimal_places=2,
-        read_only=True,
-    )
-
-
-# ==================== USER SERIALIZERS ====================
-
+# =============================================================================
+# USER SERIALIZERS
+# =============================================================================
 
 class UserListSerializer(serializers.ModelSerializer):
-    role_display = serializers.CharField(source="get_role_display", read_only=True)
-    account_status = serializers.SerializerMethodField()
+    """Serializer dla listy użytkowników (widok tabelaryczny)"""
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
 
     class Meta:
         model = User
-        fields = [
-            "id",
-            "email",
-            "role",
-            "role_display",
-            "is_active",
-            "is_staff",
-            "account_status",
-            "created_at",
-        ]
-        read_only_fields = ["id", "account_status", "created_at"]
-
-    def get_account_status(self, obj: AbstractBaseUser) -> str:
-        locked_until = getattr(obj, "account_locked_until", None)
-        if locked_until and locked_until > timezone.now():
-            return "locked"
-        if getattr(obj, "failed_login_attempts", 0) >= 3:
-            return "warning"
-        if obj.is_active:
-            return "active"
-        return "inactive"
+        fields = ['id', 'username', 'first_name', 'last_name', 'email', 'role', 'role_display', 'is_active',
+                  'created_at']
+        read_only_fields = ['id', 'username', 'created_at']
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
-    role_display = serializers.CharField(source="get_role_display", read_only=True)
-    employee_id = serializers.IntegerField(source="employee.id", read_only=True)
-    client_id = serializers.IntegerField(source="client.id", read_only=True)
+    """Serializer szczegółów użytkownika z dodatkowymi informacjami"""
+    role_display = serializers.CharField(source='get_role_display', read_only=True)
+    employee_profile = serializers.SerializerMethodField()
+    client_profile = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
-            "id",
-            "email",
-            "role",
-            "role_display",
-            "is_active",
-            "is_staff",
-            "last_login",
-            "last_login_ip",
-            "failed_login_attempts",
-            "account_locked_until",
-            "employee_id",
-            "client_id",
-            "created_at",
-            "updated_at",
+            'id', 'username', 'first_name', 'last_name', 'email',
+            'role', 'role_display', 'is_active',
+            'employee_profile', 'client_profile',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = [
-            "id",
-            "email",
-            "employee_id",
-            "client_id",
-            "failed_login_attempts",
-            "account_locked_until",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ['id', 'username', 'created_at', 'updated_at']
+
+    def get_employee_profile(self, obj):
+        """Zwraca ID profilu pracownika jeśli istnieje"""
+        if hasattr(obj, 'employee_profile'):
+            return {
+                'id': obj.employee_profile.id,
+                'employee_number': obj.employee_profile.employee_number,
+                'full_name': obj.employee_profile.get_full_name()
+            }
+        return None
+
+    def get_client_profile(self, obj):
+        """Zwraca ID profilu klienta jeśli istnieje"""
+        if hasattr(obj, 'client_profile'):
+            return {
+                'id': obj.client_profile.id,
+                'client_number': obj.client_profile.client_number,
+                'full_name': obj.client_profile.get_full_name()
+            }
+        return None
 
 
 class UserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    """Serializer do tworzenia nowego użytkownika"""
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = User
-        fields = ["id", "email", "password", "role", "is_active", "is_staff"]
-        read_only_fields = ["id"]
+        fields = ['id', 'username', 'password', 'first_name', 'last_name', 'email', 'role']
+        read_only_fields = ['id']
 
-    def create(self, validated_data: dict[str, Any]) -> AbstractBaseUser:
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = User(**validated_data)
 
-        password = validated_data.pop("password", None)
-        email = validated_data.pop("email")
+        if password:
+            user.set_password(password)
+        else:
+            # Generuj tymczasowe hasło jeśli nie podano
+            temp_password = secrets.token_urlsafe(8)
+            user.set_password(temp_password)
 
-        if not password:
-            # Jeżeli hasło nie podane – generujemy losowe (np. do wysłania mailem)
-            password = secrets.token_urlsafe(8)
-
-        user = User.objects.create_user(email=email, password=password, **validated_data)
-
-        # Dla managera i pracownika domyślnie ustawiamy is_staff
-        if user.role in [User.RoleChoices.MANAGER, User.RoleChoices.EMPLOYEE] and not user.is_staff:
-            user.is_staff = True
-            user.save(update_fields=["is_staff"])
-
+        user.save()
         return user
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
+    """Serializer do aktualizacji użytkownika"""
+
     class Meta:
         model = User
-        fields = ["role", "is_active", "is_staff"]
-
-
-class PasswordResetSerializer(serializers.Serializer):
-    new_password = serializers.CharField(write_only=True, min_length=8)
-
-    def validate_new_password(self, value: str) -> str:
-        if len(value) < 8:
-            raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
-        return value
+        fields = ['first_name', 'last_name', 'email', 'is_active']
 
 
 class PasswordChangeSerializer(serializers.Serializer):
+    """Serializer do zmiany hasła przez użytkownika"""
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
 
-    def validate_old_password(self, value: str) -> str:
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
-            raise serializers.ValidationError("Brak uwierzytelnionego użytkownika.")
+    def validate_old_password(self, value):
+        user = self.context['request'].user
         if not user.check_password(value):
-            raise serializers.ValidationError("Niepoprawne stare hasło.")
+            raise serializers.ValidationError('Nieprawidłowe stare hasło.')
         return value
 
-    def validate_new_password(self, value: str) -> str:
+    def validate_new_password(self, value):
         if len(value) < 8:
-            raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
+            raise serializers.ValidationError('Hasło musi mieć co najmniej 8 znaków.')
         return value
 
-    def save(self, **kwargs: Any) -> AbstractBaseUser:
-        user = cast(AbstractBaseUser, self.context["request"].user)
-        user.set_password(self.validated_data["new_password"])
-        # Poniższe pola są z customowego Usera – mypy ich nie zna, więc ignorujemy
-        user.failed_login_attempts = 0  # type: ignore[attr-defined]
-        user.account_locked_until = None  # type: ignore[attr-defined]
-        user.save(update_fields=["password", "failed_login_attempts", "account_locked_until"])
-        return user
+
+class PasswordResetSerializer(serializers.Serializer):
+    """Serializer do resetowania hasła przez administratora"""
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_new_password(self, value):
+        if len(value) < 8:
+            raise serializers.ValidationError('Hasło musi mieć co najmniej 8 znaków.')
+        return value
 
 
-# ==================== SERVICE SERIALIZERS ====================
+# =============================================================================
+# SERVICE SERIALIZERS
+# =============================================================================
 
+class ServiceSerializer(serializers.ModelSerializer):
+    """Serializer dla usług salonu"""
+    duration_display = serializers.SerializerMethodField()
 
-class ServiceListSerializer(ServicePriceMixin, serializers.ModelSerializer):
     class Meta:
         model = Service
         fields = [
-            "id",
-            "name",
-            "category",
-            "price",
-            "duration",
-            "image_url",
-            "is_published",
-            "promotion",
-            "reservations_count",
-            "price_with_promotion",
-            "created_at",
+            'id', 'name', 'category', 'description',
+            'price', 'duration_minutes', 'duration_display',
+            'is_active', 'created_at', 'updated_at'
         ]
-        read_only_fields = ["id", "reservations_count", "price_with_promotion", "created_at"]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def get_duration_display(self, obj):
+        """Zwraca czas trwania w formacie czytelnym dla użytkownika"""
+        hours = obj.duration_minutes // 60
+        minutes = obj.duration_minutes % 60
+        if hours > 0 and minutes > 0:
+            return f"{hours}h {minutes}min"
+        elif hours > 0:
+            return f"{hours}h"
+        else:
+            return f"{minutes}min"
 
 
-class ServiceDetailSerializer(ServicePriceMixin, serializers.ModelSerializer):
-    class Meta:
-        model = Service
-        fields = [
-            "id",
-            "name",
-            "category",
-            "description",
-            "price",
-            "duration",
-            "image_url",
-            "is_published",
-            "promotion",
-            "reservations_count",
-            "price_with_promotion",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "reservations_count",
-            "price_with_promotion",
-            "created_at",
-            "updated_at",
-        ]
+# =============================================================================
+# EMPLOYEE SERIALIZERS
+# =============================================================================
 
-
-class ServiceCreateUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Service
-        fields = [
-            "name",
-            "category",
-            "description",
-            "price",
-            "duration",
-            "image_url",
-            "is_published",
-            "promotion",
-        ]
-
-    def validate_price(self, value: Decimal) -> Decimal:
-        if value <= 0:
-            raise serializers.ValidationError("Cena musi być większa od zera.")
-        return value
-
-    def validate_duration(self, value: timedelta) -> timedelta:
-        if value.total_seconds() <= 0:
-            raise serializers.ValidationError("Czas trwania musi być dodatni.")
-        return value
-
-# ==================== EMPLOYEE SERIALIZERS ====================
-
-class EmployeeSimpleSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source="pk", read_only=True)
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-
-    class Meta:
-        model = Employee
-        fields = ["id", "number", "full_name"]
-        read_only_fields = ["id", "number", "full_name"]
-
-
-class EmployeeListSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source="pk", read_only=True)
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-    skills = ServiceListSerializer(many=True, read_only=True)
-    user_email = serializers.EmailField(source="user.email", read_only=True)
-
-    class Meta:
-        model = Employee
-        fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "full_name",
-            "user_email",
-            "phone",
-            "hired_at",
-            "average_rating",
-            "is_active",
-            "appointments_count",
-            "skills",
-            "created_at",
-        ]
-        read_only_fields = ["id", "number", "appointments_count", "created_at"]
-
-
-class EmployeeDetailSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source="pk", read_only=True)
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-    skills = ServiceListSerializer(many=True, read_only=True)
+class EmployeeSerializer(serializers.ModelSerializer):
+    """Serializer dla profili pracowników"""
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    skills = ServiceSerializer(many=True, read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
         many=True,
-        queryset=Service.objects.all(),
-        source="skills",
+        queryset=Service.objects.filter(is_active=True),
         write_only=True,
         required=False,
-    )
-    user_email = serializers.EmailField(source="user.email", read_only=True)
-
-    class Meta:
-        model = Employee
-        fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "full_name",
-            "user_email",
-            "phone",
-            "hired_at",
-            "average_rating",
-            "is_active",
-            "appointments_count",
-            "skills",
-            "skill_ids",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "number",
-            "appointments_count",
-            "skills",
-            "created_at",
-            "updated_at",
-        ]
-
-# ==================== EMPLOYEE SERIALIZERS ====================
-class EmployeeCreateUpdateSerializer(serializers.ModelSerializer):
-    # dane konta użytkownika
-    email = serializers.EmailField(write_only=True)
-    password = serializers.CharField(
-        write_only=True,
-        min_length=8,
-        required=True,
-    )
-
-    # lista ID usług, mapowana na relację ManyToMany `skills`
-    skill_ids = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Service.objects.all(),
-        source="skills",   # w validated_data będzie klucz "skills" z obiektami Service
-        write_only=True,
-        required=False,
+        source='skills'
     )
 
     class Meta:
-        model = Employee
+        model = EmployeeProfile
         fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "phone",
-            "hired_at",
-            "is_active",
-            "appointments_count",
-            "average_rating",
-            "skills",       # tylko do odczytu
-            "skill_ids",    # do zapisu (lista ID)
-            "email",
-            "password",
-            "created_at",
-            "updated_at",
+            'id', 'user', 'user_username', 'user_email',
+            'employee_number', 'first_name', 'last_name', 'phone',
+            'skills', 'skill_ids',
+            'is_active', 'hired_at',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = [
-            "id",
-            "number",
-            "appointments_count",
-            "average_rating",
-            "skills",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ['id', 'employee_number', 'created_at', 'updated_at']
 
-    def create(self, validated_data: Dict[str, Any]) -> Employee:
-        email: str = validated_data.pop("email")
-        password: str = validated_data.pop("password")
-
-        # dzięki source="skills" mamy tu już listę obiektów Service
-        skills_raw = validated_data.pop("skills", [])
-        skills: list[Service] = cast(list[Service], skills_raw)
-
-        # sprawdzamy, czy mail nie jest już zajęty przez innego usera
-        if User.objects.filter(email=email).exists():
-            raise serializers.ValidationError(
-                {"email": "Użytkownik z takim adresem e-mail już istnieje."}
-            )
-
-        with transaction.atomic():
-            # tworzymy użytkownika (albo bierzemy istniejącego, gdyby w przyszłości było get_or_create)
-            user = User.objects.create_user(
-                email=email,
-                password=password,
-                role=User.RoleChoices.EMPLOYEE,
-                is_staff=True,
-            )
-
-            # jeśli Employee dla tego usera już istnieje (np. utworzony w sygnale) – tylko go uzupełniamy
-            employee, created = Employee.objects.get_or_create(
-                user=user,
-                defaults=validated_data,
-            )
-
-            if not created:
-                # aktualizacja pól pracownika, jeśli rekord już był
-                for attr, value in validated_data.items():
-                    setattr(employee, attr, value)
-                employee.save()
-
-            if skills:
-                employee.skills.set(skills)
-
-        return employee
-
-    def update(self, instance: Employee, validated_data: dict[str, Any]) -> Employee:
-        email: Optional[str] = validated_data.pop("email", None)
-        password: Optional[str] = validated_data.pop("password", None)
-
-        skills_raw = validated_data.pop("skills", None)
-        skills: Optional[list[Service]] = (
-            cast(list[Service], skills_raw) if skills_raw is not None else None
-        )
-
-        user = instance.user
-
-        # aktualizacja e-maila
-        if email is not None and email != user.email:
-            if User.objects.exclude(pk=user.pk).filter(email=email).exists():
-                raise serializers.ValidationError(
-                    {"email": "Użytkownik z takim adresem e-mail już istnieje."}
-                )
-            user.email = email
-
-        # aktualizacja hasła
-        if password:
-            user.set_password(password)
-
-        if email is not None or password:
-            user.save()
-
-        # pozostałe pola pracownika
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.save()
-
-        # usługi
-        if skills is not None:
-            instance.skills.set(skills)
-
-        return instance
-
-
-# ==================== CLIENT SERIALIZERS ====================
-
-
-class ClientListSerializer(serializers.ModelSerializer):
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-    user_email = serializers.EmailField(source="user.email", read_only=True)
-    is_deleted = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Client
-        fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "full_name",
-            "email",
-            "phone",
-            "user",
-            "user_email",
-            "marketing_consent",
-            "preferred_contact",
-            "visits_count",
-            "total_spent_amount",
-            "deleted_at",
-            "is_deleted",
-            "created_at",
-        ]
-        read_only_fields = [
-            "id",
-            "number",
-            "visits_count",
-            "total_spent_amount",
-            "deleted_at",
-            "is_deleted",
-            "created_at",
-        ]
-
-    def get_is_deleted(self, obj: Client) -> bool:
-        return getattr(obj, "deleted_at", None) is not None
-
-
-class ClientDetailSerializer(serializers.ModelSerializer):
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-    user_email = serializers.EmailField(source="user.email", read_only=True)
-    is_deleted = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Client
-        fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "full_name",
-            "email",
-            "phone",
-            "user",
-            "user_email",
-            "marketing_consent",
-            "preferred_contact",
-            "visits_count",
-            "total_spent_amount",
-            "internal_notes",
-            "deleted_at",
-            "is_deleted",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "number",
-            "visits_count",
-            "total_spent_amount",
-            "deleted_at",
-            "is_deleted",
-            "created_at",
-            "updated_at",
-        ]
-
-    def get_is_deleted(self, obj: Client) -> bool:
-        return getattr(obj, "deleted_at", None) is not None
-
-
-# ==================== CLIENT "ME" (GDPR PROFILE) SERIALIZERS ====================
-
-class ClientMeUpdateSerializer(serializers.ModelSerializer):
-    """
-    Update profilu klienta (/clients/me/) – tylko pola klienta.
-    Bez internal_notes, bez user, bez number.
-    """
-    class Meta:
-        model = Client
-        fields = [
-            "first_name",
-            "last_name",
-            "email",
-            "phone",
-            "marketing_consent",
-            "preferred_contact",
-        ]
-
-class ClientMeSerializer(serializers.ModelSerializer):
-    """
-    Profil klienta dla endpointu /clients/me/
-    UWAGA: NIE zwracamy internal_notes (notatki salonu).
-    """
-    full_name = serializers.CharField(source="get_full_name", read_only=True)
-
-    class Meta:
-        model = Client
-        fields = [
-            "id",
-            "number",
-            "first_name",
-            "last_name",
-            "full_name",
-            "email",
-            "phone",
-            "marketing_consent",
-            "preferred_contact",
-            "deleted_at",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "number",
-            "full_name",
-            "deleted_at",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class ClientCreateUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Client
-        fields = [
-            "number",
-            "first_name",
-            "last_name",
-            "email",
-            "phone",
-            "user",
-            "marketing_consent",
-            "preferred_contact",
-            "internal_notes",
-        ]
-        read_only_fields = ["number"]
-
-    def validate_user(self, value: AbstractBaseUser | None) -> AbstractBaseUser | None:
-        if value:
-            is_client = getattr(value, "is_salon_client", None)
-            if not callable(is_client) or not is_client():
-                raise serializers.ValidationError("Wybrane konto nie ma roli klienta.")
-        return value
-
-
-
-class ClientSoftDeleteSerializer(serializers.Serializer):
-    client = serializers.PrimaryKeyRelatedField(
-        queryset=Client.objects.filter(deleted_at__isnull=True)
-    )
-
-    def save(self, **kwargs: Any) -> Client:
-        client = cast(Client, self.validated_data["client"])
-        client.soft_delete()
-        return client
-
-# ============================================================================
-# NOWY: Serializer dla pojedynczego obiektu JSON w availability_periods
-# ============================================================================
-
-class AvailabilityPeriodSerializer(serializers.Serializer):
-    """
-    Serializator do walidacji formatu obiektów JSON
-    (Używamy CharField, aby unikać TypeError przy odczycie/serializacji odpowiedzi)
-    """
-    time_regex = RegexValidator(
-        regex=r'^\d{2}:\d{2}(:\d{2})?$',  # HH:MM lub HH:MM:SS
-        message="Czas musi być w formacie HH:MM lub HH:MM:SS."
-    )
-
-    weekday = serializers.CharField(max_length=20)
-
-    # Użycie CharField z walidatorem Regex to najbezpieczniejsza opcja dla JSONField
-    start_time = serializers.CharField(
-        max_length=8,
-        validators=[time_regex],
-        error_messages={'invalid': 'Wymagany format czasu to HH:MM:SS.'}
-    )
-    end_time = serializers.CharField(
-        max_length=8,
-        validators=[time_regex],
-        error_messages={'invalid': 'Wymagany format czasu to HH:MM:SS.'}
-    )
-
-    def to_representation(self, instance: Any) -> dict[str, str]:
-        """Bezpieczna serializacja danych z JSONField.
-
-        DRF przy serializacji dictów robi lookup po kluczach i rzuca KeyError, jeśli brakuje np. `weekday`.
-        W bazie mogą istnieć starsze wpisy zapisane z inną nazwą klucza (np. `day`, `week_day`, `day_of_week`).
-        """
-        if isinstance(instance, dict):
-            weekday_val = (
-                instance.get("weekday")
-                or instance.get("day")
-                or instance.get("week_day")
-                or instance.get("day_of_week")
-                or instance.get("weekday_display")
-                or ""
-            )
-            start_val = instance.get("start_time") or ""
-            end_val = instance.get("end_time") or ""
-            return {
-                "weekday": str(weekday_val),
-                "start_time": str(start_val),
-                "end_time": str(end_val),
-            }
-        return super().to_representation(instance)
-
-
-
-    def validate(self, data: dict) -> dict:
-        """Dodatkowa walidacja czasu."""
-        # Walidacja, czy czas startu nie jest po czasie końca
-        if data['start_time'] >= data['end_time']:
-            raise serializers.ValidationError("Czas rozpoczęcia musi być wcześniejszy niż czas zakończenia.")
+    def validate(self, data):
+        """Walidacja danych pracownika"""
+        # Sprawdź czy użytkownik ma rolę EMPLOYEE
+        user = data.get('user')
+        if user and user.role != User.Role.EMPLOYEE:
+            raise serializers.ValidationError({
+                'user': 'Użytkownik musi mieć rolę EMPLOYEE.'
+            })
         return data
 
-# ==================== SCHEDULE & TIME OFF SERIALIZERS ====================
 
-
-class ScheduleSerializer(serializers.ModelSerializer):
-    employee_full_name = serializers.CharField(
-        source="employee.get_full_name", read_only=True
-    )
-
-    availability_periods = AvailabilityPeriodSerializer(many=True, read_only=True)
+class EmployeeScheduleSerializer(serializers.ModelSerializer):
+    """Serializer dla grafiku pracownika"""
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
 
     class Meta:
-        model = Schedule
-        fields = [
-            "id",
-            "employee",
-            "employee_full_name",
-            "availability_periods",
-            "breaks",
-            "status",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        model = EmployeeSchedule
+        fields = ['id', 'employee', 'employee_name', 'weekly_hours', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'employee', 'created_at', 'updated_at']
+
+    def validate_weekly_hours(self, value):
+        """
+        Walidacja struktury grafiku tygodniowego.
+        Format: {"mon": [{"start": "09:00", "end": "17:00"}], ...}
+        """
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('Grafik musi być słownikiem.')
+
+        valid_days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+        for day, periods in value.items():
+            if day not in valid_days:
+                raise serializers.ValidationError(f'Nieprawidłowy dzień: {day}')
+
+            if not isinstance(periods, list):
+                raise serializers.ValidationError(f'Okresy dla {day} muszą być listą.')
+
+            for period in periods:
+                if not isinstance(period, dict):
+                    raise serializers.ValidationError(f'Każdy okres musi być słownikiem.')
+
+                if 'start' not in period or 'end' not in period:
+                    raise serializers.ValidationError(f'Okres musi zawierać "start" i "end".')
+
+                # Walidacja formatu czasu HH:MM
+                try:
+                    from datetime import datetime
+                    datetime.strptime(period['start'], '%H:%M')
+                    datetime.strptime(period['end'], '%H:%M')
+                except ValueError:
+                    raise serializers.ValidationError(f'Czas musi być w formacie HH:MM.')
+
+        return value
 
 
 class TimeOffSerializer(serializers.ModelSerializer):
-    employee_full_name = serializers.CharField(
-        source="employee.get_full_name", read_only=True
-    )
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-    type_display = serializers.CharField(source="get_type_display", read_only=True)
-    days = serializers.SerializerMethodField()
+    """Serializer dla nieobecności pracownika"""
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
 
     class Meta:
         model = TimeOff
+        fields = ['id', 'employee', 'employee_name', 'date_from', 'date_to', 'reason', 'created_at']
+        read_only_fields = ['id', 'employee', 'created_at']
+
+    def validate(self, data):
+        """Walidacja dat nieobecności"""
+        if data['date_to'] < data['date_from']:
+            raise serializers.ValidationError({
+                'date_to': 'Data zakończenia nie może być wcześniejsza niż data rozpoczęcia.'
+            })
+        return data
+
+
+# =============================================================================
+# CLIENT SERIALIZERS
+# =============================================================================
+
+class ClientSerializer(serializers.ModelSerializer):
+    """Serializer dla profili klientów"""
+    user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
+    appointments_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClientProfile
         fields = [
-            "id",
-            "employee",
-            "employee_full_name",
-            "date_from",
-            "date_to",
-            "status",
-            "status_display",
-            "reason",
-            "type",
-            "type_display",
-            "approved_by",
-            "approved_at",
-            "days",
-            "created_at",
-            "updated_at",
+            'id', 'user', 'user_username',
+            'client_number', 'first_name', 'last_name',
+            'email', 'phone', 'internal_notes',
+            'is_active', 'appointments_count',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = [
-            "id",
-            "approved_by",
-            "approved_at",
-            "days",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ['id', 'client_number', 'created_at', 'updated_at']
 
-    def get_days(self, obj: TimeOff) -> int | None:
-        if obj.date_from and obj.date_to:
-            return (obj.date_to - obj.date_from).days + 1
-        return None
+    def get_appointments_count(self, obj):
+        """Liczba wszystkich wizyt klienta"""
+        return obj.appointments.count()
 
-
-class TimeOffApproveSerializer(serializers.Serializer):
-    time_off = serializers.PrimaryKeyRelatedField(
-        queryset=TimeOff.objects.filter(status=TimeOff.Status.PENDING)
-    )
-
-    def save(self, **kwargs: Any) -> TimeOff:
-        time_off = cast(TimeOff, self.validated_data["time_off"])
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-
-        if time_off.status != TimeOff.Status.PENDING:
-            raise serializers.ValidationError(
-                "Ten wniosek urlopowy został już rozpatrzony."
-            )
-
-        time_off.status = TimeOff.Status.APPROVED
-        time_off.approved_by = user if user and getattr(user, "is_authenticated", False) else None
-        time_off.approved_at = timezone.now()
-        time_off.save()
-        return time_off
+    def validate(self, data):
+        """Walidacja danych klienta"""
+        # Jeśli przypisano użytkownika, sprawdź czy ma rolę CLIENT
+        user = data.get('user')
+        if user and user.role != User.Role.CLIENT:
+            raise serializers.ValidationError({
+                'user': 'Użytkownik musi mieć rolę CLIENT.'
+            })
+        return data
 
 
-# ==================== APPOINTMENT SERIALIZERS ====================
+# =============================================================================
+# APPOINTMENT SERIALIZERS
+# =============================================================================
 
-
-class AppointmentListSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source="client.get_full_name", read_only=True)
-    employee_name = serializers.CharField(
-        source="employee.get_full_name", read_only=True
-    )
-    service_name = serializers.CharField(source="service.name", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+class AppointmentSerializer(serializers.ModelSerializer):
+    """Serializer dla wizyt"""
+    client_name = serializers.CharField(source='client.get_full_name', read_only=True, allow_null=True)
+    employee_name = serializers.CharField(source='employee.get_full_name', read_only=True)
+    service_name = serializers.CharField(source='service.name', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
 
     class Meta:
         model = Appointment
         fields = [
-            "id",
-            "client",
-            "client_name",
-            "employee",
-            "employee_name",
-            "service",
-            "service_name",
-            "status",
-            "status_display",
-            "start",
-            "end",
-            "timespan",
-            "booking_channel",
-            "client_notes",
-            "internal_notes",
-            "reminder_sent",
-            "reminder_sent_at",
+            'id', 'client', 'client_name',
+            'employee', 'employee_name',
+            'service', 'service_name',
+            'start', 'end', 'status', 'status_display',
+            'internal_notes',
+            'created_at', 'updated_at'
         ]
-        read_only_fields = ["id", "timespan"]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
+    def validate(self, data):
+        """Walidacja wizyty"""
+        # Sprawdź czy koniec jest po początku
+        if data['end'] <= data['start']:
+            raise serializers.ValidationError({
+                'end': 'Czas zakończenia musi być po czasie rozpoczęcia.'
+            })
 
-class AppointmentDetailSerializer(serializers.ModelSerializer):
-    client = ClientListSerializer(read_only=True)
-    employee = EmployeeSimpleSerializer(read_only=True)
-    service = ServiceDetailSerializer(read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-    cancelled_by_email = serializers.EmailField(
-        source="cancelled_by.email", read_only=True
-    )
+        # Sprawdź konflikty czasowe dla pracownika
+        employee = data.get('employee')
+        start = data.get('start')
+        end = data.get('end')
 
-    class Meta:
-        model = Appointment
-        fields = [
-            "id",
-            "client",
-            "employee",
-            "service",
-            "status",
-            "status_display",
-            "start",
-            "end",
-            "timespan",
-            "booking_channel",
-            "client_notes",
-            "internal_notes",
-            "cancelled_by",
-            "cancelled_by_email",
-            "cancelled_at",
-            "cancellation_reason",
-            "reminder_sent",
-            "reminder_sent_at",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "timespan",
-            "cancelled_by",
-            "cancelled_by_email",
-            "cancelled_at",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class AppointmentCreateSerializer(serializers.ModelSerializer):
-    """
-    SlugRelatedField dla stabilnych kluczy biznesowych.
-
-    Zamiast ID (które się zmienia po reset DB), używamy:
-    - client: "CLI-0001" (number)
-    - employee: "EMP-0001" (number)
-    - service: "Strzyżenie damskie" (name)
-    """
-
-    client = serializers.SlugRelatedField(
-        slug_field='number',  # CLI-0001, CLI-0002...
-        queryset=Client.objects.filter(deleted_at__isnull=True),
-        error_messages={
-            'does_not_exist': 'Klient o podanym numerze nie istnieje.',
-            'required': 'Pole "client" jest wymagane.'
-        }
-    )
-
-    employee = serializers.SlugRelatedField(
-        slug_field='number',  # EMP-0001, EMP-0002...
-        queryset=Employee.objects.filter(is_active=True),
-        error_messages={
-            'does_not_exist': 'Pracownik o podanym numerze nie istnieje.',
-            'required': 'Pole "employee" jest wymagane.'
-        }
-    )
-
-    service = serializers.SlugRelatedField(
-        slug_field='name',  # "Strzyżenie damskie", "Manicure"...
-        queryset=Service.objects.filter(is_published=True),
-        error_messages={
-            'does_not_exist': 'Usługa o podanej nazwie nie istnieje.',
-            'required': 'Pole "service" jest wymagane.'
-        }
-    )
-
-    class Meta:
-        model = Appointment
-        fields = [
-            "client",
-            "employee",
-            "service",
-            "start",
-            "end",
-            "booking_channel",
-            "client_notes",
-            "internal_notes",
-        ]
-        extra_kwargs = {"end": {"required": False, "allow_null": True}}
-
-    def validate_start(self, value: datetime) -> datetime:
-        if value < timezone.now():
-            raise serializers.ValidationError(
-                "Nie można umawiać wizyt w przeszłości."
-            )
-        return value
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        client = attrs.get("client")
-        employee = attrs.get("employee")
-        service = attrs.get("service")
-        start = attrs.get("start")
-        end = attrs.get("end")
-
-        if not start:
-            raise serializers.ValidationError({"start": 'Pole "start" jest wymagane.'})
-
-        if client and getattr(client, "deleted_at", None):
-            raise serializers.ValidationError(
-                {"client": "Klient jest oznaczony jako usunięty (GDPR)."}
-            )
-
-        if service and not service.is_published:
-            raise serializers.ValidationError(
-                {"service": "Usługa nie jest aktualnie publikowana."}
-            )
-
-        if employee and not employee.is_active:
-            raise serializers.ValidationError(
-                {"employee": "Pracownik jest nieaktywny."}
-            )
-
-        if employee and service and not employee.skills.filter(pk=service.pk).exists():
-            raise serializers.ValidationError(
-                {"employee": "Pracownik nie ma przypisanej tej usługi."}
-            )
-
-        # domyślny czas trwania z usługi
-        if not end and service:
-            end = start + service.duration
-            attrs["end"] = end
-
-        if end and end <= start:
-            raise serializers.ValidationError(
-                {"end": "Czas zakończenia musi być późniejszy niż czas rozpoczęcia."}
-            )
-
-        active_statuses = [
-            Appointment.Status.PENDING,
-            Appointment.Status.CONFIRMED,
-            Appointment.Status.IN_PROGRESS,
-        ]
         if employee and start and end:
-            overlap_exists = Appointment.objects.filter(
+            # Pobierz ID obecnej wizyty jeśli to update
+            instance_id = self.instance.id if self.instance else None
+
+            conflicts = Appointment.objects.filter(
                 employee=employee,
-                status__in=active_statuses,
                 start__lt=end,
-                end__gt=start,
-            ).exists()
-            if overlap_exists:
-                raise serializers.ValidationError(
-                    {
-                        "employee": "Pracownik ma w tym czasie inną wizytę.",
-                    }
-                )
+                end__gt=start
+            ).exclude(status=Appointment.Status.CANCELLED)
 
-        return attrs
+            if instance_id:
+                conflicts = conflicts.exclude(id=instance_id)
 
-    def create(self, validated_data: dict[str, Any]) -> Appointment:
-        return Appointment.objects.create(**validated_data)
+            if conflicts.exists():
+                raise serializers.ValidationError({
+                    'employee': 'Pracownik ma już zajęty termin w tym czasie.'
+                })
+
+        return data
 
 
 class BookingCreateSerializer(serializers.Serializer):
-    """Serializer dla klienta do tworzenia rezerwacji przez endpoint /api/bookings/.
-
-    Używa stabilnych ID obiektów (employee/service) i daty startu.
-    Backend weryfikuje dostępność na podstawie wyliczonych slotów.
     """
-    employee = serializers.IntegerField()
-    service = serializers.IntegerField()
-    start = serializers.DateTimeField()
-    client_notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+    Serializer do tworzenia rezerwacji wizyty.
+    Obsługuje rezerwację przez:
+    - klienta (automatycznie przypisuje jego profil)
+    - pracownika/admina (wymaga podania client_id)
+    """
+    client_id = serializers.IntegerField(required=False, allow_null=True)
+    employee_id = serializers.IntegerField(required=True)
+    service_id = serializers.IntegerField(required=True)
+    start = serializers.DateTimeField(required=True)
 
-    def validate_start(self, value: datetime) -> datetime:
-        if value < timezone.now():
-            raise serializers.ValidationError("Nie można umawiać wizyt w przeszłości.")
-        return value
+    def validate(self, data):
+        """Walidacja danych rezerwacji"""
+        request = self.context.get('request')
+        user = request.user if request else None
 
-
-class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Appointment
-        fields = ["status", "cancellation_reason"]
-
-    def update(self, instance: Appointment, validated_data: dict[str, Any]) -> Appointment:
-        new_status = validated_data.get("status", instance.status)
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-
-        if (
-            new_status == Appointment.Status.CANCELLED
-            and instance.status != Appointment.Status.CANCELLED
-        ):
-            instance.cancelled_by = user if user and user.is_authenticated else None
-            instance.cancelled_at = timezone.now()
-            if "cancellation_reason" in validated_data:
-                instance.cancellation_reason = validated_data["cancellation_reason"]
-
-        instance.status = new_status
-        instance.save()
-        return instance
-
-
-# ==================== NOTE & MEDIA SERIALIZERS ====================
-
-
-class NoteSerializer(serializers.ModelSerializer):
-    author_email = serializers.EmailField(source="author.email", read_only=True)
-
-    class Meta:
-        model = Note
-        fields = [
-            "id",
-            "appointment",
-            "author",
-            "author_email",
-            "content",
-            "visible_for_client",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "author", "author_email", "created_at", "updated_at"]
-
-    def create(self, validated_data: dict[str, Any]) -> Note:
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if user and getattr(user, "is_authenticated", False):
-            validated_data["author"] = user
-        note = cast(Note, super().create(validated_data))
-        return note
-
-
-class MediaAssetSerializer(serializers.ModelSerializer):
-    employee_full_name = serializers.CharField(
-        source="employee.get_full_name", read_only=True
-    )
-
-    class Meta:
-        model = MediaAsset
-        fields = [
-            "id",
-            "employee",
-            "employee_full_name",
-            "file_url",
-            "type",
-            "file_name",
-            "size_bytes",
-            "is_active",
-            "description",
-            "mime_type",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-# ==================== BILLING: PAYMENT & INVOICE SERIALIZERS ====================
-
-
-class PaymentSerializer(serializers.ModelSerializer):
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-    client_name = serializers.SerializerMethodField()
-    appointment_start = serializers.DateTimeField(
-        source="appointment.start", read_only=True
-    )
-
-    class Meta:
-        model = Payment
-        fields = [
-            "id",
-            "appointment",
-            "client_name",
-            "amount",
-            "status",
-            "status_display",
-            "paid_at",
-            "method",
-            "type",
-            "reference",
-            "appointment_start",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-    def get_client_name(self, obj: Payment) -> str | None:
-        if obj.appointment and obj.appointment.client:
-            return obj.appointment.client.get_full_name()
-        return None
-
-# ==================== SERIALIZERS.PY - COMPOSITE KEY ====================
-
-class PaymentCreateSerializer(serializers.ModelSerializer):
-    # Composite key: client_number + appointment_start
-    client_number = serializers.SlugRelatedField(
-        slug_field='number',
-        queryset=Client.objects.all(),
-        write_only=True,
-        error_messages={
-            'does_not_exist': 'Klient o podanym numerze nie istnieje.',
-            'required': 'Pole "client_number" jest wymagane.'
-        }
-    )
-
-    appointment_start = serializers.DateTimeField(
-        write_only=True,
-        help_text="Data i czas rozpoczęcia wizyty"
-    )
-
-    class Meta:
-        model = Payment
-        fields = [
-            "client_number",
-            "appointment_start",
-            "amount",
-            "status",
-            "method",
-            "type",
-            "reference"
-        ]
-
-    def validate(self, attrs: dict[str, Any]) -> dict[str, Any]:
-        # Bezpośredni odczyt danych
-        client = attrs.pop('client_number')
-        start = attrs.pop('appointment_start')
+        # Pobierz obiekty
+        try:
+            employee = EmployeeProfile.objects.get(pk=data['employee_id'], is_active=True)
+        except EmployeeProfile.DoesNotExist:
+            raise serializers.ValidationError({'employee_id': 'Nie znaleziono aktywnego pracownika.'})
 
         try:
-            appointment = Appointment.objects.get(
-                client=client,
-                start=start
-            )
-            attrs['appointment'] = appointment
+            service = Service.objects.get(pk=data['service_id'], is_active=True)
+        except Service.DoesNotExist:
+            raise serializers.ValidationError({'service_id': 'Nie znaleziono aktywnej usługi.'})
 
-        except Appointment.DoesNotExist:
+        # Określ klienta
+        if user and user.is_client:
+            # Klient rezerwuje dla siebie
+            try:
+                client = user.client_profile
+            except ClientProfile.DoesNotExist:
+                raise serializers.ValidationError('Brak profilu klienta dla tego użytkownika.')
+        elif data.get('client_id'):
+            # Pracownik/admin rezerwuje dla klienta
+            try:
+                client = ClientProfile.objects.get(pk=data['client_id'], is_active=True)
+            except ClientProfile.DoesNotExist:
+                raise serializers.ValidationError({'client_id': 'Nie znaleziono aktywnego klienta.'})
+        else:
             raise serializers.ValidationError({
-                "appointment_start": "Nie znaleziono wizyty dla klienta o tym czasie rozpoczęcia."
-            })
-        except Appointment.MultipleObjectsReturned:
-            raise serializers.ValidationError({
-                "appointment_start": "Znaleziono wiele wizyt - podaj bardziej precyzyjny czas."
+                'client_id': 'Wymagane podanie client_id przy rezerwacji przez pracownika/admina.'
             })
 
-        if attrs.get('amount', 0) <= 0:
-            raise serializers.ValidationError({
-                "amount": "Kwota musi być większa od zera."
-            })
+        # Oblicz czas zakończenia
+        settings = SystemSettings.get_settings()
+        buffer_minutes = settings.buffer_minutes
+        duration = service.duration + timedelta(minutes=buffer_minutes)
+        end = data['start'] + duration
 
-        return attrs
+        # Sprawdź czy termin nie jest w przeszłości
+        if data['start'] < timezone.now():
+            raise serializers.ValidationError({'start': 'Nie można rezerwować wizyt w przeszłości.'})
 
-    def validate_amount(self, value: Decimal) -> Decimal:
-        if value <= 0:
-            raise serializers.ValidationError("Kwota musi być większa od zera.")
-        return value
+        # Sprawdź konflikty czasowe
+        conflicts = Appointment.objects.filter(
+            employee=employee,
+            start__lt=end,
+            end__gt=data['start']
+        ).exclude(status=Appointment.Status.CANCELLED)
 
+        if conflicts.exists():
+            raise serializers.ValidationError('Ten termin jest już zajęty.')
 
-class PaymentMarkAsPaidSerializer(serializers.Serializer):
-    payment = serializers.PrimaryKeyRelatedField(
-        queryset=Payment.objects.filter(status=Payment.Status.PENDING)
-    )
+        # Sprawdź czy pracownik jest dostępny w tym dniu (time-off)
+        date = data['start'].date()
+        if TimeOff.objects.filter(
+                employee=employee,
+                date_from__lte=date,
+                date_to__gte=date
+        ).exists():
+            raise serializers.ValidationError('Pracownik jest nieobecny w tym dniu.')
 
-    def save(self, **kwargs: Any) -> Payment:
-        payment = cast(Payment, self.validated_data["payment"])
-        if payment.status == Payment.Status.PAID:
-            raise serializers.ValidationError("Płatność jest już oznaczona jako opłacona.")
+        # Dodaj przetwor obiektów do validated_data
+        data['employee'] = employee
+        data['service'] = service
+        data['client'] = client
+        data['end'] = end
 
-        payment.status = Payment.Status.PAID
-        payment.paid_at = timezone.now()
-        payment.save(update_fields=["status", "paid_at"])
-        return payment
+        return data
 
-
-class InvoiceSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source="client.get_full_name", read_only=True)
-
-    class Meta:
-        model = Invoice
-        fields = [
-            "id",
-            "number",
-            "client",
-            "client_name",
-            "appointment",
-            "issue_date",
-            "net_amount",
-            "vat_rate",
-            "vat_amount",
-            "gross_amount",
-            "is_paid",
-            "sale_date",
-            "due_date",
-            "paid_date",
-            "pdf_file",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "number", "created_at", "updated_at"]
+    def create(self, validated_data):
+        """Utwórz wizytę"""
+        appointment = Appointment.objects.create(
+            client=validated_data['client'],
+            employee=validated_data['employee'],
+            service=validated_data['service'],
+            start=validated_data['start'],
+            end=validated_data['end'],
+            status=Appointment.Status.PENDING
+        )
+        return appointment
 
 
-# ==================== NOTIFICATION & REPORT SERIALIZERS ====================
-
-
-class NotificationSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source="client.get_full_name", read_only=True)
-    appointment_start = serializers.DateTimeField(
-        source="appointment.start", read_only=True
-    )
-
-    class Meta:
-        model = Notification
-        fields = [
-            "id",
-            "client",
-            "client_name",
-            "appointment",
-            "appointment_start",
-            "type",
-            "channel",
-            "status",
-            "scheduled_at",
-            "subject",
-            "content",
-            "sent_at",
-            "error_message",
-            "attempts_count",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "id",
-            "sent_at",
-            "error_message",
-            "attempts_count",
-            "created_at",
-            "updated_at",
-        ]
-
-
-class NotificationCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Notification
-        fields = [
-            "client",
-            "appointment",
-            "type",
-            "channel",
-            "scheduled_at",
-            "subject",
-            "content",
-        ]
-
-
-class ReportPDFSerializer(serializers.ModelSerializer):
-    generated_by_email = serializers.EmailField(
-        source="generated_by.email", read_only=True
-    )
-
-    class Meta:
-        model = ReportPDF
-        fields = [
-            "id",
-            "type",
-            "title",
-            "file_path",
-            "data_od",
-            "data_do",
-            "file_size",
-            "generated_by",
-            "generated_by_email",
-            "parameters",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-# ==================== AUDIT & SYSTEM SETTINGS & STATS SERIALIZERS ====================
-
-
-class AuditLogSerializer(serializers.ModelSerializer):
-    user_email = serializers.EmailField(source="user.email", read_only=True)
-    level_display = serializers.CharField(source="get_level_display", read_only=True)
-
-    class Meta:
-        model = AuditLog
-        fields = [
-            "id",
-            "type",
-            "level",
-            "level_display",
-            "created_at",
-            "user",
-            "user_email",
-            "message",
-            "adres_ip",
-            "user_agent",
-            "entity_type",
-            "entity_id",
-            "metadata",
-        ]
-        read_only_fields = ["id", "created_at"]
-
+# =============================================================================
+# SYSTEM SETTINGS SERIALIZERS
+# =============================================================================
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
-    last_modified_by_email = serializers.EmailField(
-        source="last_modified_by.email", read_only=True
-    )
+    """Serializer dla ustawień systemowych"""
+    updated_by_username = serializers.CharField(source='updated_by.username', read_only=True, allow_null=True)
 
     class Meta:
         model = SystemSettings
         fields = [
-            "id",
-            "slot_minutes",
-            "buffer_minutes",
-            "deposit_policy",
-            "opening_hours",
-            "salon_name",
-            "address",
-            "phone",
-            "contact_email",
-            "default_vat_rate",
-            "maintenance_mode",
-            "maintenance_message",
-            "last_modified_by",
-            "last_modified_by_email",
-            "created_at",
-            "updated_at",
+            'id', 'salon_name', 'slot_minutes', 'buffer_minutes',
+            'opening_hours', 'updated_at', 'updated_by', 'updated_by_username'
         ]
-        read_only_fields = [
-            "id",
-            "last_modified_by",
-            "last_modified_by_email",
-            "created_at",
-            "updated_at",
-        ]
+        read_only_fields = ['id', 'updated_at', 'updated_by']
+
+    def validate_slot_minutes(self, value):
+        """Walidacja długości slotu"""
+        if value < 5:
+            raise serializers.ValidationError('Slot musi mieć co najmniej 5 minut.')
+        if value > 120:
+            raise serializers.ValidationError('Slot nie może być dłuższy niż 120 minut.')
+        return value
+
+    def validate_buffer_minutes(self, value):
+        """Walidacja bufora czasowego"""
+        if value < 0:
+            raise serializers.ValidationError('Bufor nie może być ujemny.')
+        if value > 60:
+            raise serializers.ValidationError('Bufor nie może być dłuższy niż 60 minut.')
+        return value
 
 
+# =============================================================================
+# SYSTEM LOG SERIALIZERS
+# =============================================================================
 
-class StatsSnapshotSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = StatsSnapshot
-        fields = [
-            "id",
-            "period",
-            "total_visits",
-            "date_from",
-            "date_to",
-            "completed_visits",
-            "cancellations",
-            "no_shows",
-            "revenue_total",
-            "revenue_deposits",
-            "new_clients",
-            "returning_clients",
-            "employees_occupancy_avg",
-            "extra_metrics",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
-class ServiceStatisticsSerializer(serializers.Serializer):
-    service = ServiceDetailSerializer(read_only=True)
-    total_appointments = serializers.IntegerField(read_only=True)
-    total_revenue = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-
-
-class EmployeeStatisticsSerializer(serializers.Serializer):
-    employee = EmployeeSimpleSerializer(read_only=True)
-    total_appointments = serializers.IntegerField(read_only=True)
-    occupancy_percent = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
-    total_revenue = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
-
-
-class ScheduleUpdateSerializer(serializers.ModelSerializer):
-    availability_periods = AvailabilityPeriodSerializer(many=True)
+class SystemLogSerializer(serializers.ModelSerializer):
+    """Serializer dla logów systemowych"""
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+    performed_by_username = serializers.CharField(source='performed_by.username', read_only=True, allow_null=True)
+    target_user_username = serializers.CharField(source='target_user.username', read_only=True, allow_null=True)
 
     class Meta:
-        model = Schedule
+        model = SystemLog
         fields = [
-            "id",
-            "status",
-            "breaks",
-            "availability_periods",
+            'id', 'action', 'action_display',
+            'performed_by', 'performed_by_username',
+            'target_user', 'target_user_username',
+            'timestamp'
         ]
-
-    def update(self, instance: Schedule, validated_data: dict) -> Schedule:
-        if "availability_periods" in validated_data:
-            instance.availability_periods = validated_data.pop("availability_periods")
-
-        # Aktualizacja breaks (JSONField)
-        if "breaks" in validated_data:
-            instance.breaks = validated_data.pop("breaks")
-
-        # Aktualizacja pozostałych prostych pól (np. status)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-
-        instance.save()
-        return instance
-
+        read_only_fields = fields  # Wszystkie pola read-only - logi nie są edytowalne

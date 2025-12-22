@@ -1,321 +1,165 @@
-import type { ReactElement } from 'react';
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
+import { AuthProvider } from '../context/AuthContext';
+import ProtectedRoute from '../components/ProtectedRoute';
+import Layout from '../components/Layout/Layout';
 
-import { Layout } from '@/components/Layout/Layout.tsx';
-import { ProtectedRoute } from '@/router/ProtectedRoute.tsx';
-import { useAuth } from '@/hooks/useAuth.ts';
+// Pages - Public
+import LoginPage from '../pages/LoginPage';
+import HomePage from '../pages/HomePage';
+import NotFoundPage from '../pages/NotFoundPage';
+import AccessDeniedPage from '../pages/AccessDeniedPage';
 
-import PublicHomePage from '@/pages/PublicHomePage.tsx';
-import { LoginPage } from '@/pages/Login/LoginPage.tsx';
-import { DashboardPage } from '@/pages/DashboardPage.tsx';
+// Pages - Admin
+import AdminDashboardPage from '../pages/Admin/DashboardPage';
+import AdminAppointmentsPage from '../pages/Admin/AppointmentsPage';
+import AdminEmployeesPage from '../pages/Admin/EmployeesPage';
+import AdminClientsPage from '../pages/Admin/ClientsPage';
+import AdminServicesPage from '../pages/Admin/ServicesPage';
+import AdminReportsPage from '../pages/Admin/ReportsPage';
+import AdminSettingsPage from '../pages/Admin/SettingsPage';
 
-import { BookAppointmentPage } from '@/pages/BookAppointmentPage.tsx';
-import { MyAppointmentsPage } from '@/pages/MyAppointmentsPage.tsx';
+// Pages - Employee
+import EmployeeDashboardPage from '../pages/Employee/DashboardPage';
+import EmployeeAppointmentsPage from '../pages/Employee/AppointmentsPage';
+import EmployeeSchedulePage from '../pages/Employee/SchedulePage';
 
-import { MySchedulePage } from '@/pages/Employee/MySchedulePage.tsx';
-import { MyProfilePage } from '@/pages/Employee/MyProfilePage.tsx';
-import { MyAvailabilityPage } from '@/pages/Employee/MyAvailabilityPage.tsx';
-import { MyTimeOffPage } from '@/pages/Employee/MyTimeOffPage.tsx';
+// Pages - Client
+import ClientDashboardPage from '../pages/Client/DashboardPage';
+import ClientBookingPage from '../pages/Client/BookingPage';
+import ClientAppointmentsPage from '../pages/Client/AppointmentsPage';
 
-import { ClientsManagementPage } from '@/pages/Manager/ClientsManagementPage.tsx';
-import { ClientDetailsPage } from '@/pages/Manager/ClientDetailsPage.tsx';
-import { EmployeesManagementPage } from '@/pages/Manager/EmployeesManagementPage.tsx';
-import { ServicesManagementPage } from '@/pages/Manager/ServicesManagementPage.tsx';
-import { AppointmentsManagementPage } from '@/pages/Manager/AppointmentsManagementPage.tsx';
-import { AppointmentsCalendarPage } from '@/pages/Manager/AppointmentsCalendarPage.tsx';
-import { PaymentsPage } from '@/pages/Manager/PaymentsPage.tsx';
-import { PaymentDetailsPage } from '@/pages/Manager/PaymentDetailsPage.tsx';
-import { InvoicesPage } from '@/pages/Manager/InvoicesPage.tsx';
-import { InvoiceDetailsPage } from '@/pages/Manager/InvoiceDetailsPage.tsx';
-import { NotificationsPage } from '@/pages/Manager/NotificationsPage.tsx';
-import { ScheduleManagementPage } from '@/pages/Manager/ScheduleManagementPage.tsx';
-import ReportsPage from '@/pages/Manager/ReportsPage.tsx';
-import ManagerProfilePage from '@/pages/Manager/ManagerProfilePage.tsx';
+// Wrapper z AuthProvider
+const AuthWrapper = () => (
+  <AuthProvider>
+    <Outlet />
+  </AuthProvider>
+);
 
-import { ServicesCatalogPage } from '@/pages/ServicesCatalogPage.tsx';
-import StatisticsPage from '@/pages/Manager/Statistics/StatisticsPage.tsx';
-import SettingsPage from '@/pages/Settings/SettingsPage.tsx';
-
-import ClientMyProfilePage from '@/pages/Clients/MyProfilePage.tsx';
-
-import AuditLogsPage from '@/pages/Manager/AuditLogs/AuditLogsPage.tsx';
-
-// route zależny od roli
-/**
- * Komponent decydujący, którą wersję strony usług wyświetlić w zależności od roli użytkownika.
- *
- * Klienci oraz pracownicy powinni widzieć jedynie katalog usług (bez możliwości edycji),
- * natomiast menedżerowie mają dostęp do panelu zarządzania usługami.
- */
-const ServicesRoutePage = (): ReactElement => {
-  const { user } = useAuth();
-
-  // Jeśli użytkownik nie jest zalogowany – przekieruj do logowania
-  if (!user) return <Navigate to="/login" replace />;
-
-  // Manager ma pełny dostęp do zarządzania usługami
-  if (user.role === 'manager') {
-    return <ServicesManagementPage />;
-  }
-
-  // Klient oraz pracownik widzą katalog usług bez opcji zarządzania
-  return <ServicesCatalogPage />;
-};
-
-const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
+const router = createBrowserRouter([
   {
-    path: '/',
-    element: <Layout />,
+    element: <AuthWrapper />, // AuthProvider opakowuje wszystkie trasy
     children: [
-      { index: true, element: <PublicHomePage /> },
-      { path: 'login', element: <LoginPage /> },
-
-      // Reset hasła usunięty – brak publicznej trasy
-
+      // Public routes
       {
-        path: 'dashboard',
-        element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <DashboardPage />
-          </ProtectedRoute>
-        ),
+        path: '/',
+        element: <HomePage />,
+      },
+      {
+        path: '/login',
+        element: <LoginPage />,
+      },
+      {
+        path: '/access-denied',
+        element: <AccessDeniedPage />,
       },
 
-      // MANAGER profile
+      // Admin routes
       {
-        path: 'profile',
+        path: '/admin',
         element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ManagerProfilePage />
+          <ProtectedRoute allowedRoles={['ADMIN']}>
+            <Layout />
           </ProtectedRoute>
         ),
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/admin/dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: <AdminDashboardPage />,
+          },
+          {
+            path: 'appointments',
+            element: <AdminAppointmentsPage />,
+          },
+          {
+            path: 'employees',
+            element: <AdminEmployeesPage />,
+          },
+          {
+            path: 'clients',
+            element: <AdminClientsPage />,
+          },
+          {
+            path: 'services',
+            element: <AdminServicesPage />,
+          },
+          {
+            path: 'reports',
+            element: <AdminReportsPage />,
+          },
+          {
+            path: 'settings',
+            element: <AdminSettingsPage />,
+          },
+        ],
       },
 
-      // EMPLOYEE profile
+      // Employee routes
       {
-        path: 'my-profile',
+        path: '/employee',
         element: (
-          <ProtectedRoute allowedRoles={['employee']}>
-            <MyProfilePage />
+          <ProtectedRoute allowedRoles={['EMPLOYEE']}>
+            <Layout />
           </ProtectedRoute>
         ),
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/employee/dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: <EmployeeDashboardPage />,
+          },
+          {
+            path: 'appointments',
+            element: <EmployeeAppointmentsPage />,
+          },
+          {
+            path: 'schedule',
+            element: <EmployeeSchedulePage />,
+          },
+        ],
       },
 
-      // EMPLOYEE availability
+      // Client routes
       {
-        path: 'my-availability',
+        path: '/client',
         element: (
-          <ProtectedRoute allowedRoles={['employee']}>
-            <MyAvailabilityPage />
+          <ProtectedRoute allowedRoles={['CLIENT']}>
+            <Layout />
           </ProtectedRoute>
         ),
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/client/dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: <ClientDashboardPage />,
+          },
+          {
+            path: 'booking',
+            element: <ClientBookingPage />,
+          },
+          {
+            path: 'appointments',
+            element: <ClientAppointmentsPage />,
+          },
+        ],
       },
 
-      // ✅ EMPLOYEE time off
+      // 404
       {
-        path: 'my-time-off',
-        element: (
-          <ProtectedRoute allowedRoles={['employee']}>
-            <MyTimeOffPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // My appointments (client + employee)
-      {
-        path: 'my-appointments',
-        element: (
-          <ProtectedRoute allowedRoles={['client', 'employee']}>
-            <MyAppointmentsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Employee schedule
-      {
-        path: 'my-schedule',
-        element: (
-          <ProtectedRoute allowedRoles={['employee']}>
-            <MySchedulePage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Manager - clients
-      {
-        path: 'clients',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ClientsManagementPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'clients/:id',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ClientDetailsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Manager - employees
-      {
-        path: 'employees',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <EmployeesManagementPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Manager - appointments
-      {
-        path: 'appointments',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <AppointmentsCalendarPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'appointments-management',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <AppointmentsManagementPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Services by role
-      {
-        path: 'services',
-        element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <ServicesRoutePage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Manager only
-      {
-        path: 'schedule',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ScheduleManagementPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'reports',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <ReportsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // SystemLogsPage = Audit Logs (backend posiada wyłącznie logi audytu).
-      // Zachowujemy kompatybilność ze starym URL.
-      {
-        path: 'system-logs',
-        element: <Navigate to="/audit-logs" replace />,
-      },
-      {
-        path: 'audit-logs',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <AuditLogsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      {
-        path: 'statistics',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <StatisticsPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'payments',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <PaymentsPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'payments/:id',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <PaymentDetailsPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'invoices',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <InvoicesPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'invoices/:id',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <InvoiceDetailsPage />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'notifications',
-        element: (
-          <ProtectedRoute allowedRoles={['manager']}>
-            <NotificationsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Settings
-      {
-        path: 'settings',
-        element: (
-          <ProtectedRoute allowedRoles={['manager', 'employee', 'client']}>
-            <SettingsPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // Client only
-      {
-        path: 'book',
-        element: (
-          <ProtectedRoute allowedRoles={['client']}>
-            <BookAppointmentPage />
-          </ProtectedRoute>
-        ),
-      },
-
-      // CLIENT profile (RODO)
-      {
-        path: 'my-client-profile',
-        element: (
-          <ProtectedRoute allowedRoles={['client']}>
-            <ClientMyProfilePage />
-          </ProtectedRoute>
-        ),
+        path: '*',
+        element: <NotFoundPage />,
       },
     ],
   },
-
-  { path: '/404', element: <h1>404 Strona nie znaleziona</h1> },
 ]);
 
-export const AppRouter = (): ReactElement => {
-  return <RouterProvider router={router} />;
-};
-
-export default AppRouter;
+export default router;
