@@ -162,7 +162,7 @@ class EmployeeProfile(models.Model):
     skills = models.ManyToManyField(Service, related_name="employees", blank=True)
 
     is_active = models.BooleanField(default=True)
-    hired_at = models.DateField(default=timezone.now)
+    hired_at = models.DateField(auto_now_add=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

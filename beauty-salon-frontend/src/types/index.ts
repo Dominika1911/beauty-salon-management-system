@@ -50,6 +50,8 @@ export interface Employee {
   phone: string;
   skills: Service[];
   skill_ids?: number[];
+  email?: string;  // Tylko przy tworzeniu
+  password?: string;  // Tylko przy tworzeniu
   is_active: boolean;
   hired_at: string;
   created_at: string;

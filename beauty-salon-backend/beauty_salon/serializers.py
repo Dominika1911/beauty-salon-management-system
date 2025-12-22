@@ -180,26 +180,88 @@ class EmployeeSerializer(serializers.ModelSerializer):
         source='skills'
     )
 
+    # Pola do tworzenia nowego użytkownika (tylko przy dodawaniu)
+    email = serializers.EmailField(write_only=True, required=False)
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+
     class Meta:
         model = EmployeeProfile
         fields = [
             'id', 'user', 'user_username', 'user_email',
             'employee_number', 'first_name', 'last_name', 'phone',
             'skills', 'skill_ids',
+            'email', 'password',  # Dodane pola
             'is_active', 'hired_at',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'employee_number', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'user': {'required': False}  # Nie wymagane - zostanie stworzone automatycznie
+        }
 
     def validate(self, data):
         """Walidacja danych pracownika"""
-        # Sprawdź czy użytkownik ma rolę EMPLOYEE
+        # Przy tworzeniu (POST) - sprawdź czy są email i password
+        if not self.instance:  # Tworzenie nowego
+            if 'email' not in data or 'password' not in data:
+                raise serializers.ValidationError(
+                    'Email i hasło są wymagane przy tworzeniu pracownika.'
+                )
+
+        # Sprawdź czy użytkownik ma rolę EMPLOYEE (jeśli podano user)
         user = data.get('user')
         if user and user.role != User.Role.EMPLOYEE:
             raise serializers.ValidationError({
                 'user': 'Użytkownik musi mieć rolę EMPLOYEE.'
             })
         return data
+
+    def create(self, validated_data):
+        """Tworzy użytkownika i profil pracownika w jednej transakcji"""
+        email = validated_data.pop('email', None)
+        password = validated_data.pop('password', None)
+        skills = validated_data.pop('skills', [])
+
+        with transaction.atomic():
+            # 1. Stwórz użytkownika
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=password,
+                role=User.Role.EMPLOYEE,
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', '')
+            )
+
+            # 2. Stwórz profil pracownika
+            validated_data['user'] = user
+            employee = EmployeeProfile.objects.create(**validated_data)
+
+            # 3. Przypisz umiejętności
+            if skills:
+                employee.skills.set(skills)
+
+        return employee
+
+    def update(self, instance, validated_data):
+        """Aktualizacja profilu pracownika"""
+        # Usuń pola które nie mogą być aktualizowane
+        validated_data.pop('email', None)
+        validated_data.pop('password', None)
+        validated_data.pop('user', None)
+
+        skills = validated_data.pop('skills', None)
+
+        # Aktualizuj profil
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Aktualizuj umiejętności
+        if skills is not None:
+            instance.skills.set(skills)
+
+        return instance
 
 
 class EmployeeScheduleSerializer(serializers.ModelSerializer):
