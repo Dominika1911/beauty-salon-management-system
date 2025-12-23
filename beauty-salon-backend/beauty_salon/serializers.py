@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import (
@@ -533,15 +534,6 @@ class SystemLogSerializer(serializers.ModelSerializer):
 class BookingCreateSerializer(serializers.Serializer):
     """
     Serializer do tworzenia rezerwacji wizyty.
-    Wzorowany na systemie biblioteki - automatycznie przypisuje klienta z request.user
-    """
-    service_id = serializers.IntegerField(required=True)
-    employee_id = serializers.IntegerField(required=True)
-    start = serializers.DateTimeField(required=True)
-
-class BookingCreateSerializer(serializers.Serializer):
-    """
-    Serializer do tworzenia rezerwacji wizyty.
     Automatycznie przypisuje klienta z request.user
     """
     service_id = serializers.IntegerField(required=True)
@@ -584,11 +576,12 @@ class BookingCreateSerializer(serializers.Serializer):
         if not employee.skills.filter(id=service.id).exists():
             raise serializers.ValidationError('Ten pracownik nie wykonuje wybranej usługi.')
 
-        # Oblicz czas zakończenia
+        # Oblicz czas zakończenia (end = start + duration usługi).
+        # buffer_minutes wykorzystujemy WYŁĄCZNIE do blokowania dostępności pracownika.
         settings = SystemSettings.get_settings()
-        buffer_minutes = settings.buffer_minutes
-        duration = timedelta(minutes=service.duration_minutes + buffer_minutes)
-        end = start + duration
+        buffer_minutes = int(settings.buffer_minutes or 0)
+        service_end = start + timedelta(minutes=int(service.duration_minutes))
+        end_with_buffer = service_end + timedelta(minutes=buffer_minutes)
 
         # Sprawdź czy termin nie jest w przeszłości
         if start < timezone.now():
@@ -597,7 +590,7 @@ class BookingCreateSerializer(serializers.Serializer):
         # Sprawdź konflikty czasowe dla pracownika
         employee_conflicts = Appointment.objects.filter(
             employee=employee,
-            start__lt=end,
+            start__lt=end_with_buffer,
             end__gt=start
         ).exclude(status=Appointment.Status.CANCELLED)
 
@@ -607,7 +600,7 @@ class BookingCreateSerializer(serializers.Serializer):
         # Sprawdź konflikty czasowe dla klienta
         client_conflicts = Appointment.objects.filter(
             client=client,
-            start__lt=end,
+            start__lt=service_end,
             end__gt=start
         ).exclude(status=Appointment.Status.CANCELLED)
 
@@ -624,7 +617,7 @@ class BookingCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError('Pracownik jest nieobecny w tym dniu.')
 
         # Dodaj przetworzone dane do validated_data
-        data['end'] = end
+        data['end'] = service_end
         data['client'] = client
         data['service'] = service
         data['employee'] = employee
@@ -632,15 +625,19 @@ class BookingCreateSerializer(serializers.Serializer):
         return data
 
     def create(self, validated_data):
-        """Utwórz wizytę"""
+        """Utwórz wizytę (transakcyjnie) + mapowanie błędów walidacji na 400."""
         with transaction.atomic():
-            appointment = Appointment.objects.create(
+            appt = Appointment(
                 client=validated_data['client'],
                 employee=validated_data['employee'],
                 service=validated_data['service'],
                 start=validated_data['start'],
                 end=validated_data['end'],
-                status=Appointment.Status.PENDING
+                status=Appointment.Status.PENDING,
             )
-
-        return appointment
+            try:
+                appt.full_clean()
+            except DjangoValidationError as e:
+                raise serializers.ValidationError(getattr(e, 'message_dict', {'detail': e.messages}))
+            appt.save()
+            return appt

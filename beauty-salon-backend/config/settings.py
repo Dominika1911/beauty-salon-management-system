@@ -167,8 +167,8 @@ USE_TZ = True  # w bazie UTC
 # Static files
 STATIC_URL = "/static/"
 
-# Jeśli NIE masz folderu "static" w projekcie, usuń te 2 linie i zostaw tylko STATIC_URL/STATIC_ROOT
-STATICFILES_DIRS = [BASE_DIR / "static"]
+
+STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media files

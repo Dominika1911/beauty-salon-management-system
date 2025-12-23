@@ -8,6 +8,8 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Sum, Q, Avg
 from django.utils import timezone
+from django.core.exceptions import ValidationError as DjangoValidationError
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
@@ -930,15 +932,18 @@ class AvailabilitySlotsAPIView(APIView):
         slot_minutes = int(settings_obj.slot_minutes)
         buffer_minutes = int(settings_obj.buffer_minutes)
 
-        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
+        service_duration = timedelta(minutes=int(service.duration_minutes))
+        block_duration = service_duration + timedelta(minutes=int(buffer_minutes))
 
         day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
         day_end = timezone.make_aware(datetime.combine(day, time(23, 59, 59)))
 
-        busy = list(
-            Appointment.objects.filter(employee=employee, start__lt=day_end, end__gt=day_start)
-            .values_list("start", "end")
-        )
+        busy = [
+            (s, e + timedelta(minutes=buffer_minutes))
+            for (s, e) in Appointment.objects.filter(employee=employee, start__lt=day_end, end__gt=day_start)
+                .exclude(status=Appointment.Status.CANCELLED)
+                .values_list("start", "end")
+        ]
 
         slots: list[dict] = []
         for p in periods:
@@ -949,16 +954,17 @@ class AvailabilitySlotsAPIView(APIView):
                 return Response({"detail": "Błędne dane grafiku pracownika."}, status=status.HTTP_400_BAD_REQUEST)
 
             cursor = p_start
-            while cursor + duration <= p_end:
+            while cursor + block_duration <= p_end:
                 candidate_start = cursor
-                candidate_end = cursor + duration
+                candidate_end = cursor + service_duration
+                candidate_block_end = cursor + block_duration
 
                 # Sprawdź czy slot nie jest w przeszłości
                 if candidate_start < timezone.now():
                     cursor += timedelta(minutes=slot_minutes)
                     continue
 
-                overlap = any(b_start < candidate_end and b_end > candidate_start for b_start, b_end in busy)
+                overlap = any(b_start < candidate_block_end and b_end > candidate_start for b_start, b_end in busy)
                 if not overlap:
                     # POPRAWIONE: Zwracaj pełne ISO timestamps
                     slots.append({
@@ -992,12 +998,17 @@ class BookingCreateAPIView(APIView):
     @transaction.atomic
     def post(self, request):
 
-        ser = BookingCreateSerializer(data=request.data, context={"request": request})
-        ser.is_valid(raise_exception=True)
-        appointment = ser.save()
+            ser = BookingCreateSerializer(data=request.data, context={"request": request})
+            try:
+                ser.is_valid(raise_exception=True)
+                appointment = ser.save()
+            except DRFValidationError as e:
+                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+            except DjangoValidationError as e:
+                return Response(getattr(e, "message_dict", {"detail": e.messages}), status=status.HTTP_400_BAD_REQUEST)
 
-        SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
-        return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
+            SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
+            return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
 # =============================================================================
 # NOWE: Sprawdzanie dostępności terminu
 # =============================================================================
@@ -1064,16 +1075,18 @@ class CheckAvailabilityView(APIView):
                 "reason": "Pracownik jest nieobecny w tym dniu."
             })
 
-        # Oblicz czas zakończenia
+        # Oblicz czas zakończenia (spójnie w całym systemie)
         settings_obj = SystemSettings.get_settings()
-        buffer_minutes = int(settings_obj.buffer_minutes)
-        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
-        end = start + duration
+        buffer_minutes = int(settings_obj.buffer_minutes or 0)
 
-        # Sprawdź konflikty z istniejącymi wizytami
+        service_duration = timedelta(minutes=int(service.duration_minutes))
+        service_end = start + service_duration  # koniec usługi (bez bufora)
+        end_with_buffer = service_end + timedelta(minutes=buffer_minutes)  # blokada dostępności
+
+        # Sprawdź konflikty z istniejącymi wizytami (bufor blokuje kolejne wizyty)
         conflicts = Appointment.objects.filter(
             employee=employee,
-            start__lt=end,
+            start__lt=end_with_buffer,
             end__gt=start
         ).exclude(status=Appointment.Status.CANCELLED)
 
@@ -1081,11 +1094,13 @@ class CheckAvailabilityView(APIView):
             return Response({
                 "available": False,
                 "reason": "Pracownik ma już zarezerwowaną wizytę w tym czasie."
-            })
+            }, status=status.HTTP_200_OK)
 
         return Response({
             "available": True,
             "start": start.isoformat(),
-            "end": end.isoformat(),
-            "duration_minutes": service.duration_minutes + buffer_minutes
-        })
+            "end": service_end.isoformat(),
+            "service_duration_minutes": int(service.duration_minutes),
+            "buffer_minutes": buffer_minutes,
+            "blocked_until": end_with_buffer.isoformat()
+        }, status=status.HTTP_200_OK)
