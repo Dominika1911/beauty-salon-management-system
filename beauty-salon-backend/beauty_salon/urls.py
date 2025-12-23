@@ -44,7 +44,7 @@ urlpatterns = [
 
     # CUSTOM ENDPOINTS - MUSZĄ BYĆ PRZED ROUTEREM!
     # Dostępność + rezerwacje (PRZED router.urls!)
-    path('appointments/available-slots/', AvailabilitySlotsAPIView.as_view(), name='availability-slots'),
+    path('availability/slots/', AvailabilitySlotsAPIView.as_view(), name='availability-slots'),
     path('appointments/book/', BookingCreateAPIView.as_view(), name='appointment-book'),
     path('appointments/check-availability/', CheckAvailabilityView.as_view(), name='check-availability'),
 

@@ -88,6 +88,8 @@ export interface Appointment {
   employee_name: string;
   service: number;
   service_name: string;
+  service_price: string;  // Cena usługi
+  service_duration: number;  // Czas trwania w minutach
   start: string;
   end: string;
   status: AppointmentStatus;

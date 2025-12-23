@@ -314,7 +314,8 @@ class Appointment(models.Model):
         ordering = ["start"]
         constraints = [
             models.CheckConstraint(check=Q(end__gt=models.F("start")), name="appointment_end_after_start"),
-            UniqueConstraint(fields=["employee", "start"], name="unique_employee_start"),        ]
+            UniqueConstraint(fields=["employee", "start"], name="unique_employee_start"),
+        ]
         indexes = [
             models.Index(fields=["employee", "start"]),
             models.Index(fields=["status", "start"]),
@@ -323,46 +324,57 @@ class Appointment(models.Model):
     def __str__(self) -> str:
         return f"{self.employee.employee_number} - {self.service.name} - {self.start:%Y-%m-%d %H:%M}"
 
-        def clean(self):
-            super().clean()
+    def clean(self):
+        super().clean()
 
-            # Podstawowe sanity-check
-            if self.start is None or self.end is None:
-                raise ValidationError("Pola start i end są wymagane.")
+        if self.start is None or self.end is None:
+            raise ValidationError("Pola start i end są wymagane.")
 
-            if self.end <= self.start:
-                raise ValidationError({"end": "Czas zakończenia musi być po czasie rozpoczęcia."})
+        if self.end <= self.start:
+            raise ValidationError({"end": "Czas zakończenia musi być po czasie rozpoczęcia."})
 
-            now = timezone.now()
+        now = timezone.now()
 
-            # Spójność end z czasem trwania usługi (bez bufora)
-            if self.service_id:
-                expected_end = self.start + timedelta(minutes=int(self.service.duration_minutes))
-                if self.end != expected_end:
-                    raise ValidationError({"end": "Czas zakończenia musi wynikać z czasu trwania usługi."})
+        # ✅ Pracownik tylko do swoich usług
+        if self.employee_id and self.service_id:
+            if not self.employee.skills.filter(id=self.service_id).exists():
+                raise ValidationError({"service": "Ten pracownik nie wykonuje wybranej usługi."})
 
-            # Statusy zależne od czasu
-            if self.status == self.Status.COMPLETED and self.end > now:
-                raise ValidationError("Nie można oznaczyć wizyty jako zakończonej, jeśli jeszcze się nie odbyła.")
+        # Spójność end z czasem trwania usługi (bez bufora)
+        if self.service_id:
+            expected_end = self.start + timedelta(minutes=int(self.service.duration_minutes))
+            if self.end != expected_end:
+                raise ValidationError({"end": "Czas zakończenia musi wynikać z czasu trwania usługi."})
 
-            # Nie pozwalaj tworzyć/utrzymywać aktywnych wizyt w przeszłości
-            if self.status in [self.Status.PENDING, self.Status.CONFIRMED] and self.start < now:
-                raise ValidationError({"start": "Nie można ustawić wizyty w przeszłości."})
+        # Statusy zależne od czasu
+        if self.status == self.Status.COMPLETED and self.end > now:
+            raise ValidationError("Nie można oznaczyć wizyty jako zakończonej, jeśli jeszcze się nie odbyła.")
 
-            # Konflikty: pracownik (bez CANCELLED)
-            qs_emp = Appointment.objects.filter(employee=self.employee).exclude(pk=self.pk).exclude(
-                status=self.Status.CANCELLED
+        # Nie pozwalaj tworzyć/utrzymywać aktywnych wizyt w przeszłości
+        if self.status in [self.Status.PENDING, self.Status.CONFIRMED] and self.start < now:
+            raise ValidationError({"start": "Nie można ustawić wizyty w przeszłości."})
+
+        # Konflikty: pracownik (bez CANCELLED)
+        if self.employee_id:
+            qs_emp = (
+                Appointment.objects.filter(employee=self.employee)
+                .exclude(pk=self.pk)
+                .exclude(status=self.Status.CANCELLED)
             )
             if qs_emp.filter(start__lt=self.end, end__gt=self.start).exists():
                 raise ValidationError("Pracownik jest niedostępny w tym przedziale czasu.")
 
-            # Konflikty: klient (jeśli przypisany)
-            if self.client_id:
-                qs_cli = Appointment.objects.filter(client=self.client).exclude(pk=self.pk).exclude(
-                    status=self.Status.CANCELLED
-                )
-                if qs_cli.filter(start__lt=self.end, end__gt=self.start).exists():
-                    raise ValidationError("Klient ma już wizytę w tym przedziale czasu.")
+        # Konflikty: klient (jeśli przypisany)
+        if self.client_id:
+            qs_cli = (
+                Appointment.objects.filter(client=self.client)
+                .exclude(pk=self.pk)
+                .exclude(status=self.Status.CANCELLED)
+            )
+            if qs_cli.filter(start__lt=self.end, end__gt=self.start).exists():
+                raise ValidationError("Klient ma już wizytę w tym przedziale czasu.")
+
+
 # =============================================================================
 # SYSTEM SETTINGS (singleton)
 # =============================================================================

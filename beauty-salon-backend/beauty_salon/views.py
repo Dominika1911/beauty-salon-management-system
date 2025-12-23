@@ -49,6 +49,97 @@ User = get_user_model()
 
 
 # =============================================================================
+# Availability helpers (jedno źródło prawdy dla slotów)
+# =============================================================================
+
+def _parse_date(date_str: str):
+    return datetime.strptime(date_str, "%Y-%m-%d").date()
+
+
+def _parse_hhmm(hhmm: str) -> time:
+    return datetime.strptime(hhmm, "%H:%M").time()
+
+
+def _weekday_key(d) -> str:
+    return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][d.weekday()]
+
+
+def _compute_slots(*, employee: EmployeeProfile, service: Service, day):
+    """
+    Jedno źródło prawdy dla slotów.
+    - uwzględnia skills (pracownik musi wykonywać usługę),
+      grafiki, nieobecności, konflikty + bufor.
+    Zwraca listę: [{"start": iso, "end": iso}]
+    """
+    # pracownik musi wykonywać usługę
+    if not employee.skills.filter(id=service.id).exists():
+        return []
+
+    # data w przeszłości – brak slotów
+    today = timezone.now().date()
+    if day < today:
+        return []
+
+    # urlop / nieobecność
+    if TimeOff.objects.filter(employee=employee, date_from__lte=day, date_to__gte=day).exists():
+        return []
+
+    schedule = getattr(employee, "schedule", None)
+    if not schedule:
+        return []
+
+    periods = (schedule.weekly_hours or {}).get(_weekday_key(day), [])
+    if not periods:
+        return []
+
+    settings_obj = SystemSettings.get_settings()
+    slot_minutes = int(settings_obj.slot_minutes)
+    buffer_minutes = int(settings_obj.buffer_minutes)
+
+    service_duration = timedelta(minutes=int(service.duration_minutes))
+    block_duration = service_duration + timedelta(minutes=int(buffer_minutes))
+
+    day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
+    day_end = timezone.make_aware(datetime.combine(day, time(23, 59, 59)))
+
+    busy = [
+        (s, e + timedelta(minutes=buffer_minutes))
+        for (s, e) in Appointment.objects.filter(employee=employee, start__lt=day_end, end__gt=day_start)
+            .exclude(status=Appointment.Status.CANCELLED)
+            .values_list("start", "end")
+    ]
+
+    slots: list[dict] = []
+    now = timezone.now()
+
+    for p in periods:
+        try:
+            p_start = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("start", ""))))
+            p_end = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("end", ""))))
+        except Exception:
+            return []
+
+        cursor = p_start
+        while cursor + block_duration <= p_end:
+            candidate_start = cursor
+            candidate_end = cursor + service_duration
+            candidate_block_end = cursor + block_duration
+
+            # nie pokazuj slotów w przeszłości (dla dzisiejszego dnia)
+            if candidate_start < now:
+                cursor += timedelta(minutes=slot_minutes)
+                continue
+
+            overlap = any(b_start < candidate_block_end and b_end > candidate_start for b_start, b_end in busy)
+            if not overlap:
+                slots.append({"start": candidate_start.isoformat(), "end": candidate_end.isoformat()})
+
+            cursor += timedelta(minutes=slot_minutes)
+
+    return slots
+
+
+# =============================================================================
 # CRUD (router) — dobre pod obronę: role + filtrowanie + akcje biznesowe
 # =============================================================================
 
@@ -135,6 +226,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     Rozszerzenia:
     - /employees/{id}/schedule/ GET,PATCH
     - /employees/{id}/time-off/ POST,GET
+    - /employees/me/available-slots/ GET  (NOWE) — tylko pracownik i tylko swoje
     """
     queryset = EmployeeProfile.objects.all().prefetch_related("skills")
     serializer_class = EmployeeSerializer
@@ -151,8 +243,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
+        # ✅ NOWE: pracownik ma dostęp tylko do swojego endpointu
+        if self.action == "my_available_slots":
+            return [IsEmployee()]
+
         if self.action in ["create", "update", "partial_update", "destroy", "schedule", "time_offs"]:
             return [IsAdminOrEmployee()]
+
         return [permissions.AllowAny()]
 
     @action(detail=True, methods=["get", "patch"], url_path="schedule")
@@ -189,6 +286,48 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         obj = ser.save(employee=employee)
         SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=request.user)
         return Response(TimeOffSerializer(obj).data, status=status.HTTP_201_CREATED)
+
+    # ✅ NOWE: pracownik widzi sloty swojego grafiku – tylko dla swoich usług
+    @action(detail=False, methods=["get"], url_path="me/available-slots")
+    def my_available_slots(self, request):
+        """
+        GET /employees/me/available-slots/?service_id=...&date=YYYY-MM-DD
+        """
+        employee = getattr(request.user, "employee_profile", None)
+        if not employee:
+            return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
+
+        service_id = request.query_params.get("service_id")
+        date_str = request.query_params.get("date")
+
+        if not service_id or not date_str:
+            return Response(
+                {"detail": "Wymagane parametry: service_id, date (YYYY-MM-DD)."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            service = Service.objects.get(pk=int(service_id), is_active=True)
+        except Exception:
+            return Response({"detail": "Nie znaleziono usługi."}, status=status.HTTP_404_NOT_FOUND)
+
+        # pracownik tylko do swoich usług
+        if not employee.skills.filter(id=service.id).exists():
+            return Response(
+                {"detail": "Ta usługa nie należy do Twoich umiejętności."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            day = _parse_date(date_str)
+        except Exception:
+            return Response(
+                {"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        slots = _compute_slots(employee=employee, service=service, day=day)
+        return Response({"date": date_str, "employee_id": employee.id, "slots": slots})
 
 
 class ClientViewSet(viewsets.ModelViewSet):
@@ -418,8 +557,8 @@ class StatisticsView(APIView):
         )
 
         revenue = (
-                base.filter(status=Appointment.Status.COMPLETED)
-                .aggregate(total=Sum("service__price"))["total"] or 0
+            base.filter(status=Appointment.Status.COMPLETED)
+            .aggregate(total=Sum("service__price"))["total"] or 0
         )
 
         return Response({
@@ -439,7 +578,7 @@ class StatisticsView(APIView):
 
 
 # =============================================================================
-# NOWE: Dashboard dla różnych ról
+# Dashboard + reporty
 # =============================================================================
 
 class DashboardView(APIView):
@@ -465,28 +604,23 @@ class DashboardView(APIView):
         return Response({"detail": "Brak uprawnień"}, status=status.HTTP_403_FORBIDDEN)
 
     def _admin_dashboard(self):
-        """Dashboard administratora - przegląd całego systemu"""
         today = timezone.now().date()
         now = timezone.now()
 
-        # Wizyty dzisiaj
         today_appointments = Appointment.objects.filter(start__date=today)
 
-        # Pending appointments wymagające uwagi
         pending_count = Appointment.objects.filter(
             status=Appointment.Status.PENDING
         ).count()
 
-        # Przychód w tym miesiącu
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         month_revenue = (
-                Appointment.objects.filter(
-                    status=Appointment.Status.COMPLETED,
-                    start__gte=month_start
-                ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
+            Appointment.objects.filter(
+                status=Appointment.Status.COMPLETED,
+                start__gte=month_start
+            ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
         )
 
-        # Aktywni pracownicy i klienci
         active_employees = EmployeeProfile.objects.filter(is_active=True).count()
         active_clients = ClientProfile.objects.filter(is_active=True).count()
 
@@ -516,20 +650,17 @@ class DashboardView(APIView):
         })
 
     def _employee_dashboard(self, user):
-        """Dashboard pracownika - dzisiejszy grafik i nadchodzące wizyty"""
         try:
             employee = user.employee_profile
             today = timezone.now()
             today_date = today.date()
 
-            # Dzisiejsze wizyty
             today_schedule = Appointment.objects.filter(
                 employee=employee,
                 start__date=today_date,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
             ).order_by('start')
 
-            # Nadchodzące wizyty (w ciągu najbliższych 7 dni)
             week_later = today + timedelta(days=7)
             upcoming = Appointment.objects.filter(
                 employee=employee,
@@ -538,7 +669,6 @@ class DashboardView(APIView):
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
             ).order_by('start')
 
-            # Statystyki pracownika w tym miesiącu
             month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             month_completed = Appointment.objects.filter(
                 employee=employee,
@@ -569,25 +699,21 @@ class DashboardView(APIView):
             )
 
     def _client_dashboard(self, user):
-        """Dashboard klienta - nadchodzące wizyty i historia"""
         try:
             client = user.client_profile
             now = timezone.now()
 
-            # Nadchodzące wizyty
             upcoming = Appointment.objects.filter(
                 client=client,
                 start__gte=now,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
             ).order_by('start')
 
-            # Historia zakończonych wizyt
             history_count = Appointment.objects.filter(
                 client=client,
                 status=Appointment.Status.COMPLETED
             ).count()
 
-            # Ostatnie 3 zakończone wizyty
             recent_history = Appointment.objects.filter(
                 client=client,
                 status=Appointment.Status.COMPLETED
@@ -613,21 +739,13 @@ class DashboardView(APIView):
             )
 
 
-# =============================================================================
-# NOWE: Zaawansowane raporty
-# =============================================================================
-
 class RevenueReportView(APIView):
-    """
-    GET /reports/revenue/?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&group_by=day|month
-    Raport przychodów z możliwością grupowania po dniach lub miesiącach
-    """
     permission_classes = [IsAdmin]
 
     def get(self, request):
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
-        group_by = request.query_params.get("group_by", "day")  # day lub month
+        group_by = request.query_params.get("group_by", "day")
 
         if not date_from or not date_to:
             return Response(
@@ -647,18 +765,15 @@ class RevenueReportView(APIView):
         since = timezone.make_aware(datetime.combine(start_date, time(0, 0)))
         until = timezone.make_aware(datetime.combine(end_date, time(23, 59, 59)))
 
-        # Pobierz zakończone wizyty w podanym zakresie
         completed = Appointment.objects.filter(
             status=Appointment.Status.COMPLETED,
             start__gte=since,
             start__lte=until
         ).select_related('service')
 
-        # Grupowanie danych
         revenue_data = []
 
         if group_by == "month":
-            # Grupowanie po miesiącach
             from django.db.models.functions import TruncMonth
             grouped = completed.annotate(
                 month=TruncMonth('start')
@@ -674,7 +789,6 @@ class RevenueReportView(APIView):
                     "appointments_count": item['count']
                 })
         else:
-            # Grupowanie po dniach
             from django.db.models.functions import TruncDate
             grouped = completed.annotate(
                 day=TruncDate('start')
@@ -690,7 +804,6 @@ class RevenueReportView(APIView):
                     "appointments_count": item['count']
                 })
 
-        # Statystyki całościowe
         total_revenue = sum(item['revenue'] for item in revenue_data)
         total_appointments = sum(item['appointments_count'] for item in revenue_data)
 
@@ -703,18 +816,13 @@ class RevenueReportView(APIView):
             "summary": {
                 "total_revenue": total_revenue,
                 "total_appointments": total_appointments,
-                "average_per_appointment": round(total_revenue / total_appointments,
-                                                 2) if total_appointments > 0 else 0,
+                "average_per_appointment": round(total_revenue / total_appointments, 2) if total_appointments > 0 else 0,
             },
             "data": revenue_data,
         })
 
 
 class EmployeePerformanceView(APIView):
-    """
-    GET /reports/employee-performance/?employee_id=X&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
-    Raport wydajności konkretnego pracownika
-    """
     permission_classes = [IsAdminOrEmployee]
 
     def get(self, request):
@@ -736,7 +844,6 @@ class EmployeePerformanceView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Domyślnie ostatnie 30 dni
         now = timezone.now()
         if date_from and date_to:
             try:
@@ -753,24 +860,20 @@ class EmployeePerformanceView(APIView):
             since = now - timedelta(days=30)
             until = now
 
-        # Wizyty pracownika w podanym okresie
         appointments = Appointment.objects.filter(
             employee=employee,
             start__gte=since,
             start__lte=until
         )
 
-        # Statystyki
         total_count = appointments.count()
         completed_count = appointments.filter(status=Appointment.Status.COMPLETED).count()
         cancelled_count = appointments.filter(status=Appointment.Status.CANCELLED).count()
 
-        # Przychód z zakończonych wizyt
         revenue = appointments.filter(
             status=Appointment.Status.COMPLETED
         ).aggregate(total=Sum('service__price'))['total'] or Decimal("0")
 
-        # Najpopularniejsze usługi tego pracownika
         top_services = appointments.values(
             'service__id', 'service__name'
         ).annotate(
@@ -799,10 +902,6 @@ class EmployeePerformanceView(APIView):
 
 
 class PopularServicesView(APIView):
-    """
-    GET /reports/popular-services/?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&limit=10
-    Top N najpopularniejszych usług
-    """
     permission_classes = [IsAdmin]
 
     def get(self, request):
@@ -810,7 +909,6 @@ class PopularServicesView(APIView):
         date_to = request.query_params.get("date_to")
         limit = int(request.query_params.get("limit", 10))
 
-        # Domyślnie ostatnie 30 dni
         now = timezone.now()
         if date_from and date_to:
             try:
@@ -827,7 +925,6 @@ class PopularServicesView(APIView):
             since = now - timedelta(days=30)
             until = now
 
-        # Ranking usług
         popular_services = (
             Appointment.objects.filter(start__gte=since, start__lte=until)
             .values('service__id', 'service__name', 'service__price', 'service__category')
@@ -863,18 +960,6 @@ class PopularServicesView(APIView):
 # Availability + Booking (logika biznesowa) — publiczne sloty + bezpieczne bookowanie
 # =============================================================================
 
-def _parse_date(date_str: str):
-    return datetime.strptime(date_str, "%Y-%m-%d").date()
-
-
-def _parse_hhmm(hhmm: str) -> time:
-    return datetime.strptime(hhmm, "%H:%M").time()
-
-
-def _weekday_key(d) -> str:
-    return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][d.weekday()]
-
-
 class AvailabilitySlotsAPIView(APIView):
     """
     GET /availability/slots/?employee_id=...&service_id=...&date=YYYY-MM-DD
@@ -909,82 +994,9 @@ class AvailabilitySlotsAPIView(APIView):
             return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # WALIDACJA: Sprawdź czy data nie jest z przeszłości
-        today = timezone.now().date()
-        if day < today:
-            return Response(
-                {"detail": "Nie można rezerwować wizyt w przeszłości."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if TimeOff.objects.filter(employee=employee, date_from__lte=day, date_to__gte=day).exists():
-            return Response({"date": date_str, "slots": []})
-
-        schedule = getattr(employee, "schedule", None)
-        if not schedule:
-            return Response({"date": date_str, "slots": []})
-
-        periods = (schedule.weekly_hours or {}).get(_weekday_key(day), [])
-        if not periods:
-            return Response({"date": date_str, "slots": []})
-
-        settings_obj = SystemSettings.get_settings()
-        slot_minutes = int(settings_obj.slot_minutes)
-        buffer_minutes = int(settings_obj.buffer_minutes)
-
-        service_duration = timedelta(minutes=int(service.duration_minutes))
-        block_duration = service_duration + timedelta(minutes=int(buffer_minutes))
-
-        day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
-        day_end = timezone.make_aware(datetime.combine(day, time(23, 59, 59)))
-
-        busy = [
-            (s, e + timedelta(minutes=buffer_minutes))
-            for (s, e) in Appointment.objects.filter(employee=employee, start__lt=day_end, end__gt=day_start)
-                .exclude(status=Appointment.Status.CANCELLED)
-                .values_list("start", "end")
-        ]
-
-        slots: list[dict] = []
-        for p in periods:
-            try:
-                p_start = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("start", ""))))
-                p_end = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("end", ""))))
-            except Exception:
-                return Response({"detail": "Błędne dane grafiku pracownika."}, status=status.HTTP_400_BAD_REQUEST)
-
-            cursor = p_start
-            while cursor + block_duration <= p_end:
-                candidate_start = cursor
-                candidate_end = cursor + service_duration
-                candidate_block_end = cursor + block_duration
-
-                # Sprawdź czy slot nie jest w przeszłości
-                if candidate_start < timezone.now():
-                    cursor += timedelta(minutes=slot_minutes)
-                    continue
-
-                overlap = any(b_start < candidate_block_end and b_end > candidate_start for b_start, b_end in busy)
-                if not overlap:
-                    # POPRAWIONE: Zwracaj pełne ISO timestamps
-                    slots.append({
-                        "start": candidate_start.isoformat(),
-                        "end": candidate_end.isoformat()
-                    })
-
-                cursor += timedelta(minutes=slot_minutes)
-
+        slots = _compute_slots(employee=employee, service=service, day=day)
         return Response({"date": date_str, "slots": slots})
 
-
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-
-
-@method_decorator(csrf_exempt, name='dispatch')
-# ============================================================================
-# REZERWACJA WIZYT - BOOKING
-# ============================================================================
 
 class BookingCreateAPIView(APIView):
     """
@@ -997,33 +1009,23 @@ class BookingCreateAPIView(APIView):
 
     @transaction.atomic
     def post(self, request):
+        ser = BookingCreateSerializer(data=request.data, context={"request": request})
+        try:
+            ser.is_valid(raise_exception=True)
+            appointment = ser.save()
+        except DRFValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response(getattr(e, "message_dict", {"detail": e.messages}), status=status.HTTP_400_BAD_REQUEST)
 
-            ser = BookingCreateSerializer(data=request.data, context={"request": request})
-            try:
-                ser.is_valid(raise_exception=True)
-                appointment = ser.save()
-            except DRFValidationError as e:
-                return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
-            except DjangoValidationError as e:
-                return Response(getattr(e, "message_dict", {"detail": e.messages}), status=status.HTTP_400_BAD_REQUEST)
+        SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
+        return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
 
-            SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
-            return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
-# =============================================================================
-# NOWE: Sprawdzanie dostępności terminu
-# =============================================================================
 
 class CheckAvailabilityView(APIView):
     """
     POST /appointments/check-availability/
     Sprawdza czy konkretny termin jest dostępny dla danego pracownika i usługi
-
-    Body:
-    {
-        "employee_id": 1,
-        "service_id": 2,
-        "start": "2025-01-15T10:00:00Z"
-    }
     """
     permission_classes = [permissions.AllowAny]
 
@@ -1054,6 +1056,12 @@ class CheckAvailabilityView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        if not employee.skills.filter(id=service.id).exists():
+            return Response({
+                "available": False,
+                "reason": "Ten pracownik nie wykonuje wybranej usługi."
+            }, status=status.HTTP_200_OK)
+
         try:
             start = datetime.fromisoformat(start_str.replace('Z', '+00:00'))
             if timezone.is_naive(start):
@@ -1064,7 +1072,6 @@ class CheckAvailabilityView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Sprawdź time-off
         if TimeOff.objects.filter(
                 employee=employee,
                 date_from__lte=start.date(),
@@ -1075,15 +1082,13 @@ class CheckAvailabilityView(APIView):
                 "reason": "Pracownik jest nieobecny w tym dniu."
             })
 
-        # Oblicz czas zakończenia (spójnie w całym systemie)
         settings_obj = SystemSettings.get_settings()
         buffer_minutes = int(settings_obj.buffer_minutes or 0)
 
         service_duration = timedelta(minutes=int(service.duration_minutes))
-        service_end = start + service_duration  # koniec usługi (bez bufora)
-        end_with_buffer = service_end + timedelta(minutes=buffer_minutes)  # blokada dostępności
+        service_end = start + service_duration
+        end_with_buffer = service_end + timedelta(minutes=buffer_minutes)
 
-        # Sprawdź konflikty z istniejącymi wizytami (bufor blokuje kolejne wizyty)
         conflicts = Appointment.objects.filter(
             employee=employee,
             start__lt=end_with_buffer,
