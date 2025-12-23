@@ -113,41 +113,86 @@ export interface AvailableSlot {
   end: string;    // ISO timestamp: "2025-12-25T09:45:00+01:00"
 }
 
+// ============================================================================
+// DASHBOARDS - POPRAWIONE ZGODNIE Z BACKENDEM
+// ============================================================================
+
 // Dashboard - Admin
 export interface AdminDashboard {
-  today_appointments: Appointment[];
-  pending_appointments_count: number;
-  monthly_revenue: string;
-  active_employees: number;
-  active_clients: number;
-  active_services: number;
+  role: 'ADMIN';
+  today: {
+    date: string;
+    appointments_count: number;
+    appointments: Appointment[];
+  };
+  pending_appointments: number;
+  current_month: {
+    revenue: number;
+    completed_appointments: number;
+  };
+  system: {
+    active_employees: number;
+    active_clients: number;
+    active_services: number;
+  };
 }
 
 // Dashboard - Employee
 export interface EmployeeDashboard {
-  today_schedule: Appointment[];
-  upcoming_appointments: Appointment[];
-  monthly_completed: number;
+  role: 'EMPLOYEE';
+  employee_number: string;
+  full_name: string;
+  today: {
+    date: string;
+    appointments: Appointment[];
+  };
+  upcoming: {
+    count: number;
+    appointments: Appointment[];
+  };
+  this_month: {
+    completed_appointments: number;
+  };
 }
 
 // Dashboard - Client
 export interface ClientDashboard {
-  upcoming_appointments: Appointment[];
-  completed_count: number;
-  last_visit: Appointment | null;
+  role: 'CLIENT';
+  client_number: string;
+  full_name: string;
+  upcoming_appointments: {
+    count: number;
+    appointments: Appointment[];
+  };
+  history: {
+    total_completed: number;
+    recent: Appointment[];
+  };
 }
+
+// Union type dla wszystkich dashboardów
+export type DashboardResponse = AdminDashboard | EmployeeDashboard | ClientDashboard;
+
+// ============================================================================
+// RAPORTY
+// ============================================================================
 
 // Raporty - Przychody
 export interface RevenueReport {
+  range: {
+    from: string;
+    to: string;
+  };
+  group_by: 'day' | 'month';
   summary: {
-    total_revenue: string;
-    appointment_count: number;
-    average_per_appointment: string;
+    total_revenue: number;
+    total_appointments: number;
+    average_per_appointment: number;
   };
   data: Array<{
-    date: string;
-    revenue: string;
-    count: number;
+    period: string;
+    revenue: number;
+    appointments_count: number;
   }>;
 }
 
