@@ -10,7 +10,7 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { ContentCut, Login } from '@mui/icons-material';
+import { Brush, Login } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
 const LoginPage: React.FC = () => {
@@ -29,20 +29,25 @@ const LoginPage: React.FC = () => {
   }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      await login({ username, password });
-      // AuthContext automatycznie przekieruje na odpowiedni dashboard
-    } catch (err: any) {
-      console.error('Błąd logowania:', err);
-      setError(err.response?.data?.detail || 'Nieprawidłowe dane logowania');
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    const loggedInUser = await login({ username, password });
+
+    // Przekierowanie tutaj, zamiast w AuthContext
+    if (loggedInUser.role === 'ADMIN') navigate('/admin/dashboard');
+    else if (loggedInUser.role === 'EMPLOYEE') navigate('/employee/dashboard');
+    else if (loggedInUser.role === 'CLIENT') navigate('/client/dashboard');
+    else navigate('/');
+
+  } catch (err: any) {
+    setError(err.response?.data?.detail || 'Nieprawidłowe dane logowania');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <Box
@@ -56,7 +61,7 @@ const LoginPage: React.FC = () => {
       <Container maxWidth="sm">
         <Paper elevation={24} sx={{ p: 4, borderRadius: 3 }}>
           <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <ContentCut sx={{ fontSize: 56, color: 'primary.main', mb: 2 }} />
+            <Brush sx={{ fontSize: 56, color: 'primary.main', mb: 2 }} />
             <Typography variant="h4" fontWeight="bold" gutterBottom>
               Beauty Salon
             </Typography>
@@ -106,21 +111,6 @@ const LoginPage: React.FC = () => {
               {loading ? 'Logowanie...' : 'Zaloguj się'}
             </Button>
           </form>
-
-          <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-            <Typography variant="caption" display="block" gutterBottom fontWeight="bold">
-              Konta testowe:
-            </Typography>
-            <Typography variant="caption" display="block">
-              • Admin: admin / admin123
-            </Typography>
-            <Typography variant="caption" display="block">
-              • Pracownik: anna.kowalska / employee123
-            </Typography>
-            <Typography variant="caption" display="block">
-              • Klient: klient1 / client123
-            </Typography>
-          </Box>
         </Paper>
       </Container>
     </Box>

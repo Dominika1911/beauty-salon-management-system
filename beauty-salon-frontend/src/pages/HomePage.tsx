@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Container, Typography, Button, Paper } from '@mui/material';
-import { ContentCut } from '@mui/icons-material';
+import { Brush } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
 const HomePage: React.FC = () => {
@@ -44,7 +44,7 @@ const HomePage: React.FC = () => {
           }}
         >
           <Box sx={{ mb: 3 }}>
-            <ContentCut sx={{ fontSize: 64, color: 'primary.main' }} />
+            <Brush sx={{ fontSize: 64, color: 'primary.main' }} />
           </Box>
           <Typography variant="h2" gutterBottom fontWeight="bold">
             Beauty Salon

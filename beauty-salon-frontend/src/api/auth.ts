@@ -1,9 +1,6 @@
 import axiosInstance, { getCsrfToken } from './axios';
+export { getCsrfToken } from './axios';
 import type { LoginRequest, LoginResponse, AuthStatusResponse } from '../types';
-
-/**
- * API dla autoryzacji użytkownika
- */
 
 // Logowanie użytkownika
 export const login = async (credentials: LoginRequest): Promise<LoginResponse> => {
