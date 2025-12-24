@@ -1,367 +1,498 @@
-import React, { useState, useEffect } from 'react';
+// src/pages/Admin/EmployeesPage.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
-  Typography,
-  Paper,
   Button,
-  Grid,
   Card,
   CardContent,
-  CardActions,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  Stack,
+  TextField,
+  Typography,
+  Alert,
+  Snackbar,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   OutlinedInput,
-} from '@mui/material';
-import { Add, Edit, Delete } from '@mui/icons-material';
-import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../../api/employees';
-import { getServices } from '../../api/services';
-import type { Employee, Service } from '../../types';
+  Checkbox,
+  ListItemText,
+} from "@mui/material";
+import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
+import EditIcon from "@mui/icons-material/Edit";
+import RefreshIcon from "@mui/icons-material/Refresh";
 
-const AdminEmployeesPage: React.FC = () => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [services, setServices] = useState<Service[]>([]);
+import type { Employee, Service } from "../../types";
+import {
+  getEmployees,
+  createEmployee,
+  updateEmployee,
+  deleteEmployee,
+} from "../../api/employees";
+import { getActiveServices } from "../../api/services";
+
+type EmployeeFormState = {
+  id?: number;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  is_active: boolean;
+  skill_ids: number[];
+
+  // create-only (backend wymaga przy tworzeniu)
+  email?: string;
+  password?: string;
+};
+
+const emptyForm: EmployeeFormState = {
+  first_name: "",
+  last_name: "",
+  phone: "",
+  is_active: true,
+  skill_ids: [],
+  email: "",
+  password: "",
+};
+
+function formatPLN(value: string | number) {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (Number.isNaN(n)) return "0.00 zł";
+  return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
+}
+
+export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Employee[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [search, setSearch] = useState("");
+
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    password_confirm: '',
-    first_name: '',
-    last_name: '',
-    phone: '',
-    skill_ids: [] as number[],
+  const [isEdit, setIsEdit] = useState(false);
+  const [form, setForm] = useState<EmployeeFormState>(emptyForm);
+
+  const [confirmDelete, setConfirmDelete] = useState<Employee | null>(null);
+
+  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: "success" | "error" | "info" }>({
+    open: false,
+    msg: "",
+    severity: "info",
   });
 
-  useEffect(() => {
-    fetchEmployees();
-    fetchServices();
-  }, []);
+  const serviceMap = useMemo(() => {
+    const map = new Map<number, Service>();
+    services.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [services]);
 
-  const fetchEmployees = async () => {
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((e) => {
+      const full = `${e.first_name} ${e.last_name}`.toLowerCase();
+      const num = (e.employee_number || "").toLowerCase();
+      const username = (e.user_username || "").toLowerCase();
+      const email = (e.user_email || "").toLowerCase();
+      return full.includes(q) || num.includes(q) || username.includes(q) || email.includes(q);
+    });
+  }, [rows, search]);
+
+  const loadAll = async () => {
+    setLoading(true);
     try {
-      const data = await getEmployees();
-      setEmployees(data);
-    } catch (err) {
-      console.error(err);
+      const [emp, srv] = await Promise.all([getEmployees(), getActiveServices()]);
+      setRows(emp as Employee[]);
+      setServices(srv as Service[]);
+    } catch (e: any) {
+      setSnack({ open: true, msg: e?.response?.data?.detail || "Nie udało się pobrać danych.", severity: "error" });
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchServices = async () => {
-    try {
-      const data = await getServices();
-      setServices(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleOpenDialog = (employee?: Employee) => {
-    if (employee) {
-      setEditingEmployee(employee);
-      setFormData({
-        email: employee.user_email,
-        password: '',
-        password_confirm: '',
-        first_name: employee.first_name,
-        last_name: employee.last_name,
-        phone: employee.phone,
-        skill_ids: employee.skills.map(s => s.id),
-      });
-    } else {
-      setEditingEmployee(null);
-      setFormData({
-        email: '',
-        password: '',
-        password_confirm: '',
-        first_name: '',
-        last_name: '',
-        phone: '',
-        skill_ids: [],
-      });
-    }
+  const openCreate = () => {
+    setIsEdit(false);
+    setForm({ ...emptyForm });
     setDialogOpen(true);
   };
 
-  const handleCloseDialog = () => {
-    setDialogOpen(false);
-    setEditingEmployee(null);
+  const openEdit = (emp: Employee) => {
+    setIsEdit(true);
+    setForm({
+      id: emp.id,
+      first_name: emp.first_name || "",
+      last_name: emp.last_name || "",
+      phone: emp.phone || "",
+      is_active: !!emp.is_active,
+      skill_ids: (emp.skills || []).map((s) => s.id),
+      email: "", // nie wysyłamy przy edit jeśli nie zmieniasz
+      password: "",
+    });
+    setDialogOpen(true);
   };
 
-  const handleSubmit = async () => {
-    try {
-      if (editingEmployee) {
-        // Edycja - tylko profil
-        const employeeData = {
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          phone: formData.phone,
-          skill_ids: formData.skill_ids,
-        };
-        await updateEmployee(editingEmployee.id, employeeData);
-      } else {
-        // Dodawanie - sprawdź hasła
-        if (formData.password !== formData.password_confirm) {
-          alert('Hasła się nie zgadzają!');
-          return;
-        }
-        if (formData.password.length < 8) {
-          alert('Hasło musi mieć minimum 8 znaków!');
-          return;
-        }
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setForm({ ...emptyForm });
+  };
 
-        // JEDEN request - backend zrobi wszystko
-        await createEmployee({
-          email: formData.email,
-          password: formData.password,
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          phone: formData.phone,
-          skill_ids: formData.skill_ids,
-        });
+  const handleSave = async () => {
+    try {
+      // minimalna walidacja UI
+      if (!form.first_name.trim() || !form.last_name.trim()) {
+        setSnack({ open: true, msg: "Imię i nazwisko są wymagane.", severity: "error" });
+        return;
       }
 
-      await fetchEmployees();
-      handleCloseDialog();
-    } catch (err: any) {
-      console.error(err);
-      const errorMessage = err.response?.data?.detail
-        || JSON.stringify(err.response?.data)
-        || 'Błąd podczas zapisywania pracownika';
-      alert(errorMessage);
+      if (!isEdit) {
+        if (!form.email?.trim() || !form.password?.trim()) {
+          setSnack({ open: true, msg: "Email i hasło są wymagane przy tworzeniu.", severity: "error" });
+          return;
+        }
+      }
+
+      const payload: any = {
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone: form.phone.trim(),
+        is_active: form.is_active,
+        skill_ids: form.skill_ids,
+      };
+
+      // create-only
+      if (!isEdit) {
+        payload.email = form.email?.trim();
+        payload.password = form.password;
+      } else {
+        // opcjonalnie przy edit: jeśli wpiszesz email/hasło, backend to przyjmie
+        if (form.email?.trim()) payload.email = form.email.trim();
+        if (form.password?.trim()) payload.password = form.password;
+      }
+
+      if (isEdit && form.id) {
+        await updateEmployee(form.id, payload);
+        setSnack({ open: true, msg: "Zaktualizowano pracownika.", severity: "success" });
+      } else {
+        await createEmployee(payload);
+        setSnack({ open: true, msg: "Utworzono pracownika.", severity: "success" });
+      }
+
+      closeDialog();
+      await loadAll();
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.detail ||
+        (typeof e?.response?.data === "object" ? JSON.stringify(e.response.data) : null) ||
+        "Nie udało się zapisać pracownika.";
+      setSnack({ open: true, msg, severity: "error" });
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tego pracownika?')) return;
-
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
     try {
-      await deleteEmployee(id);
-      fetchEmployees();
-    } catch (err) {
-      console.error(err);
-      alert('Błąd podczas usuwania pracownika');
+      await deleteEmployee(confirmDelete.id);
+      setSnack({ open: true, msg: "Usunięto pracownika.", severity: "success" });
+      setConfirmDelete(null);
+      await loadAll();
+    } catch (e: any) {
+      setSnack({ open: true, msg: e?.response?.data?.detail || "Nie udało się usunąć.", severity: "error" });
     }
   };
 
-  if (loading) {
-    return <Typography>Ładowanie...</Typography>;
-  }
+  const columns: GridColDef<Employee>[] = [
+    { field: "employee_number", headerName: "Nr", width: 110 },
+    {
+      field: "full_name",
+      headerName: "Pracownik",
+      flex: 1,
+      minWidth: 220,
+      valueGetter: (_, row) => `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+    },
+    {
+      field: "user_username",
+      headerName: "Login",
+      minWidth: 160,
+      flex: 0.8,
+      valueGetter: (_, row) => row.user_username || "—",
+    },
+    {
+      field: "user_email",
+      headerName: "Email",
+      minWidth: 200,
+      flex: 1,
+      valueGetter: (_, row) => row.user_email || "—",
+    },
+    {
+      field: "is_active",
+      headerName: "Status",
+      width: 120,
+      renderCell: (params) =>
+        params.row.is_active ? <Chip label="Aktywny" color="success" size="small" /> : <Chip label="Nieaktywny" size="small" />,
+      sortable: true,
+    },
+    {
+      field: "appointments_count",
+      headerName: "Wizyty",
+      width: 110,
+      valueGetter: (_, row) => row.appointments_count ?? 0,
+    },
+    {
+      field: "completed_appointments_count",
+      headerName: "Zakończone",
+      width: 130,
+      valueGetter: (_, row) => row.completed_appointments_count ?? 0,
+    },
+    {
+      field: "revenue_completed_total",
+      headerName: "Przychód",
+      width: 140,
+      valueGetter: (_, row) => formatPLN(row.revenue_completed_total ?? "0"),
+    },
+    {
+      field: "skills",
+      headerName: "Usługi",
+      flex: 1,
+      minWidth: 240,
+      sortable: false,
+      renderCell: (params) => {
+        const list = params.row.skills || [];
+        if (!list.length) return "—";
+        return (
+          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+            {list.slice(0, 3).map((s) => (
+              <Chip key={s.id} label={s.name} size="small" />
+            ))}
+            {list.length > 3 && <Chip label={`+${list.length - 3}`} size="small" variant="outlined" />}
+          </Box>
+        );
+      },
+    },
+    {
+      field: "actions",
+      headerName: "",
+      width: 120,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => (
+        <Stack direction="row" spacing={1}>
+          <IconButton size="small" onClick={() => openEdit(params.row)} aria-label="edit">
+            <EditIcon fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={() => setConfirmDelete(params.row)} aria-label="delete">
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      ),
+    },
+  ];
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold">
-          Zarządzanie pracownikami
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => handleOpenDialog()}
-        >
-          Dodaj pracownika
-        </Button>
-      </Box>
+    <Box sx={{ p: 3 }}>
+      <Stack spacing={2}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }} justifyContent="space-between">
+          <Box>
+            <Typography variant="h4" fontWeight={700}>
+              Pracownicy
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Zarządzanie pracownikami oraz ich usługami.
+            </Typography>
+          </Box>
 
-      <Grid container spacing={3}>
-        {employees.length === 0 ? (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography color="text.secondary">
-                Brak pracowników
-              </Typography>
-            </Paper>
-          </Grid>
-        ) : (
-          employees.map((employee) => (
-            <Grid item xs={12} sm={6} md={4} key={employee.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                    <Typography variant="h6">
-                      {employee.first_name} {employee.last_name}
-                    </Typography>
-                    <Chip
-                      label={employee.is_active ? 'Aktywny' : 'Nieaktywny'}
-                      color={employee.is_active ? 'success' : 'default'}
-                      size="small"
-                    />
-                  </Box>
+          <Stack direction="row" spacing={1}>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadAll}>
+              Odśwież
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+              Dodaj pracownika
+            </Button>
+          </Stack>
+        </Stack>
 
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Nr pracownika: {employee.employee_number}
-                  </Typography>
+        <Card>
+          <CardContent>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }} sx={{ mb: 2 }}>
+              <TextField
+                label="Szukaj"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="np. Kowalska, pracownik-00000001, email..."
+                fullWidth
+              />
+            </Stack>
 
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Email: {employee.user_email}
-                  </Typography>
+            <Divider sx={{ mb: 2 }} />
 
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Telefon: {employee.phone}
-                  </Typography>
+            {loading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <Box sx={{ height: 560, width: "100%" }}>
+                <DataGrid
+                  rows={filteredRows}
+                  columns={columns}
+                  getRowId={(r) => r.id}
+                  pageSizeOptions={[10, 25, 50]}
+                  initialState={{
+                    pagination: { paginationModel: { pageSize: 10, page: 0 } },
+                  }}
+                  disableRowSelectionOnClick
+                />
+              </Box>
+            )}
+          </CardContent>
+        </Card>
+      </Stack>
 
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2" fontWeight="bold" gutterBottom>
-                      Umiejętności:
-                    </Typography>
-                    {employee.skills.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        Brak przypisanych usług
-                      </Typography>
-                    ) : (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {employee.skills.map((skill) => (
-                          <Chip
-                            key={skill.id}
-                            label={skill.name}
-                            size="small"
-                            variant="outlined"
-                          />
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-                </CardContent>
-                <CardActions>
-                  <Button
-                    size="small"
-                    startIcon={<Edit />}
-                    onClick={() => handleOpenDialog(employee)}
-                  >
-                    Edytuj
-                  </Button>
-                  <Button
-                    size="small"
-                    color="primary"
-                    onClick={() => window.location.href = `/admin/employees/${employee.id}/schedule`}
-                  >
-                    Grafik
-                  </Button>
-                  <Button
-                    size="small"
-                    color="error"
-                    startIcon={<Delete />}
-                    onClick={() => handleDelete(employee.id)}
-                  >
-                    Usuń
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))
-        )}
-      </Grid>
-
-      {/* Dialog dodawania/edycji */}
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingEmployee ? 'Edytuj pracownika' : 'Dodaj nowego pracownika'}
-        </DialogTitle>
+      {/* CREATE / EDIT DIALOG */}
+      <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="sm">
+        <DialogTitle>{isEdit ? "Edytuj pracownika" : "Dodaj pracownika"}</DialogTitle>
         <DialogContent>
-          {!editingEmployee && (
-            <>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
+                label="Imię"
+                value={form.first_name}
+                onChange={(e) => setForm((p) => ({ ...p, first_name: e.target.value }))}
                 fullWidth
-                label="Email (login)"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                margin="normal"
-                required
-                placeholder="np. anna.kowalska@salon.pl"
-                helperText="Email będzie używany jako login do systemu"
               />
               <TextField
+                label="Nazwisko"
+                value={form.last_name}
+                onChange={(e) => setForm((p) => ({ ...p, last_name: e.target.value }))}
                 fullWidth
-                label="Hasło"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                margin="normal"
-                required
-                placeholder="Minimum 8 znaków"
-                helperText="Minimum 8 znaków - pracownik użyje tego do logowania"
               />
-              <TextField
-                fullWidth
-                label="Potwierdź hasło"
-                type="password"
-                value={formData.password_confirm}
-                onChange={(e) => setFormData({ ...formData, password_confirm: e.target.value })}
-                margin="normal"
-                required
-                placeholder="Wpisz hasło ponownie"
-              />
-            </>
-          )}
-          <TextField
-            fullWidth
-            label="Imię"
-            value={formData.first_name}
-            onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Nazwisko"
-            value={formData.last_name}
-            onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Telefon"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            margin="normal"
-            required
-          />
+            </Stack>
 
-          <FormControl fullWidth margin="normal">
-            <InputLabel>Umiejętności (usługi)</InputLabel>
-            <Select
-              multiple
-              value={formData.skill_ids}
-              onChange={(e) => setFormData({ ...formData, skill_ids: e.target.value as number[] })}
-              input={<OutlinedInput label="Umiejętności (usługi)" />}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {selected.map((value) => {
-                    const service = services.find(s => s.id === value);
-                    return <Chip key={value} label={service?.name} size="small" />;
-                  })}
-                </Box>
-              )}
-            >
-              {services.map((service) => (
-                <MenuItem key={service.id} value={service.id}>
-                  {service.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+            <TextField
+              label="Telefon"
+              value={form.phone}
+              onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+              fullWidth
+              placeholder="+48123123123"
+            />
+
+            {/* create required: email+password, edit optional */}
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="Email (dla konta)"
+                value={form.email ?? ""}
+                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                fullWidth
+                required={!isEdit}
+              />
+              <TextField
+                label="Hasło"
+                value={form.password ?? ""}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                fullWidth
+                required={!isEdit}
+                type="password"
+              />
+            </Stack>
+
+            <FormControl fullWidth>
+              <InputLabel id="skills-label">Usługi (skills)</InputLabel>
+              <Select
+                labelId="skills-label"
+                multiple
+                value={form.skill_ids}
+                onChange={(e) => setForm((p) => ({ ...p, skill_ids: e.target.value as number[] }))}
+                input={<OutlinedInput label="Usługi (skills)" />}
+                renderValue={(selected) =>
+                  (selected as number[])
+                    .map((id) => serviceMap.get(id)?.name || `#${id}`)
+                    .join(", ")
+                }
+              >
+                {services.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    <Checkbox checked={form.skill_ids.includes(s.id)} />
+                    <ListItemText primary={s.name} secondary={s.category || ""} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth>
+              <InputLabel id="active-label">Status</InputLabel>
+              <Select
+                labelId="active-label"
+                value={form.is_active ? "1" : "0"}
+                label="Status"
+                onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.value === "1" }))}
+              >
+                <MenuItem value="1">Aktywny</MenuItem>
+                <MenuItem value="0">Nieaktywny</MenuItem>
+              </Select>
+            </FormControl>
+
+            {!isEdit && (
+              <Alert severity="info">
+                Przy tworzeniu pracownika backend wygeneruje <b>employee_number</b> i ustawi login w formacie{" "}
+                <b>pracownik-XXXXXXXX</b>.
+              </Alert>
+            )}
+          </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog}>Anuluj</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingEmployee ? 'Zapisz' : 'Dodaj'}
+          <Button onClick={closeDialog}>Anuluj</Button>
+          <Button onClick={handleSave} variant="contained">
+            Zapisz
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* DELETE CONFIRM */}
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Usuń pracownika</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Czy na pewno chcesz usunąć pracownika{" "}
+            <b>
+              {confirmDelete?.first_name} {confirmDelete?.last_name}
+            </b>
+            ?
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Uwaga: jeśli są powiązane wizyty, backend może zablokować usunięcie (PROTECT).
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDelete(null)}>Anuluj</Button>
+          <Button color="error" variant="contained" onClick={handleDelete}>
+            Usuń
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* SNACKBAR */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3500}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
-};
-
-export default AdminEmployeesPage;
+}

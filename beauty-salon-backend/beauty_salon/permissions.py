@@ -1,5 +1,5 @@
 from rest_framework import permissions
-
+from .models import Appointment
 
 class IsAdmin(permissions.BasePermission):
     """
@@ -83,3 +83,25 @@ class ReadOnly(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return request.method in permissions.SAFE_METHODS
+
+
+class CanCancelAppointment(permissions.BasePermission):
+    """
+    - ADMIN/EMPLOYEE: mogą anulować każdą wizytę
+    - CLIENT: może anulować tylko swoją wizytę
+    """
+
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj: Appointment):
+        role = getattr(request.user, "role", None)
+
+        if role in ["ADMIN", "EMPLOYEE"]:
+            return True
+
+        if role == "CLIENT":
+            client = getattr(request.user, "client_profile", None)
+            return client is not None and obj.client_id == client.id
+
+        return False

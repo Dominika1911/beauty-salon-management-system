@@ -1,16 +1,12 @@
-import { RouterProvider } from 'react-router-dom';
-import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { AuthProvider } from './context/AuthContext';
-import router from './router';
+import { BrowserRouter } from "react-router-dom";
+import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
+import { AuthProvider } from "./context/AuthContext";
+import Router from "./router"; // to jest komponent z <Routes>
 
 const theme = createTheme({
   palette: {
-    primary: {
-      main: '#9c27b0',
-    },
-    secondary: {
-      main: '#ff4081',
-    },
+    primary: { main: "#9c27b0" },
+    secondary: { main: "#ff4081" },
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
@@ -22,7 +18,9 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <RouterProvider router={router} />
+        <BrowserRouter>
+          <Router />
+        </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
   );

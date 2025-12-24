@@ -12,7 +12,7 @@ dj-lint() {
     mypy . ; pyright
 }
 
-# Frontend - React (zmienione z r na f)
+# Frontend - React 
 f-lint() {
     tsc -b ; pnpm lint
 }

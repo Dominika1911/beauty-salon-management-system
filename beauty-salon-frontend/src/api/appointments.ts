@@ -1,72 +1,76 @@
 import axiosInstance from './axios';
-import type { Appointment, BookingCreate, AvailableSlot } from '../types';
+import type { Appointment } from '../types';
 
 /**
- * API dla wizyt
+ * API dla wizyt (Appointments)
  */
 
-// Pobierz wszystkie wizyty
-export const getAppointments = async (params?: {
-  employee?: number;
-  client?: number;
-  status?: string;
-  date_from?: string;
-  date_to?: string;
-}): Promise<Appointment[]> => {
-  const response = await axiosInstance.get('/appointments/', {
-    params: { ...params, page_size: 1000 }
-  });
+// Pobierz wszystkie wizyty (Widok Admina)
+export const getAppointments = async (): Promise<Appointment[]> => {
+  const response = await axiosInstance.get('/appointments/');
   return response.data.results || response.data;
 };
 
-// Pobierz wizytę po ID
+// Pobierz wizyty zalogowanego użytkownika (Przez endpoint 'my' z Twojego views.py)
+export const getMyAppointments = async (): Promise<Appointment[]> => {
+  const response = await axiosInstance.get('/appointments/my/');
+  return response.data.results || response.data;
+};
+
+// Pobierz szczegóły jednej wizyty
 export const getAppointment = async (id: number): Promise<Appointment> => {
   const response = await axiosInstance.get<Appointment>(`/appointments/${id}/`);
   return response.data;
 };
 
-// Zarezerwuj wizytę
-export const bookAppointment = async (data: BookingCreate): Promise<Appointment> => {
+// --- POPRAWIONE: Utwórz nową wizytę (Rezerwacja dla Klienta) ---
+export const createAppointment = async (data: {
+  employee_id: number; // Zmienione na employee_id zgodnie z backendem
+  service_id: number;  // Zmienione na service_id zgodnie z backendem
+  start: string;       // Format ISO
+}): Promise<Appointment> => {
+  // ZMIANA: URL na /appointments/book/ zgodnie z Twoim urls.py
   const response = await axiosInstance.post<Appointment>('/appointments/book/', data);
   return response.data;
 };
 
-// Pobierz dostępne sloty
+// =============================================================================
+// AKCJE NA WIZYTACH (Statusy)
+// =============================================================================
+
+export const cancelAppointment = async (id: number): Promise<void> => {
+  await axiosInstance.post(`/appointments/${id}/cancel/`);
+};
+
+export const confirmAppointment = async (id: number): Promise<void> => {
+  await axiosInstance.post(`/appointments/${id}/confirm/`);
+};
+
+export const completeAppointment = async (id: number): Promise<void> => {
+  await axiosInstance.post(`/appointments/${id}/complete/`);
+};
+
+// =============================================================================
+// LOGIKA DOSTĘPNOŚCI (Zgodna z Twoim AvailabilitySlotsAPIView)
+// =============================================================================
+
 export const getAvailableSlots = async (
   employeeId: number,
-  serviceId: number,
-  date: string
-): Promise<AvailableSlot[]> => {
-  const response = await axiosInstance.get('/appointments/available-slots/', {
-    params: { employee_id: employeeId, service_id: serviceId, date }
+  date: string,
+  serviceId: number
+): Promise<string[]> => {
+  // ZMIANA: URL na /availability/slots/ zgodnie z Twoim urls.py
+  const response = await axiosInstance.get('/availability/slots/', {
+    params: {
+      employee_id: employeeId,
+      date: date,
+      service_id: serviceId
+    }
   });
-  return response.data.slots || [];
-};
 
-// Potwierdź wizytę
-export const confirmAppointment = async (id: number): Promise<Appointment> => {
-  const response = await axiosInstance.post<Appointment>(`/appointments/${id}/confirm/`);
-  return response.data;
-};
-
-// Anuluj wizytę
-export const cancelAppointment = async (id: number): Promise<Appointment> => {
-  const response = await axiosInstance.post<Appointment>(`/appointments/${id}/cancel/`);
-  return response.data;
-};
-
-// Oznacz wizytę jako zakończoną
-export const completeAppointment = async (id: number): Promise<Appointment> => {
-  const response = await axiosInstance.post<Appointment>(`/appointments/${id}/complete/`);
-  return response.data;
-};
-
-// Sprawdź dostępność konkretnego terminu
-export const checkAvailability = async (data: {
-  employee_id: number;
-  service_id: number;
-  start: string;
-}): Promise<{ available: boolean; reason?: string }> => {
-  const response = await axiosInstance.post('/appointments/check-availability/', data);
-  return response.data;
+  // Mapowanie: z obiektu {"start": "2023-10-10T09:00:00", ...} na string "09:00"
+  return response.data.slots.map((slot: any) => {
+    const timePart = slot.start.split('T')[1];
+    return timePart.substring(0, 5);
+  });
 };

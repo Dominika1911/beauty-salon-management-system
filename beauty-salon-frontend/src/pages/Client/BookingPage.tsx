@@ -1,296 +1,243 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Box,
-  Typography,
-  Paper,
-  TextField,
-  MenuItem,
-  Button,
-  Grid,
-  Alert,
-  CircularProgress,
-} from '@mui/material';
-import { CalendarMonth } from '@mui/icons-material';
-import { getActiveServices } from '../../api/services';
-import { getActiveEmployees } from '../../api/employees';
-import { getAvailableSlots, bookAppointment } from '../../api/appointments';
-import { useAuth } from '../../context/AuthContext';
-import type { Service, Employee, AvailableSlot, BookingCreate } from '../../types';
+  Box, Stepper, Step, StepLabel, Button, Typography, Paper,
+  Grid, Card, CardActionArea, CardContent, Stack, Alert, CircularProgress,
+  Divider
+} from "@mui/material";
+import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { pl } from "date-fns/locale";
 
-const ClientBookingPage: React.FC = () => {
-  const { user } = useAuth();
+import { getServices } from "../../api/services";
+import { getEmployees } from "../../api/employees";
+import { getAvailableSlots, createAppointment } from "../../api/appointments";
+import type { Service, Employee } from "../../types";
+
+const steps = ["Wybierz usługę", "Wybierz specjalistę", "Termin wizyty"];
+
+export default function BookingPage() {
+  const navigate = useNavigate();
+  const [activeStep, setActiveStep] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [fetchingSlots, setFetchingSlots] = useState(false);
+
+  // Dane z API
   const [services, setServices] = useState<Service[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
 
-  const [selectedService, setSelectedService] = useState<number | ''>('');
-  const [selectedEmployee, setSelectedEmployee] = useState<number | ''>('');
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedSlot, setSelectedSlot] = useState('');
+  // Wybory klienta
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [error, setError] = useState("");
 
-  const [loading, setLoading] = useState(false);
-  const [slotsLoading, setSlotsLoading] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
-
+  // 1. Inicjalne ładowanie danych
   useEffect(() => {
-    fetchServices();
-    fetchEmployees();
+    async function init() {
+      try {
+        const [sData, eData] = await Promise.all([getServices(), getEmployees()]);
+        setServices(sData);
+        setEmployees(eData);
+      } catch (e) {
+        setError("Błąd połączenia z serwerem.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
   }, []);
 
-  const fetchServices = async () => {
-    try {
-      const data = await getActiveServices();
-      setServices(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    try {
-      const data = await getActiveEmployees();
-      setEmployees(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const filteredEmployees = selectedService
-    ? employees.filter(emp => emp.skills.some(skill => skill.id === selectedService))
-    : [];
-
-  const handleDateChange = async (date: string) => {
-    const selectedDateObj = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDateObj < today) {
-      setError('Nie możesz wybrać daty z przeszłości');
-      return;
-    }
-
-    const oneYearFromNow = new Date();
-    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
-    oneYearFromNow.setHours(0, 0, 0, 0);
-
-    if (selectedDateObj > oneYearFromNow) {
-      setError('Nie możesz rezerwować wizyt więcej niż rok w przód');
-      return;
-    }
-
-    setSelectedDate(date);
-    setSelectedSlot('');
-    setError('');
-
-    if (!selectedService || !selectedEmployee || !date) return;
-
-    setSlotsLoading(true);
-    try {
-      const slots = await getAvailableSlots(
-        Number(selectedEmployee),
-        Number(selectedService),
-        date
-      );
-      setAvailableSlots(slots);
-    } catch (err) {
-      console.error(err);
-      setAvailableSlots([]);
-    } finally {
-      setSlotsLoading(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!user?.client_profile?.id) {
-      setError('Musisz być zalogowany jako klient');
-      return;
-    }
-
-    if (!selectedService || !selectedEmployee || !selectedDate || !selectedSlot) {
-      setError('Wszystkie pola są wymagane');
-      return;
-    }
-
-    const bookingData: BookingCreate = {
-      service_id: Number(selectedService),
-      employee_id: Number(selectedEmployee),
-      start: selectedSlot,
-    };
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      await bookAppointment(bookingData);
-      setSuccess('Wizyta została zarezerwowana pomyślnie!');
-
-      // Czyszczenie formularza po sukcesie
-      setSelectedService('');
-      setSelectedEmployee('');
-      setSelectedDate('');
-      setSelectedSlot('');
-      setAvailableSlots([]);
-    } catch (err: any) {
-      console.error('Błąd rezerwacji:', err);
-
-      const data = err.response?.data;
-      let errorMessage = 'Błąd podczas rezerwacji wizyty';
-
-      // Poprawiona logika wyciągania błędów z Django Rest Framework
-      if (data) {
-        if (data.non_field_errors) {
-          errorMessage = Array.isArray(data.non_field_errors)
-            ? data.non_field_errors[0]
-            : data.non_field_errors;
-        } else if (data.detail) {
-          errorMessage = data.detail;
-        } else if (typeof data === 'object') {
-          // Łączenie błędów z poszczególnych pól (np. walidacja daty)
-          errorMessage = Object.values(data).flat().join(' ');
+  // 2. Pobieranie realnych slotów z backendu (zapobiega nakładaniu wizyt)
+  useEffect(() => {
+    async function loadSlots() {
+      if (activeStep === 2 && selectedEmployee && selectedService && selectedDate) {
+        setFetchingSlots(true);
+        const dateStr = selectedDate.toISOString().split('T')[0];
+        try {
+          const slots = await getAvailableSlots(selectedEmployee.id, dateStr, selectedService.id);
+          setAvailableSlots(slots);
+        } catch (e) {
+          setError("Nie udało się pobrać wolnych terminów.");
+        } finally {
+          setFetchingSlots(false);
         }
       }
+    }
+    loadSlots();
+  }, [activeStep, selectedEmployee, selectedService, selectedDate]);
 
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
+  // Filtrowanie pracowników pod wybraną usługę
+  const filteredEmployees = employees.filter(emp =>
+    emp.skill_ids?.includes(selectedService?.id || 0) ||
+    emp.skills?.some(s => s.id === selectedService?.id)
+  );
+
+  const handleNext = () => setActiveStep((prev) => prev + 1);
+  const handleBack = () => setActiveStep((prev) => prev - 1);
+
+  const handleConfirmBooking = async () => {
+    if (!selectedService || !selectedEmployee || !selectedDate || !selectedSlot) return;
+
+    // Pobieramy czystą datę YYYY-MM-DD bez przesunięcia strefy czasowej
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
+    const day = String(selectedDate.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+
+    const payload = {
+      employee_id: selectedEmployee.id, // Poprawiono klucz na _id
+      service_id: selectedService.id,   // Poprawiono klucz na _id
+      start: `${dateStr}T${selectedSlot}:00`,
+    };
+
+    try {
+      await createAppointment(payload as any); // Używamy rzutowania lub poprawiamy typ w wywołaniu
+      navigate("/client/appointments?msg=reserved");
+    } catch (e: any) {
+      setError(e.response?.data?.detail || "Ten termin został właśnie zajęty. Wybierz inny.");
     }
   };
 
-  const minDate = new Date().toISOString().split('T')[0];
-  const maxDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0];
+  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>;
 
   return (
-    <Box sx={{ maxWidth: 800, mx: 'auto', py: 4 }}>
-      <Typography variant="h4" fontWeight="bold" gutterBottom>
-        Rezerwacja wizyty
-      </Typography>
+    <Box sx={{ maxWidth: 850, mx: "auto", py: 4, px: 2 }}>
+      <Paper sx={{ p: 4, borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
+        <Typography variant="h4" fontWeight={800} textAlign="center" gutterBottom color="primary">
+          Rezerwacja wizyty
+        </Typography>
 
-      {success && <Alert severity="success" sx={{ mb: 3 }}>{success}</Alert>}
-      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+        <Stepper activeStep={activeStep} sx={{ mb: 6, mt: 3 }}>
+          {steps.map((label) => (
+            <Step key={label}><StepLabel>{label}</StepLabel></Step>
+          ))}
+        </Stepper>
 
-      <Paper sx={{ p: 3 }}>
-        <Grid container spacing={3}>
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              select
-              label="Wybierz usługę"
-              value={selectedService}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSelectedService(value === '' ? '' : Number(value));
-                setSelectedEmployee('');
-                setSelectedDate('');
-                setSelectedSlot('');
-                setAvailableSlots([]);
-              }}
-              required
-            >
-              <MenuItem value="">Wybierz...</MenuItem>
-              {services.map((service) => (
-                <MenuItem key={service.id} value={service.id}>
-                  {service.name} - {service.price} PLN ({service.duration_minutes} min)
-                </MenuItem>
+        {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError("")}>{error}</Alert>}
+
+        <Box sx={{ minHeight: "350px" }}>
+          {/* KROK 1: USŁUGA */}
+          {activeStep === 0 && (
+            <Grid container spacing={2}>
+              {services.map((s) => (
+                <Grid item xs={12} key={s.id}>
+                  <Card
+                    variant="outlined"
+                    sx={{
+                      borderRadius: 3,
+                      transition: '0.3s',
+                      borderColor: selectedService?.id === s.id ? 'primary.main' : 'divider',
+                      bgcolor: selectedService?.id === s.id ? 'primary.light' : 'inherit',
+                      '&:hover': { boxShadow: 4, transform: 'translateY(-2px)' }
+                    }}
+                  >
+                    <CardActionArea onClick={() => setSelectedService(s)}>
+                      <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 3 }}>
+                        <Box>
+                          <Typography variant="h6" fontWeight={700}>{s.name}</Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {s.duration_display || `${s.duration_minutes} min`}
+                          </Typography>
+                        </Box>
+                        <Typography variant="h5" color="primary.main" fontWeight={800}>{s.price} zł</Typography>
+                      </CardContent>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
               ))}
-            </TextField>
-          </Grid>
+            </Grid>
+          )}
 
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              select
-              label="Wybierz pracownika"
-              value={selectedEmployee}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSelectedEmployee(value === '' ? '' : Number(value));
-                setSelectedDate('');
-                setSelectedSlot('');
-                setAvailableSlots([]);
-              }}
-              disabled={!selectedService}
-              required
-            >
-              <MenuItem value="">Wybierz...</MenuItem>
-              {filteredEmployees.map((employee) => (
-                <MenuItem key={employee.id} value={employee.id}>
-                  {employee.first_name} {employee.last_name}
-                </MenuItem>
-              ))}
-            </TextField>
-            {selectedService && filteredEmployees.length === 0 && (
-              <Typography variant="caption" color="error">
-                Brak pracowników z tą umiejętnością
-              </Typography>
-            )}
-          </Grid>
+          {/* KROK 2: PRACOWNIK */}
+          {activeStep === 1 && (
+            <Grid container spacing={2}>
+              {filteredEmployees.length === 0 ? (
+                <Grid item xs={12}><Alert severity="info">Przepraszamy, obecnie żaden pracownik nie wykonuje tej usługi.</Alert></Grid>
+              ) : (
+                filteredEmployees.map((e) => (
+                  <Grid item xs={12} sm={6} key={e.id}>
+                    <Card variant="outlined" sx={{
+                      borderRadius: 3,
+                      borderColor: selectedEmployee?.id === e.id ? 'primary.main' : 'divider'
+                    }}>
+                      <CardActionArea onClick={() => setSelectedEmployee(e)}>
+                        <CardContent sx={{ p: 4, textAlign: 'center' }}>
+                          <Box sx={{ width: 64, height: 64, bgcolor: 'secondary.main', color: 'white', borderRadius: '50%', mx: 'auto', mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 700 }}>
+                            {e.first_name[0]}{e.last_name[0]}
+                          </Box>
+                          <Typography variant="h6" fontWeight={700}>{e.first_name} {e.last_name}</Typography>
+                          <Typography variant="body2" color="textSecondary">Specjalista</Typography>
+                        </CardContent>
+                      </CardActionArea>
+                    </Card>
+                  </Grid>
+                ))
+              )}
+            </Grid>
+          )}
 
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              type="date"
-              label="Wybierz datę"
-              value={selectedDate}
-              onChange={(e) => handleDateChange(e.target.value)}
-              disabled={!selectedEmployee}
-              InputLabelProps={{ shrink: true }}
-              inputProps={{ min: minDate, max: maxDate }}
-              required
-            />
-          </Grid>
+          {/* KROK 3: TERMIN */}
+          {activeStep === 2 && (
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+              <Stack spacing={4}>
+                <DatePicker
+                  label="Dzień wizyty"
+                  value={selectedDate}
+                  onChange={(val) => { setSelectedDate(val); setSelectedSlot(null); }}
+                  disablePast
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
 
-          <Grid item xs={12}>
-            {slotsLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                <CircularProgress size={24} />
-              </Box>
-            ) : (
-              <TextField
-                fullWidth
-                select
-                label="Wybierz godzinę"
-                value={selectedSlot}
-                onChange={(e) => setSelectedSlot(e.target.value)}
-                disabled={!selectedDate || availableSlots.length === 0}
-                required
-              >
-                <MenuItem value="">Wybierz...</MenuItem>
-                {availableSlots.map((slot, index) => (
-                  <MenuItem key={index} value={slot.start}>
-                    {new Date(slot.start).toLocaleTimeString('pl-PL', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </MenuItem>
-                ))}
-              </TextField>
-            )}
-            {selectedDate && availableSlots.length === 0 && !slotsLoading && (
-              <Typography variant="caption" color="error">
-                Brak dostępnych terminów w tym dniu
-              </Typography>
-            )}
-          </Grid>
+                <Box>
+                  <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2 }}>Dostępne godziny:</Typography>
+                  {fetchingSlots ? (
+                    <Box sx={{ textAlign: 'center' }}><CircularProgress size={24} /></Box>
+                  ) : (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+                      {availableSlots.length > 0 ? (
+                        availableSlots.map(slot => (
+                          <Button
+                            key={slot}
+                            variant={selectedSlot === slot ? "contained" : "outlined"}
+                            onClick={() => setSelectedSlot(slot)}
+                            sx={{ borderRadius: 2, minWidth: '90px', py: 1 }}
+                          >
+                            {slot}
+                          </Button>
+                        ))
+                      ) : (
+                        <Alert severity="warning" sx={{ width: '100%' }}>Brak wolnych terminów u tego pracownika w wybranym dniu.</Alert>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              </Stack>
+            </LocalizationProvider>
+          )}
+        </Box>
 
-          <Grid item xs={12}>
-            <Button
-              fullWidth
-              variant="contained"
-              size="large"
-              startIcon={<CalendarMonth />}
-              onClick={handleSubmit}
-              disabled={!selectedSlot || loading}
-              sx={{ py: 1.5 }}
-            >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Zarezerwuj wizytę'}
-            </Button>
-          </Grid>
-        </Grid>
+        <Divider sx={{ my: 4 }} />
+
+        <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Button disabled={activeStep === 0} onClick={handleBack} size="large">Wstecz</Button>
+          <Button
+            variant="contained"
+            size="large"
+            disabled={
+              (activeStep === 0 && !selectedService) ||
+              (activeStep === 1 && !selectedEmployee) ||
+              (activeStep === 2 && !selectedSlot)
+            }
+            onClick={activeStep === steps.length - 1 ? handleConfirmBooking : handleNext}
+            sx={{ px: 4, borderRadius: 2 }}
+          >
+            {activeStep === steps.length - 1 ? "Potwierdzam rezerwację" : "Dalej"}
+          </Button>
+        </Box>
       </Paper>
     </Box>
   );
-};
-
-export default ClientBookingPage;
+}

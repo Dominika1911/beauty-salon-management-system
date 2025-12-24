@@ -39,3 +39,36 @@ export const updateEmployee = async (id: number, data: Partial<Employee>): Promi
 export const deleteEmployee = async (id: number): Promise<void> => {
   await axiosInstance.delete(`/employees/${id}/`);
 };
+
+// =============================================================================
+// Schedule API (GET/PATCH /employees/{id}/schedule/)
+// =============================================================================
+
+export type WeeklyHours = Record<
+  "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun",
+  Array<{ start: string; end: string }>
+>;
+
+export interface EmployeeSchedule {
+  id: number;
+  employee: number;
+  weekly_hours: Partial<WeeklyHours>;
+  created_at: string;
+  updated_at: string;
+};
+
+export const getEmployeeSchedule = async (employeeId: number): Promise<EmployeeSchedule> => {
+  const response = await axiosInstance.get<EmployeeSchedule>(`/employees/${employeeId}/schedule/`);
+  return response.data;
+};
+
+export const updateEmployeeSchedule = async (
+  employeeId: number,
+  weekly_hours: Partial<WeeklyHours>
+): Promise<EmployeeSchedule> => {
+  const response = await axiosInstance.patch<EmployeeSchedule>(
+    `/employees/${employeeId}/schedule/`,
+    { weekly_hours }
+  );
+  return response.data;
+};

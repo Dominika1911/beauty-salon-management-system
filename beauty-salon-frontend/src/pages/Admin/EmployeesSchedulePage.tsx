@@ -1,200 +1,291 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box,
-  Typography,
-  Paper,
-  Button,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Divider,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  TextField,
+  Typography,
   IconButton,
-} from '@mui/material';
-import { Add, Delete, ArrowBack } from '@mui/icons-material';
-import axiosInstance from '../../api/axios';
+} from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
+import DeleteIcon from "@mui/icons-material/Delete";
 
-interface DaySchedule {
-  start: string;
-  end: string;
+import type { Employee } from "../../types";
+import { getEmployees } from "../../api/employees";
+import {
+  getEmployeeSchedule,
+  updateEmployeeSchedule,
+  WeeklyHours,
+} from "../../api/employees";
+
+type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+const dayLabels: Record<DayKey, string> = {
+  mon: "Poniedziałek",
+  tue: "Wtorek",
+  wed: "Środa",
+  thu: "Czwartek",
+  fri: "Piątek",
+  sat: "Sobota",
+  sun: "Niedziela",
+};
+
+function normalizeWeeklyHours(input: any): Partial<WeeklyHours> {
+  if (!input || typeof input !== "object") return {};
+  return input;
 }
 
-interface WeeklyHours {
-  mon?: DaySchedule[];
-  tue?: DaySchedule[];
-  wed?: DaySchedule[];
-  thu?: DaySchedule[];
-  fri?: DaySchedule[];
-  sat?: DaySchedule[];
-  sun?: DaySchedule[];
+function isValidHHMM(s: string) {
+  return /^\d{2}:\d{2}$/.test(s);
 }
 
-const AdminEmployeeSchedulePage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [employeeName, setEmployeeName] = useState('');
-  const [weeklyHours, setWeeklyHours] = useState<WeeklyHours>({});
-  const [loading, setLoading] = useState(true);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
+export default function EmployeesSchedulePage() {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeId, setEmployeeId] = useState<number | "">("");
+
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [weekly, setWeekly] = useState<Partial<WeeklyHours>>({});
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  const selectedEmployee = useMemo(
+    () => employees.find((e) => e.id === employeeId) || null,
+    [employees, employeeId]
+  );
 
   useEffect(() => {
-    fetchSchedule();
-  }, [id]);
+    (async () => {
+      setLoadingEmployees(true);
+      setErr("");
+      try {
+        const data = await getEmployees();
+        setEmployees(data);
+        if (data.length > 0) setEmployeeId(data[0].id);
+      } catch (e: any) {
+        setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania pracowników.");
+      } finally {
+        setLoadingEmployees(false);
+      }
+    })();
+  }, []);
 
-  const fetchSchedule = async () => {
-    try {
-      const response = await axiosInstance.get(`/employees/${id}/schedule/`);
-      setEmployeeName(response.data.employee_name);
-      setWeeklyHours(response.data.weekly_hours || {});
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!employeeId) return;
+
+    (async () => {
+      setLoadingSchedule(true);
+      setErr("");
+      setMsg("");
+      try {
+        const sch = await getEmployeeSchedule(Number(employeeId));
+        setWeekly(normalizeWeeklyHours(sch.weekly_hours));
+      } catch (e: any) {
+        // jeśli brak schedule, backend tworzy get_or_create w widoku, ale na wszelki wypadek:
+        setWeekly({});
+        setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania grafiku.");
+      } finally {
+        setLoadingSchedule(false);
+      }
+    })();
+  }, [employeeId]);
+
+  const setPeriod = (day: DayKey, idx: number, field: "start" | "end", value: string) => {
+    setWeekly((prev) => {
+      const copy = { ...(prev || {}) };
+      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      const row = { ...(arr[idx] || { start: "09:00", end: "17:00" }) };
+      row[field] = value;
+      arr[idx] = row;
+      (copy as any)[day] = arr;
+      return copy;
+    });
+  };
+
+  const addPeriod = (day: DayKey) => {
+    setWeekly((prev) => {
+      const copy = { ...(prev || {}) };
+      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      arr.push({ start: "09:00", end: "17:00" });
+      (copy as any)[day] = arr;
+      return copy;
+    });
+  };
+
+  const removePeriod = (day: DayKey, idx: number) => {
+    setWeekly((prev) => {
+      const copy = { ...(prev || {}) };
+      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      arr.splice(idx, 1);
+      (copy as any)[day] = arr;
+      return copy;
+    });
+  };
+
+  const validateAll = (): string | null => {
+    for (const day of Object.keys(dayLabels) as DayKey[]) {
+      const periods = (weekly as any)?.[day];
+      if (!periods) continue;
+      if (!Array.isArray(periods)) return `Błędny format dla dnia ${dayLabels[day]}.`;
+
+      for (const p of periods) {
+        const start = p?.start;
+        const end = p?.end;
+        if (!isValidHHMM(start) || !isValidHHMM(end)) {
+          return `Nieprawidłowy format godziny w ${dayLabels[day]} (użyj HH:MM).`;
+        }
+        if (start >= end) {
+          return `Godzina start musi być < end w ${dayLabels[day]}.`;
+        }
+      }
     }
+    return null;
   };
 
   const handleSave = async () => {
+    if (!employeeId) return;
+    setErr("");
+    setMsg("");
+
+    const v = validateAll();
+    if (v) {
+      setErr(v);
+      return;
+    }
+
+    setSaving(true);
     try {
-      await axiosInstance.patch(`/employees/${id}/schedule/`, {
-        weekly_hours: weeklyHours,
-      });
-      setSuccess('Grafik został zapisany!');
-      setError('');
-    } catch (err: any) {
-      console.error(err);
-      setError('Błąd podczas zapisywania grafiku');
-      setSuccess('');
+      await updateEmployeeSchedule(Number(employeeId), weekly);
+      setMsg("Zapisano grafik.");
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || e?.message || "Błąd zapisu grafiku.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const addPeriod = (day: keyof WeeklyHours) => {
-    setWeeklyHours({
-      ...weeklyHours,
-      [day]: [...(weeklyHours[day] || []), { start: '09:00', end: '17:00' }],
-    });
-  };
-
-  const removePeriod = (day: keyof WeeklyHours, index: number) => {
-    const periods = weeklyHours[day] || [];
-    setWeeklyHours({
-      ...weeklyHours,
-      [day]: periods.filter((_, i) => i !== index),
-    });
-  };
-
-  const updatePeriod = (day: keyof WeeklyHours, index: number, field: 'start' | 'end', value: string) => {
-    const periods = [...(weeklyHours[day] || [])];
-    periods[index] = { ...periods[index], [field]: value };
-    setWeeklyHours({
-      ...weeklyHours,
-      [day]: periods,
-    });
-  };
-
-  const dayNames: { [key: string]: string } = {
-    mon: 'Poniedziałek',
-    tue: 'Wtorek',
-    wed: 'Środa',
-    thu: 'Czwartek',
-    fri: 'Piątek',
-    sat: 'Sobota',
-    sun: 'Niedziela',
-  };
-
-  if (loading) {
-    return <Typography>Ładowanie...</Typography>;
-  }
-
   return (
-    <Box>
-      <Button
-        startIcon={<ArrowBack />}
-        onClick={() => navigate('/admin/employees')}
-        sx={{ mb: 2 }}
-      >
-        Powrót do listy
-      </Button>
+    <Stack spacing={2}>
+      <Typography variant="h5">Grafiki pracowników</Typography>
 
-      <Typography variant="h4" fontWeight="bold" gutterBottom>
-        Grafik: {employeeName}
-      </Typography>
+      {msg && <Alert severity="success">{msg}</Alert>}
+      {err && <Alert severity="error">{err}</Alert>}
 
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <Paper sx={{ p: 2 }}>
+        {loadingEmployees ? (
+          <Stack direction="row" spacing={2} alignItems="center">
+            <CircularProgress size={22} />
+            <Typography>Ładowanie pracowników...</Typography>
+          </Stack>
+        ) : (
+          <FormControl fullWidth>
+            <InputLabel>Pracownik</InputLabel>
+            <Select
+              value={employeeId}
+              label="Pracownik"
+              onChange={(e) => setEmployeeId(Number(e.target.value))}
+            >
+              {employees.map((e) => (
+                <MenuItem key={e.id} value={e.id}>
+                  {e.first_name} {e.last_name} ({e.employee_number})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+      </Paper>
 
-      <TableContainer component={Paper} sx={{ mb: 3 }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell><strong>Dzień</strong></TableCell>
-              <TableCell><strong>Godziny pracy</strong></TableCell>
-              <TableCell width={100}><strong>Akcje</strong></TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {Object.entries(dayNames).map(([key, name]) => {
-              const periods = weeklyHours[key as keyof WeeklyHours] || [];
+      <Paper sx={{ p: 2 }}>
+        <Typography variant="h6">
+          {selectedEmployee
+            ? `${selectedEmployee.first_name} ${selectedEmployee.last_name} — grafik tygodniowy`
+            : "Grafik tygodniowy"}
+        </Typography>
+
+        <Divider sx={{ my: 2 }} />
+
+        {loadingSchedule ? (
+          <Stack direction="row" spacing={2} alignItems="center">
+            <CircularProgress size={22} />
+            <Typography>Ładowanie grafiku...</Typography>
+          </Stack>
+        ) : (
+          <Stack spacing={2}>
+            {(Object.keys(dayLabels) as DayKey[]).map((day) => {
+              const periods: Array<{ start: string; end: string }> = ((weekly as any)[day] ??
+                []) as any;
+
               return (
-                <TableRow key={key}>
-                  <TableCell>{name}</TableCell>
-                  <TableCell>
-                    {periods.length === 0 ? (
-                      <Typography color="text.secondary">Dzień wolny</Typography>
-                    ) : (
-                      periods.map((period, idx) => (
-                        <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          <TextField
-                            type="time"
-                            size="small"
-                            value={period.start}
-                            onChange={(e) => updatePeriod(key as keyof WeeklyHours, idx, 'start', e.target.value)}
-                            sx={{ width: 130 }}
-                          />
-                          <Typography>-</Typography>
-                          <TextField
-                            type="time"
-                            size="small"
-                            value={period.end}
-                            onChange={(e) => updatePeriod(key as keyof WeeklyHours, idx, 'end', e.target.value)}
-                            sx={{ width: 130 }}
-                          />
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => removePeriod(key as keyof WeeklyHours, idx)}
-                          >
-                            <Delete />
-                          </IconButton>
-                        </Box>
-                      ))
-                    )}
-                  </TableCell>
-                  <TableCell>
+                <Paper key={day} variant="outlined" sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography fontWeight={600}>{dayLabels[day]}</Typography>
                     <Button
                       size="small"
-                      startIcon={<Add />}
-                      onClick={() => addPeriod(key as keyof WeeklyHours)}
+                      startIcon={<AddIcon />}
+                      onClick={() => addPeriod(day)}
                     >
-                      Dodaj
+                      Dodaj przedział
                     </Button>
-                  </TableCell>
-                </TableRow>
+                  </Stack>
+
+                  {periods.length === 0 ? (
+                    <Typography variant="body2" sx={{ opacity: 0.8, mt: 1 }}>
+                      Brak godzin (dzień wolny).
+                    </Typography>
+                  ) : (
+                    <Stack spacing={1} sx={{ mt: 1 }}>
+                      {periods.map((p, idx) => (
+                        <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                          <TextField
+                            label="Start"
+                            value={p.start}
+                            onChange={(e) => setPeriod(day, idx, "start", e.target.value)}
+                            size="small"
+                            placeholder="09:00"
+                            sx={{ width: 140 }}
+                          />
+                          <TextField
+                            label="End"
+                            value={p.end}
+                            onChange={(e) => setPeriod(day, idx, "end", e.target.value)}
+                            size="small"
+                            placeholder="17:00"
+                            sx={{ width: 140 }}
+                          />
+
+                          <IconButton
+                            color="error"
+                            onClick={() => removePeriod(day, idx)}
+                            aria-label="usuń"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  )}
+                </Paper>
               );
             })}
-          </TableBody>
-        </Table>
-      </TableContainer>
 
-      <Button variant="contained" size="large" onClick={handleSave}>
-        Zapisz grafik
-      </Button>
-    </Box>
+            <Box>
+              <Button variant="contained" onClick={handleSave} disabled={!employeeId || saving}>
+                {saving ? "Zapisuję..." : "Zapisz grafik"}
+              </Button>
+            </Box>
+          </Stack>
+        )}
+      </Paper>
+    </Stack>
   );
-};
-
-export default AdminEmployeeSchedulePage;
+}

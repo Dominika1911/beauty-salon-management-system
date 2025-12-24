@@ -9,7 +9,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import Q, UniqueConstraint
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
@@ -32,11 +31,9 @@ client_number_validator = RegexValidator(
     message="Client number must be exactly 8 digits (e.g. 00000001).",
 )
 
-# Domenowe identyfikatory użytkowników wewnętrznych:
-# - imie.nazwisko (np. anna.kowalska)
-# - pracownik-1234
-# - admin-1234
-USERNAME_PATTERN = re.compile(r"^(?:[a-z]{2,30}\.[a-z]{2,30}|pracownik-\d{4}|admin-\d{4})$")
+USERNAME_PATTERN = re.compile(
+    r"^(?:[a-z]{2,30}\.[a-z]{2,30}|pracownik-\d{8}|admin-\d{8}|klient-\d{8})$"
+)
 
 
 # =============================================================================
@@ -44,10 +41,6 @@ USERNAME_PATTERN = re.compile(r"^(?:[a-z]{2,30}\.[a-z]{2,30}|pracownik-\d{4}|adm
 # =============================================================================
 
 class CustomUser(AbstractUser):
-    """
-    Użytkownik systemu (session auth + CSRF).
-    Rozszerzenie standardowego użytkownika Django o role.
-    """
     USERNAME_FIELD = "username"
     REQUIRED_FIELDS = []
 
@@ -56,7 +49,6 @@ class CustomUser(AbstractUser):
         EMPLOYEE = "EMPLOYEE", _("Pracownik")
         CLIENT = "CLIENT", _("Klient")
 
-    # Pozwalamy blank na etapie seed/administracji, ale clean() pilnuje reguł domenowych.
     username = models.CharField(max_length=30, unique=True, blank=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
 
@@ -82,11 +74,6 @@ class CustomUser(AbstractUser):
         return self.role == self.Role.CLIENT
 
     def clean(self):
-        """
-        W salonie użytkownicy wewnętrzni (ADMIN/EMPLOYEE) muszą mieć czytelny login
-        do obsługi panelu i identyfikacji w logach.
-        Klient może istnieć bez konta / bez username (profil klienta tworzony przez personel).
-        """
         super().clean()
 
         internal = (self.role in [self.Role.ADMIN, self.Role.EMPLOYEE]) or self.is_staff or self.is_superuser
@@ -102,10 +89,12 @@ class CustomUser(AbstractUser):
 
         if not USERNAME_PATTERN.match(username):
             raise ValidationError({
-                "username": "Username must match: 'imie.nazwisko' or 'pracownik-1234' or 'admin-1234'."
+                "username": (
+                    "Username must match: "
+                    "'imie.nazwisko' or 'pracownik-00000001' or 'admin-00000001' or 'klient-00000001'."
+                )
             })
 
-        # normalizacja
         self.username = username
 
 
@@ -114,10 +103,6 @@ class CustomUser(AbstractUser):
 # =============================================================================
 
 class Service(models.Model):
-    """
-    Słownik usług salonu.
-    duration_minutes: prostsze dla dostępności i statystyk niż DurationField w MVP.
-    """
     name = models.CharField(max_length=255, unique=True)
     category = models.CharField(max_length=100, blank=True, db_index=True)
     description = models.TextField(blank=True)
@@ -149,12 +134,15 @@ class Service(models.Model):
 # =============================================================================
 
 class EmployeeProfile(models.Model):
-    """
-    Profil pracownika.
-    """
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="employee_profile")
 
-    employee_number = models.CharField(max_length=8, unique=True, validators=[employee_number_validator])
+    employee_number = models.CharField(
+        max_length=8,
+        unique=True,
+        validators=[employee_number_validator],
+        blank=True,
+    )
+
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
     phone = models.CharField(max_length=16, blank=True, validators=[phone_validator])
@@ -187,10 +175,6 @@ class EmployeeProfile(models.Model):
 
 
 class ClientProfile(models.Model):
-    """
-    Profil klienta.
-    user jest opcjonalny: klient może być dodany przez personel bez rejestracji.
-    """
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -199,7 +183,13 @@ class ClientProfile(models.Model):
         related_name="client_profile",
     )
 
-    client_number = models.CharField(max_length=8, unique=True, validators=[client_number_validator])
+    client_number = models.CharField(
+        max_length=8,
+        unique=True,
+        validators=[client_number_validator],
+        blank=True,
+    )
+
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
 
@@ -236,10 +226,6 @@ class ClientProfile(models.Model):
 # =============================================================================
 
 class EmployeeSchedule(models.Model):
-    """
-    Tygodniowy grafik pracownika w formacie JSON:
-      {"mon":[{"start":"09:00","end":"17:00"}], "tue":[...], ...}
-    """
     employee = models.OneToOneField(EmployeeProfile, on_delete=models.CASCADE, related_name="schedule")
     weekly_hours = models.JSONField(default=dict, blank=True)
 
@@ -254,9 +240,6 @@ class EmployeeSchedule(models.Model):
 
 
 class TimeOff(models.Model):
-    """
-    Nieobecność pracownika (urlop / blokada).
-    """
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="time_offs")
     date_from = models.DateField()
     date_to = models.DateField()
@@ -282,9 +265,6 @@ class TimeOff(models.Model):
 # =============================================================================
 
 class Appointment(models.Model):
-    """
-    Wizyta – centralna encja systemu.
-    """
     class Status(models.TextChoices):
         PENDING = "PENDING", _("Oczekująca")
         CONFIRMED = "CONFIRMED", _("Potwierdzona")
@@ -315,6 +295,7 @@ class Appointment(models.Model):
         constraints = [
             models.CheckConstraint(check=Q(end__gt=models.F("start")), name="appointment_end_after_start"),
             UniqueConstraint(fields=["employee", "start"], name="unique_employee_start"),
+            # USUNIĘTO: UniqueConstraint(fields=["employee", "end"], name="unique_employee_end"),
         ]
         indexes = [
             models.Index(fields=["employee", "start"]),
@@ -327,52 +308,17 @@ class Appointment(models.Model):
     def clean(self):
         super().clean()
 
-        if self.start is None or self.end is None:
-            raise ValidationError("Pola start i end są wymagane.")
-
         if self.end <= self.start:
-            raise ValidationError({"end": "Czas zakończenia musi być po czasie rozpoczęcia."})
+            raise ValidationError({"end": "End must be after start."})
 
-        now = timezone.now()
-
-        # ✅ Pracownik tylko do swoich usług
-        if self.employee_id and self.service_id:
-            if not self.employee.skills.filter(id=self.service_id).exists():
-                raise ValidationError({"service": "Ten pracownik nie wykonuje wybranej usługi."})
-
-        # Spójność end z czasem trwania usługi (bez bufora)
-        if self.service_id:
-            expected_end = self.start + timedelta(minutes=int(self.service.duration_minutes))
-            if self.end != expected_end:
-                raise ValidationError({"end": "Czas zakończenia musi wynikać z czasu trwania usługi."})
-
-        # Statusy zależne od czasu
-        if self.status == self.Status.COMPLETED and self.end > now:
-            raise ValidationError("Nie można oznaczyć wizyty jako zakończonej, jeśli jeszcze się nie odbyła.")
-
-        # Nie pozwalaj tworzyć/utrzymywać aktywnych wizyt w przeszłości
-        if self.status in [self.Status.PENDING, self.Status.CONFIRMED] and self.start < now:
-            raise ValidationError({"start": "Nie można ustawić wizyty w przeszłości."})
-
-        # Konflikty: pracownik (bez CANCELLED)
-        if self.employee_id:
-            qs_emp = (
-                Appointment.objects.filter(employee=self.employee)
-                .exclude(pk=self.pk)
-                .exclude(status=self.Status.CANCELLED)
-            )
-            if qs_emp.filter(start__lt=self.end, end__gt=self.start).exists():
-                raise ValidationError("Pracownik jest niedostępny w tym przedziale czasu.")
-
-        # Konflikty: klient (jeśli przypisany)
-        if self.client_id:
-            qs_cli = (
-                Appointment.objects.filter(client=self.client)
-                .exclude(pk=self.pk)
-                .exclude(status=self.Status.CANCELLED)
-            )
-            if qs_cli.filter(start__lt=self.end, end__gt=self.start).exists():
-                raise ValidationError("Klient ma już wizytę w tym przedziale czasu.")
+        qs = (
+            Appointment.objects
+            .filter(employee=self.employee)
+            .exclude(pk=self.pk)
+            .exclude(status=Appointment.Status.CANCELLED)  # anulowane nie blokują
+        )
+        if qs.filter(start__lt=self.end, end__gt=self.start).exists():
+            raise ValidationError("Employee is not available in this time range.")
 
 
 # =============================================================================
@@ -380,9 +326,6 @@ class Appointment(models.Model):
 # =============================================================================
 
 class SystemSettings(models.Model):
-    """
-    Ustawienia globalne systemu (singleton).
-    """
     salon_name = models.CharField(max_length=255, default="Salon Kosmetyczny")
     slot_minutes = models.IntegerField(default=15, validators=[MinValueValidator(5)])
     buffer_minutes = models.IntegerField(default=0, validators=[MinValueValidator(0)])
@@ -410,9 +353,6 @@ class SystemSettings(models.Model):
 # =============================================================================
 
 class SystemLog(models.Model):
-    """
-    Log operacji systemowych (audit trail).
-    """
     class Action(models.TextChoices):
         SERVICE_CREATED = "SERVICE_CREATED", "Service created"
         SERVICE_UPDATED = "SERVICE_UPDATED", "Service updated"

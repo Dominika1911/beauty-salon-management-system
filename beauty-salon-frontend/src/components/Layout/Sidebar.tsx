@@ -87,6 +87,12 @@ const menuItems: MenuItem[] = [
     roles: ['EMPLOYEE'],
   },
   {
+    text: 'Terminarz', // NOWA POZYCJA
+    icon: <CalendarMonth />,
+    path: '/employee/calendar',
+    roles: ['EMPLOYEE'],
+  },
+  {
     text: 'Moje wizyty',
     icon: <Event />,
     path: '/employee/appointments',

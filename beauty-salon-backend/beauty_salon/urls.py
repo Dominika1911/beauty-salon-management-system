@@ -20,11 +20,11 @@ from .views import (
     BookingCreateAPIView,
     CheckAvailabilityView,
 
-    # Nowe: Dashboard i raporty
+    # Logika raportów i dashboardu
     DashboardView,
-    RevenueReportView,
-    EmployeePerformanceView,
-    PopularServicesView,
+    ReportView,  # Uniwersalna klasa obsługująca PDFy
+    # USUNIĘTO: EmployeePerformanceView (obsługiwane przez ReportView)
+    # USUNIĘTO: PopularServicesView (obsługiwane przez ReportView)
 )
 
 router = DefaultRouter()
@@ -42,25 +42,28 @@ urlpatterns = [
     path('auth/logout/', SessionLogoutView.as_view(), name='logout'),
     path('auth/status/', AuthStatusView.as_view(), name='auth-status'),
 
-    # CUSTOM ENDPOINTS - MUSZĄ BYĆ PRZED ROUTEREM!
-    # Dostępność + rezerwacje (PRZED router.urls!)
+    # Dostępność + rezerwacje
     path('availability/slots/', AvailabilitySlotsAPIView.as_view(), name='availability-slots'),
     path('appointments/book/', BookingCreateAPIView.as_view(), name='appointment-book'),
     path('appointments/check-availability/', CheckAvailabilityView.as_view(), name='check-availability'),
 
-    # Ustawienia + statystyki (wymagania pracy)
+    # Ustawienia + statystyki
     path('system-settings/', SystemSettingsView.as_view(), name='system-settings'),
     path('statistics/', StatisticsView.as_view(), name='statistics'),
 
-    # Dashboard - zróżnicowany dla każdej roli
+    # Dashboard
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
 
-    # Zaawansowane raporty
-    path('reports/revenue/', RevenueReportView.as_view(), name='revenue-report'),
-    path('reports/employee-performance/', EmployeePerformanceView.as_view(), name='employee-performance'),
-    path('reports/popular-services/', PopularServicesView.as_view(), name='popular-services'),
+    # Nowy uniwersalny endpoint dla raportów PDF
+    # Wywołanie np. /api/reports/revenue/ lub /api/reports/employees/
+    # ZMIANA TUTAJ: Dodajemy /pdf/ do ścieżki
+    path('reports/<str:report_type>/pdf/', ReportView.as_view(), name='report-pdf'),
 
-    # CRUD - ROUTER NA KOŃCU!
-    # WAŻNE: Router musi być po custom endpoints, inaczej /appointments/ przechwytuje wszystko
+    # Opcjonalnie zachowaj to, jeśli chcesz mieć też listę raportów pod /api/reports/
+    path('reports/', ReportView.as_view(), name='reports-list'),
+
+    # USUNIĘTO stare ścieżki raportów API, ponieważ teraz generujemy PDFy przez ReportView
+
+    # CRUD - ROUTER NA KOŃCU
     path('', include(router.urls)),
 ]

@@ -1,75 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Box,
-  Typography,
-  Paper,
-  Button,
-  Grid,
-  Card,
-  CardContent,
-  CardActions,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Chip,
+  Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  IconButton, Paper, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, Typography, Alert, CircularProgress,
+  FormControlLabel, Switch,
 } from '@mui/material';
-import { Add, Edit, Delete } from '@mui/icons-material';
+import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
+import { Formik, Form, Field } from 'formik';
+import * as Yup from 'yup';
 import { getClients, createClient, updateClient, deleteClient } from '../../api/clients';
 import type { Client } from '../../types';
 
-const AdminClientsPage: React.FC = () => {
+// Walidacja formularza - poprawiona obsługa kontekstu isNew
+const ClientSchema = Yup.object().shape({
+  first_name: Yup.string()
+    .min(2, 'Imię musi mieć co najmniej 2 znaki')
+    .required('Imię jest wymagane'),
+  last_name: Yup.string()
+    .min(2, 'Nazwisko musi mieć co najmniej 2 znaki')
+    .required('Nazwisko jest wymagane'),
+  phone: Yup.string()
+    .matches(/^[0-9+\s-()]+$/, 'Nieprawidłowy format telefonu')
+    .required('Telefon jest wymagany'),
+  email: Yup.string()
+    .email('Nieprawidłowy adres email')
+    .required('Email jest wymagany'),
+  password: Yup.string().when('$isNew', {
+    is: true,
+    then: (schema) => schema.min(8, 'Hasło musi mieć co najmniej 8 znaków').required('Hasło jest wymagane'),
+    otherwise: (schema) => schema.notRequired(),
+  }),
+  internal_notes: Yup.string().max(1000, 'Notatki mogą mieć maksymalnie 1000 znaków'),
+  is_active: Yup.boolean(),
+});
+
+interface ClientFormData {
+  first_name: string;
+  last_name: string;
+  phone: string;
+  email: string;
+  password?: string;
+  internal_notes: string;
+  is_active: boolean;
+}
+
+const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    password_confirm: '',
-    first_name: '',
-    last_name: '',
-    phone: '',
-  });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState<Client | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewingClient, setViewingClient] = useState<Client | null>(null);
 
   useEffect(() => {
-    fetchClients();
+    loadClients();
   }, []);
 
-  const fetchClients = async () => {
+  const loadClients = async () => {
     try {
+      setLoading(true);
+      setError(null);
       const data = await getClients();
-      setClients(data);
-    } catch (err) {
-      console.error(err);
+      // Django DRF często zwraca dane w polu 'results' przy paginacji
+      const clientList = Array.isArray(data) ? data : (data as any).results || [];
+      setClients(clientList);
+    } catch (err: any) {
+      setError('Nie udało się załadować listy klientów');
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenDialog = (client?: Client) => {
-    if (client) {
-      setEditingClient(client);
-      setFormData({
-        email: client.email,
-        password: '',
-        password_confirm: '',
-        first_name: client.first_name,
-        last_name: client.last_name,
-        phone: client.phone,
-      });
-    } else {
-      setEditingClient(null);
-      setFormData({
-        email: '',
-        password: '',
-        password_confirm: '',
-        first_name: '',
-        last_name: '',
-        phone: '',
-      });
-    }
+    setEditingClient(client || null);
     setDialogOpen(true);
   };
 
@@ -78,226 +84,174 @@ const AdminClientsPage: React.FC = () => {
     setEditingClient(null);
   };
 
-  const handleSubmit = async () => {
+  // POPRAWIONE: handleSubmit dostosowany do Twojego backendu
+  const handleSubmit = async (values: ClientFormData, { setErrors }: any) => {
     try {
-      if (editingClient) {
-        // Edycja - tylko profil
-        const clientData = {
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          email: formData.email,
-          phone: formData.phone,
-        };
-        await updateClient(editingClient.id, clientData);
-      } else {
-        // Dodawanie - sprawdź hasła
-        if (formData.password !== formData.password_confirm) {
-          alert('Hasła się nie zgadzają!');
-          return;
-        }
-        if (formData.password.length < 8) {
-          alert('Hasło musi mieć minimum 8 znaków!');
-          return;
-        }
+      const clientData: any = {
+        first_name: values.first_name,
+        last_name: values.last_name,
+        phone: values.phone,
+        email: values.email,
+        internal_notes: values.internal_notes,
+        is_active: values.is_active,
+      };
 
-        // Jeden request - backend zrobi wszystko
-        await createClient({
-          email: formData.email,
-          password: formData.password,
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          phone: formData.phone,
-        });
+      if (!editingClient) {
+        // Tworzenie - hasło jest wymagane przez DRF ClientSerializer
+        clientData.password = values.password;
+        await createClient(clientData);
+      } else {
+        // Edycja - przesyłamy hasło tylko jeśli zostało wpisane
+        if (values.password) clientData.password = values.password;
+        await updateClient(editingClient.id, clientData);
       }
 
-      await fetchClients();
+      await loadClients();
       handleCloseDialog();
     } catch (err: any) {
-      console.error(err);
-      const errorMessage = err.response?.data?.detail
-        || JSON.stringify(err.response?.data)
-        || 'Błąd podczas zapisywania klienta';
-      alert(errorMessage);
+      console.error('Błąd zapisu klienta:', err.response?.data);
+      const backendErrors = err.response?.data;
+
+      if (backendErrors && typeof backendErrors === 'object') {
+        // Automatyczne mapowanie błędów z Django na pola Formika
+        setErrors(backendErrors);
+      } else {
+        alert(backendErrors?.detail || 'Nie udało się zapisać klienta');
+      }
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tego klienta?')) return;
-
+  const handleDelete = async () => {
+    if (!clientToDelete) return;
     try {
-      await deleteClient(id);
-      fetchClients();
-    } catch (err) {
-      console.error(err);
-      alert('Błąd podczas usuwania klienta');
+      await deleteClient(clientToDelete.id);
+      await loadClients();
+      setDeleteDialogOpen(false);
+    } catch (err: any) {
+      alert('Nie udało się usunąć klienta');
     }
   };
 
-  if (loading) {
-    return <Typography>Ładowanie...</Typography>;
-  }
+  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
 
   return (
-    <Box>
+    <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold">
-          Zarządzanie klientami
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => handleOpenDialog()}
-        >
+        <Box>
+          <Typography variant="h4" fontWeight={700}>Zarządzanie klientami</Typography>
+          <Typography color="textSecondary">Razem: {clients.length}</Typography>
+        </Box>
+        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
           Dodaj klienta
         </Button>
       </Box>
 
-      <Grid container spacing={3}>
-        {clients.length === 0 ? (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography color="text.secondary">
-                Brak klientów
-              </Typography>
-            </Paper>
-          </Grid>
-        ) : (
-          clients.map((client) => (
-            <Grid item xs={12} sm={6} md={4} key={client.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                    <Typography variant="h6">
-                      {client.first_name} {client.last_name}
-                    </Typography>
-                    <Chip
-                      label={client.is_active ? 'Aktywny' : 'Nieaktywny'}
-                      color={client.is_active ? 'success' : 'default'}
-                      size="small"
-                    />
-                  </Box>
+      <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 3 }}>
+        <Table>
+          <TableHead sx={{ bgcolor: 'grey.100' }}>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 700 }}>Klient</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Kontakt</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Wizyty</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>Akcje</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {clients.map((client) => (
+              <TableRow key={client.id} hover>
+                <TableCell>
+                  <Typography variant="body1" fontWeight={600}>{client.first_name} {client.last_name}</Typography>
+                  <Typography variant="caption" color="textSecondary">{client.client_number}</Typography>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">{client.email}</Typography>
+                  <Typography variant="body2" color="textSecondary">{client.phone}</Typography>
+                </TableCell>
+                <TableCell align="center">
+                  <Chip label={client.appointments_count} size="small" variant="outlined" color="primary" />
+                </TableCell>
+                <TableCell align="center">
+                  <Chip label={client.is_active ? 'Aktywny' : 'Nieaktywny'} color={client.is_active ? 'success' : 'default'} size="small" />
+                </TableCell>
+                <TableCell align="right">
+                  <IconButton onClick={() => { setViewingClient(client); setViewDialogOpen(true); }}><Visibility /></IconButton>
+                  <IconButton onClick={() => handleOpenDialog(client)} color="primary"><Edit /></IconButton>
+                  <IconButton onClick={() => { setClientToDelete(client); setDeleteDialogOpen(true); }} color="error"><Delete /></IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Nr klienta: {client.client_number}
-                  </Typography>
-
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Email: {client.email}
-                  </Typography>
-
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Telefon: {client.phone}
-                  </Typography>
-
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Liczba wizyt: {client.appointments_count || 0}
-                  </Typography>
-
-                  {client.user_username && (
-                    <Typography variant="body2" color="primary" gutterBottom>
-                      Ma konto: {client.user_username}
-                    </Typography>
-                  )}
-                </CardContent>
-                <CardActions>
-                  <Button
-                    size="small"
-                    startIcon={<Edit />}
-                    onClick={() => handleOpenDialog(client)}
-                  >
-                    Edytuj
-                  </Button>
-                  <Button
-                    size="small"
-                    color="error"
-                    startIcon={<Delete />}
-                    onClick={() => handleDelete(client.id)}
-                  >
-                    Usuń
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))
-        )}
-      </Grid>
-
-      {/* Dialog dodawania/edycji */}
+      {/* Formularz */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingClient ? 'Edytuj klienta' : 'Dodaj nowego klienta'}
-        </DialogTitle>
-        <DialogContent>
-          {!editingClient && (
-            <>
-              <TextField
-                fullWidth
-                label="Email (login)"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                margin="normal"
-                required
-                placeholder="np. jan.kowalski@example.com"
-                helperText="Email będzie używany jako login do systemu"
-              />
-              <TextField
-                fullWidth
-                label="Hasło"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                margin="normal"
-                required
-                placeholder="Minimum 8 znaków"
-                helperText="Minimum 8 znaków - klient użyje tego do logowania"
-              />
-              <TextField
-                fullWidth
-                label="Potwierdź hasło"
-                type="password"
-                value={formData.password_confirm}
-                onChange={(e) => setFormData({ ...formData, password_confirm: e.target.value })}
-                margin="normal"
-                required
-                placeholder="Wpisz hasło ponownie"
-              />
-            </>
+        <DialogTitle>{editingClient ? 'Edytuj klienta' : 'Nowy klient'}</DialogTitle>
+        <Formik
+          initialValues={{
+            first_name: editingClient?.first_name || '',
+            last_name: editingClient?.last_name || '',
+            phone: editingClient?.phone || '',
+            email: editingClient?.email || '',
+            password: '',
+            internal_notes: editingClient?.internal_notes || '',
+            is_active: editingClient?.is_active ?? true,
+          }}
+          validationSchema={ClientSchema}
+          context={{ isNew: !editingClient }}
+          onSubmit={handleSubmit}
+        >
+          {({ errors, touched, values, setFieldValue }) => (
+            <Form>
+              <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Field as={TextField} name="first_name" label="Imię" fullWidth error={touched.first_name && !!errors.first_name} helperText={touched.first_name && errors.first_name} />
+                <Field as={TextField} name="last_name" label="Nazwisko" fullWidth error={touched.last_name && !!errors.last_name} helperText={touched.last_name && errors.last_name} />
+                <Field as={TextField} name="phone" label="Telefon" fullWidth error={touched.phone && !!errors.phone} helperText={touched.phone && errors.phone} />
+                <Field as={TextField} name="email" label="Email" fullWidth error={touched.email && !!errors.email} helperText={touched.email && errors.email} />
+                <Field as={TextField} name="password" label={editingClient ? "Zmień hasło (opcjonalnie)" : "Hasło"} type="password" fullWidth error={touched.password && !!errors.password} helperText={touched.password && errors.password} />
+                <Field as={TextField} name="internal_notes" label="Notatki" multiline rows={3} fullWidth />
+                <FormControlLabel control={<Switch checked={values.is_active} onChange={(e) => setFieldValue('is_active', e.target.checked)} />} label="Aktywny" />
+              </DialogContent>
+              <DialogActions sx={{ p: 3 }}>
+                <Button onClick={handleCloseDialog}>Anuluj</Button>
+                <Button type="submit" variant="contained">Zapisz</Button>
+              </DialogActions>
+            </Form>
           )}
-          <TextField
-            fullWidth
-            label="Imię"
-            value={formData.first_name}
-            onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Nazwisko"
-            value={formData.last_name}
-            onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Telefon"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            margin="normal"
-            required
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>Anuluj</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingClient ? 'Zapisz' : 'Dodaj'}
-          </Button>
+        </Formik>
+      </Dialog>
+
+      {/* Dialog Usuwania */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+        <DialogTitle>Usunąć klienta?</DialogTitle>
+        <DialogContent><Typography>{clientToDelete?.first_name} {clientToDelete?.last_name} zostanie usunięty z bazy.</Typography></DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Anuluj</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">Usuń</Button>
         </DialogActions>
+      </Dialog>
+
+      {/* Dialog Podglądu */}
+      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Karta Klienta</DialogTitle>
+        <DialogContent>
+          {viewingClient && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, py: 1 }}>
+              <Typography variant="h6">{viewingClient.first_name} {viewingClient.last_name}</Typography>
+              <Typography variant="body2"><strong>Nr klienta:</strong> {viewingClient.client_number}</Typography>
+              <Typography variant="body2"><strong>Email:</strong> {viewingClient.email}</Typography>
+              <Typography variant="body2"><strong>Telefon:</strong> {viewingClient.phone}</Typography>
+              <Typography variant="body2"><strong>Wizyty:</strong> {viewingClient.appointments_count}</Typography>
+              <Typography variant="body2"><strong>Notatki:</strong> {viewingClient.internal_notes || 'Brak'}</Typography>
+              <Typography variant="body2"><strong>Dołączył:</strong> {new Date(viewingClient.created_at).toLocaleDateString('pl-PL')}</Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setViewDialogOpen(false)}>Zamknij</Button></DialogActions>
       </Dialog>
     </Box>
   );
 };
 
-export default AdminClientsPage;
+export default ClientsPage;

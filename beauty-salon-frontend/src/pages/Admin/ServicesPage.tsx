@@ -1,259 +1,308 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Box,
-  Typography,
-  Paper,
   Button,
-  Grid,
-  Card,
-  CardContent,
-  CardActions,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   Chip,
-} from '@mui/material';
-import { Add, Edit, Delete } from '@mui/icons-material';
-import { getServices, createService, updateService, deleteService } from '../../api/services';
-import type { Service } from '../../types';
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  Paper,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
 
-const AdminServicesPage: React.FC = () => {
-  const [services, setServices] = useState<Service[]>([]);
+import type { Service } from "../../types";
+import {
+  getServices,
+  createService,
+  updateService,
+  disableService,
+  enableService,
+} from "../../api/services";
+
+function errMsg(e: any) {
+  const d = e?.response?.data;
+  if (typeof d?.detail === "string") return d.detail;
+  if (d && typeof d === "object") {
+    const k = Object.keys(d)[0];
+    const v = d[k];
+    if (Array.isArray(v) && v.length) return String(v[0]);
+    if (typeof v === "string") return v;
+  }
+  return e?.message || "Błąd";
+}
+
+type FormState = {
+  name: string;
+  category: string;
+  description: string;
+  price: string;
+  duration_minutes: string;
+  is_active: boolean;
+};
+
+const emptyForm: FormState = {
+  name: "",
+  category: "",
+  description: "",
+  price: "0",
+  duration_minutes: "30",
+  is_active: true,
+};
+
+export default function ServicesPage() {
+  const [items, setItems] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingService, setEditingService] = useState<Service | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    category: '',
-    description: '',
-    price: '',
-    duration_minutes: '',
-  });
 
-  useEffect(() => {
-    fetchServices();
-  }, []);
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.category || "").toLowerCase().includes(q)
+    );
+  }, [items, query]);
 
-  const fetchServices = async () => {
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+
+  // dialog
+  const [open, setOpen] = useState(false);
+  const [edit, setEdit] = useState<Service | null>(null);
+  const [form, setForm] = useState<FormState>(emptyForm);
+
+  async function load() {
+    setLoading(true);
+    setErr("");
     try {
-      console.log('Pobieram usługi...');
       const data = await getServices();
-      console.log('Otrzymane usługi:', data);
-      setServices(data);
-    } catch (err) {
-      console.error(err);
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setErr(errMsg(e));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleOpenDialog = (service?: Service) => {
-    if (service) {
-      setEditingService(service);
-      setFormData({
-        name: service.name,
-        category: service.category,
-        description: service.description,
-        price: service.price,
-        duration_minutes: service.duration_minutes.toString(),
-      });
-    } else {
-      setEditingService(null);
-      setFormData({
-        name: '',
-        category: '',
-        description: '',
-        price: '',
-        duration_minutes: '',
-      });
+  useEffect(() => {
+    load();
+  }, []);
+
+  function openCreate() {
+    setEdit(null);
+    setForm(emptyForm);
+    setOpen(true);
+  }
+
+  function openEdit(s: Service) {
+    setEdit(s);
+    setForm({
+      name: s.name ?? "",
+      category: s.category ?? "",
+      description: s.description ?? "",
+      price: String(s.price ?? "0"),
+      duration_minutes: String(s.duration_minutes ?? 30),
+      is_active: !!s.is_active,
+    });
+    setOpen(true);
+  }
+
+  async function save() {
+    setMsg("");
+    setErr("");
+
+    // prosta walidacja
+    if (!form.name.trim()) {
+      setErr("Nazwa jest wymagana.");
+      return;
     }
-    setDialogOpen(true);
-  };
+    const price = Number(form.price);
+    const dur = Number(form.duration_minutes);
+    if (Number.isNaN(price) || price < 0) {
+      setErr("Cena musi być liczbą >= 0.");
+      return;
+    }
+    if (Number.isNaN(dur) || dur < 5) {
+      setErr("Czas trwania musi być >= 5 minut.");
+      return;
+    }
 
-  const handleCloseDialog = () => {
-    setDialogOpen(false);
-    setEditingService(null);
-  };
-
-  const handleSubmit = async () => {
     try {
-      const serviceData = {
-        name: formData.name,
-        category: formData.category,
-        description: formData.description,
-        price: formData.price,
-        duration_minutes: parseInt(formData.duration_minutes) || 0,
-        is_active: true,
-      };
-
-      if (editingService) {
-        await updateService(editingService.id, serviceData);
+      if (edit) {
+        await updateService(edit.id, {
+          name: form.name.trim(),
+          category: form.category.trim(),
+          description: form.description,
+          price: form.price,
+          duration_minutes: dur,
+          is_active: form.is_active,
+        });
+        setMsg("Zapisano zmiany.");
       } else {
-        await createService(serviceData);
+        await createService({
+          name: form.name.trim(),
+          category: form.category.trim(),
+          description: form.description,
+          price: form.price,
+          duration_minutes: dur,
+          is_active: form.is_active,
+        });
+        setMsg("Dodano usługę.");
       }
-
-      await fetchServices();
-      handleCloseDialog();
-    } catch (err: any) {
-      console.error(err);
-      // Pokaż błędy z backendu
-      const errorMessage = err.response?.data?.detail
-        || JSON.stringify(err.response?.data)
-        || 'Błąd podczas zapisywania usługi';
-      alert(errorMessage);
+      setOpen(false);
+      await load();
+    } catch (e: any) {
+      setErr(errMsg(e));
     }
-  };
+  }
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tę usługę?')) return;
-
+  async function toggleActive(s: Service) {
+    setMsg("");
+    setErr("");
     try {
-      await deleteService(id);
-      fetchServices();
-    } catch (err) {
-      console.error(err);
-      alert('Błąd podczas usuwania usługi');
+      if (s.is_active) {
+        await disableService(s.id);
+        setMsg(`Wyłączono usługę: ${s.name}`);
+      } else {
+        await enableService(s.id);
+        setMsg(`Włączono usługę: ${s.name}`);
+      }
+      await load();
+    } catch (e: any) {
+      setErr(errMsg(e));
     }
-  };
-
-  if (loading) {
-    return <Typography>Ładowanie...</Typography>;
   }
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" fontWeight="bold">
-          Zarządzanie usługami
-        </Typography>
-        <Button
-          variant="contained"
-          startIcon={<Add />}
-          onClick={() => handleOpenDialog()}
-        >
+    <Stack spacing={2}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Typography variant="h5">Usługi</Typography>
+        <Button variant="contained" onClick={openCreate}>
           Dodaj usługę
         </Button>
-      </Box>
+      </Stack>
 
-      <Grid container spacing={3}>
-        {services.length === 0 ? (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography color="text.secondary">
-                Brak usług
-              </Typography>
-            </Paper>
-          </Grid>
-        ) : (
-          services.map((service) => (
-            <Grid item xs={12} sm={6} md={4} key={service.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1 }}>
-                    <Typography variant="h6" gutterBottom>
-                      {service.name}
-                    </Typography>
-                    <Chip
-                      label={service.is_active ? 'Aktywna' : 'Nieaktywna'}
-                      color={service.is_active ? 'success' : 'default'}
-                      size="small"
-                    />
-                  </Box>
-                  <Chip label={service.category} size="small" sx={{ mb: 1 }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {service.description}
-                  </Typography>
-                  <Typography variant="h6" color="primary">
-                    {service.price} PLN
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Czas trwania: {service.duration_minutes} min
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button
-                    size="small"
-                    startIcon={<Edit />}
-                    onClick={() => handleOpenDialog(service)}
-                  >
-                    Edytuj
-                  </Button>
-                  <Button
-                    size="small"
-                    color="error"
-                    startIcon={<Delete />}
-                    onClick={() => handleDelete(service.id)}
-                  >
-                    Usuń
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))
-        )}
-      </Grid>
+      {msg && <Alert severity="success">{msg}</Alert>}
+      {err && <Alert severity="error">{err}</Alert>}
 
-      {/* Dialog dodawania/edycji */}
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingService ? 'Edytuj usługę' : 'Dodaj nową usługę'}
-        </DialogTitle>
+      <Paper sx={{ p: 2 }}>
+        <Stack spacing={2}>
+          <TextField
+            label="Szukaj (nazwa/kategoria)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+
+          <Divider />
+
+          {loading ? (
+            <Typography>Ładowanie...</Typography>
+          ) : filtered.length === 0 ? (
+            <Alert severity="info">Brak usług.</Alert>
+          ) : (
+            <Stack spacing={1}>
+              {filtered.map((s) => (
+                <Paper key={s.id} variant="outlined" sx={{ p: 1.5 }}>
+                  <Stack
+                    direction={{ xs: "column", md: "row" }}
+                    spacing={1}
+                    justifyContent="space-between"
+                    alignItems={{ xs: "flex-start", md: "center" }}
+                  >
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography fontWeight={600}>{s.name}</Typography>
+                        <Chip
+                          size="small"
+                          label={s.is_active ? "active" : "disabled"}
+                          color={s.is_active ? "success" : "default"}
+                        />
+                        {s.category && <Chip size="small" label={s.category} />}
+                      </Stack>
+
+                      <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                        {s.duration_minutes} min • {s.price} zł
+                      </Typography>
+
+                      {!!s.description && (
+                        <Typography variant="body2" sx={{ mt: 0.5 }}>
+                          {s.description}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Stack direction="row" spacing={1}>
+                      <Button variant="outlined" onClick={() => openEdit(s)}>
+                        Edytuj
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color={s.is_active ? "error" : "success"}
+                        onClick={() => toggleActive(s)}
+                      >
+                        {s.is_active ? "Wyłącz" : "Włącz"}
+                      </Button>
+                    </Stack>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      </Paper>
+
+      {/* Dialog create/edit */}
+      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>{edit ? "Edytuj usługę" : "Dodaj usługę"}</DialogTitle>
         <DialogContent>
-          <TextField
-            fullWidth
-            label="Nazwa usługi"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Kategoria"
-            value={formData.category}
-            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Opis"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            margin="normal"
-            multiline
-            rows={3}
-          />
-          <TextField
-            fullWidth
-            label="Cena (PLN)"
-            type="number"
-            value={formData.price}
-            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Czas trwania (minuty)"
-            type="number"
-            value={formData.duration_minutes}
-            onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
-            margin="normal"
-            required
-          />
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="Nazwa"
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              required
+            />
+            <TextField
+              label="Kategoria"
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+            />
+            <TextField
+              label="Opis"
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              multiline
+              minRows={3}
+            />
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="Cena (zł)"
+                value={form.price}
+                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
+                fullWidth
+              />
+              <TextField
+                label="Czas (min)"
+                value={form.duration_minutes}
+                onChange={(e) => setForm((p) => ({ ...p, duration_minutes: e.target.value }))}
+                fullWidth
+              />
+            </Stack>
+          </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog}>Anuluj</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingService ? 'Zapisz' : 'Dodaj'}
+          <Button onClick={() => setOpen(false)}>Anuluj</Button>
+          <Button variant="contained" onClick={save}>
+            Zapisz
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Stack>
   );
-};
-
-export default AdminServicesPage;
+}

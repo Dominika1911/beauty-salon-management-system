@@ -1,106 +1,180 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
-import ProtectedRoute from '../components/ProtectedRoute';
-import Layout from '../components/Layout/Layout';
+import React from "react";
+import { Routes, Route } from "react-router-dom";
 
-// Pages - Public
-import LoginPage from '../pages/LoginPage';
-import HomePage from '../pages/HomePage';
-import NotFoundPage from '../pages/NotFoundPage';
-import AccessDeniedPage from '../pages/AccessDeniedPage';
+import Layout from "../components/Layout/Layout";
+import ProtectedRoute from "../components/ProtectedRoute";
 
-// Pages - Admin
-import AdminDashboardPage from '../pages/Admin/DashboardPage';
-import AdminAppointmentsPage from '../pages/Admin/AppointmentsPage';
-import AdminEmployeesPage from '../pages/Admin/EmployeesPage';
-import AdminEmployeeSchedulePage from '../pages/Admin/EmployeesSchedulePage.tsx';
-import AdminClientsPage from '../pages/Admin/ClientsPage';
-import AdminServicesPage from '../pages/Admin/ServicesPage';
-import AdminReportsPage from '../pages/Admin/ReportsPage';
-import AdminSettingsPage from '../pages/Admin/SettingsPage';
+import HomePage from "../pages/HomePage";
+import LoginPage from "../pages/LoginPage";
+import AccessDeniedPage from "../pages/AccessDeniedPage";
+import NotFoundPage from "../pages/NotFoundPage";
 
-// Pages - Employee
-import EmployeeDashboardPage from '../pages/Employee/DashboardPage';
-import EmployeeAppointmentsPage from '../pages/Employee/AppointmentsPage';
-import EmployeeSchedulePage from '../pages/Employee/SchedulePage';
+// ADMIN pages
+import AdminDashboardPage from "../pages/Admin/DashboardPage";
+import ServicesPage from "../pages/Admin/ServicesPage";
+import EmployeesPage from "../pages/Admin/EmployeesPage";
+import ClientsPage from "../pages/Admin/ClientsPage";
+import AdminAppointmentsPage from "../pages/Admin/AppointmentsPage";
+import SettingsPage from "../pages/Admin/SettingsPage";
+import EmployeesSchedulePage from "../pages/Admin/EmployeesSchedulePage";
+import ReportsPage from "../pages/Admin/ReportsPage"; // Import strony raportów
 
-// Pages - Client
-import ClientDashboardPage from '../pages/Client/DashboardPage';
-import ClientBookingPage from '../pages/Client/BookingPage';
-import ClientAppointmentsPage from '../pages/Client/AppointmentsPage';
+// EMPLOYEE pages
+import EmployeeDashboardPage from "../pages/Employee/DashboardPage";
+import EmployeeAppointmentsPage from "../pages/Employee/AppointmentsPage";
+import EmployeeSchedulePage from "../pages/Employee/SchedulePage";
+import EmployeeCalendarPage from "../pages/Employee/CalendarPage";
 
-const router = createBrowserRouter([
-  // Public routes
-  {
-    path: '/',
-    element: <HomePage />,
-  },
-  {
-    path: '/login',
-    element: <LoginPage />,
-  },
-  {
-    path: '/access-denied',
-    element: <AccessDeniedPage />,
-  },
+// CLIENT pages
+import ClientDashboardPage from "../pages/Client/DashboardPage";
+import ClientAppointmentsPage from "../pages/Client/AppointmentsPage";
+import BookingPage from "../pages/Client/BookingPage";
 
-  // Admin routes
-  {
-    path: '/admin',
-    element: (
-      <ProtectedRoute allowedRoles={['ADMIN']}>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: <Navigate to="/admin/dashboard" replace /> },
-      { path: 'dashboard', element: <AdminDashboardPage /> },
-      { path: 'appointments', element: <AdminAppointmentsPage /> },
-      { path: 'employees', element: <AdminEmployeesPage /> },
-      { path: 'employees/:id/schedule', element: <AdminEmployeeSchedulePage /> },
-      { path: 'clients', element: <AdminClientsPage /> },
-      { path: 'services', element: <AdminServicesPage /> },
-      { path: 'reports', element: <AdminReportsPage /> },
-      { path: 'settings', element: <AdminSettingsPage /> },
-    ],
-  },
+export default function Router() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/access-denied" element={<AccessDeniedPage />} />
 
-  // Employee routes
-  {
-    path: '/employee',
-    element: (
-      <ProtectedRoute allowedRoles={['EMPLOYEE']}>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: <Navigate to="/employee/dashboard" replace /> },
-      { path: 'dashboard', element: <EmployeeDashboardPage /> },
-      { path: 'appointments', element: <EmployeeAppointmentsPage /> },
-      { path: 'schedule', element: <EmployeeSchedulePage /> },
-    ],
-  },
+      {/* Layout (Navbar + Sidebar + Outlet) */}
+      <Route element={<Layout />}>
 
-  // Client routes
-  {
-    path: '/client',
-    element: (
-      <ProtectedRoute allowedRoles={['CLIENT']}>
-        <Layout />
-      </ProtectedRoute>
-    ),
-    children: [
-      { index: true, element: <Navigate to="/client/dashboard" replace /> },
-      { path: 'dashboard', element: <ClientDashboardPage /> },
-      { path: 'booking', element: <ClientBookingPage /> },
-      { path: 'appointments', element: <ClientAppointmentsPage /> },
-    ],
-  },
+        {/* =========================================================
+            ADMIN ROUTES
+        ========================================================= */}
+        <Route
+          path="/admin/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <AdminDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/appointments"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <AdminAppointmentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/services"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <ServicesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/employees"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <EmployeesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/employees-schedule"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <EmployeesSchedulePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/clients"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <ClientsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* TRASA DLA RAPORTÓW - Naprawia błąd 404 */}
+        <Route
+          path="/admin/reports"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/settings"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
 
-  // 404
-  {
-    path: '*',
-    element: <NotFoundPage />,
-  },
-]);
+        {/* =========================================================
+            EMPLOYEE ROUTES
+        ========================================================= */}
+        <Route
+          path="/employee/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
+              <EmployeeDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/appointments"
+          element={
+            <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
+              <EmployeeAppointmentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/calendar"
+          element={
+            <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
+              <EmployeeCalendarPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/schedule"
+          element={
+            <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
+              <EmployeeSchedulePage />
+            </ProtectedRoute>
+          }
+        />
 
-export default router;
+        {/* =========================================================
+            CLIENT ROUTES
+        ========================================================= */}
+        <Route
+          path="/client/dashboard"
+          element={
+            <ProtectedRoute allowedRoles={["CLIENT"]}>
+              <ClientDashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/client/appointments"
+          element={
+            <ProtectedRoute allowedRoles={["CLIENT"]}>
+              <ClientAppointmentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/client/booking"
+          element={
+            <ProtectedRoute allowedRoles={["CLIENT"]}>
+              <BookingPage />
+            </ProtectedRoute>
+          }
+        />
+      </Route>
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  );
+}

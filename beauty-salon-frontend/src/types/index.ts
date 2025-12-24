@@ -1,5 +1,10 @@
-// Typy użytkownika i ról
-export type UserRole = 'ADMIN' | 'EMPLOYEE' | 'CLIENT';
+// src/types/index.ts
+
+// ============================================================================
+// UŻYTKOWNIK / ROLE
+// ============================================================================
+
+export type UserRole = "ADMIN" | "EMPLOYEE" | "CLIENT";
 
 export interface User {
   id: number;
@@ -14,23 +19,26 @@ export interface User {
     id: number;
     employee_number: string;
     full_name: string;
-  };
+  } | null;
   client_profile?: {
     id: number;
     client_number: string;
     full_name: string;
-  };
+  } | null;
   created_at: string;
   updated_at: string;
 }
 
-// Usługi
+// ============================================================================
+// USŁUGI
+// ============================================================================
+
 export interface Service {
   id: number;
   name: string;
   category: string;
   description: string;
-  price: string;
+  price: string; // DRF Decimal przesyła jako string
   duration_minutes: number;
   duration_display: string;
   is_active: boolean;
@@ -38,7 +46,10 @@ export interface Service {
   updated_at: string;
 }
 
-// Pracownicy
+// ============================================================================
+// PRACOWNICY
+// ============================================================================
+
 export interface Employee {
   id: number;
   user: number;
@@ -50,46 +61,63 @@ export interface Employee {
   phone: string;
   skills: Service[];
   skill_ids?: number[];
-  email?: string;  // Tylko przy tworzeniu
-  password?: string;  // Tylko przy tworzeniu
+  email?: string;
+  password?: string;
   is_active: boolean;
   hired_at: string;
   created_at: string;
   updated_at: string;
+  // Pola dodawane przez annotate w EmployeeViewSet
+  appointments_count: number;
+  completed_appointments_count: number;
+  revenue_completed_total: string;
 }
 
-// Klienci
+// ============================================================================
+// KLIENCI
+// ============================================================================
+
 export interface Client {
   id: number;
   user: number | null;
   user_username?: string;
+  user_email?: string;
+
   client_number: string;
   first_name: string;
   last_name: string;
+
   email: string;
   phone: string;
+
   internal_notes: string;
-  password?: string;  // Tylko przy tworzeniu
+  password?: string;
+
   is_active: boolean;
+
+  // Poprawione: Backend zawsze to zwraca dzięki annotate w ClientViewSet
+  // Brak znaku zapytania naprawia błąd TS18048 w Twoim kodzie React
   appointments_count: number;
+
   created_at: string;
   updated_at: string;
 }
 
-// Statusy wizyt
-export type AppointmentStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+// ============================================================================
+// WIZYTY
+// ============================================================================
 
-// Wizyty
+export type AppointmentStatus = "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
+
 export interface Appointment {
   id: number;
-  client: number;
+  client: number | null;
   client_name: string | null;
   employee: number;
   employee_name: string;
   service: number;
   service_name: string;
-  service_price: string;  // Cena usługi
-  service_duration: number;  // Czas trwania w minutach
+  service_price: string;
   start: string;
   end: string;
   status: AppointmentStatus;
@@ -99,7 +127,10 @@ export interface Appointment {
   updated_at: string;
 }
 
-// Rezerwacja wizyty
+// ============================================================================
+// REZERWACJA I DOSTĘPNOŚĆ
+// ============================================================================
+
 export interface BookingCreate {
   client_id?: number;
   employee_id: number;
@@ -107,19 +138,17 @@ export interface BookingCreate {
   start: string;
 }
 
-// Dostępne sloty
 export interface AvailableSlot {
-  start: string;  // ISO timestamp: "2025-12-25T09:00:00+01:00"
-  end: string;    // ISO timestamp: "2025-12-25T09:45:00+01:00"
+  start: string;
+  end: string;
 }
 
 // ============================================================================
-// DASHBOARDS - POPRAWIONE ZGODNIE Z BACKENDEM
+// DASHBOARD (Zgodny z DashboardView w views.py)
 // ============================================================================
 
-// Dashboard - Admin
 export interface AdminDashboard {
-  role: 'ADMIN';
+  role: "ADMIN";
   today: {
     date: string;
     appointments_count: number;
@@ -137,9 +166,8 @@ export interface AdminDashboard {
   };
 }
 
-// Dashboard - Employee
 export interface EmployeeDashboard {
-  role: 'EMPLOYEE';
+  role: "EMPLOYEE";
   employee_number: string;
   full_name: string;
   today: {
@@ -155,9 +183,8 @@ export interface EmployeeDashboard {
   };
 }
 
-// Dashboard - Client
 export interface ClientDashboard {
-  role: 'CLIENT';
+  role: "CLIENT";
   client_number: string;
   full_name: string;
   upcoming_appointments: {
@@ -170,20 +197,15 @@ export interface ClientDashboard {
   };
 }
 
-// Union type dla wszystkich dashboardów
 export type DashboardResponse = AdminDashboard | EmployeeDashboard | ClientDashboard;
 
 // ============================================================================
 // RAPORTY
 // ============================================================================
 
-// Raporty - Przychody
 export interface RevenueReport {
-  range: {
-    from: string;
-    to: string;
-  };
-  group_by: 'day' | 'month';
+  range: { from: string; to: string };
+  group_by: "day" | "month";
   summary: {
     total_revenue: number;
     total_appointments: number;
@@ -196,30 +218,40 @@ export interface RevenueReport {
   }>;
 }
 
-// Raporty - Wydajność pracownika
-export interface EmployeePerformance {
-  employee: number;
-  employee_name: string;
-  total_appointments: number;
-  completed_appointments: number;
-  cancelled_appointments: number;
-  completion_rate: number;
-  total_revenue: string;
+export interface EmployeePerformanceReport {
+  employee: {
+    id: number;
+    employee_number: string;
+    full_name: string;
+  };
+  period: { from: string; to: string };
+  statistics: {
+    total_appointments: number;
+    completed: number;
+    cancelled: number;
+    completion_rate: number;
+    total_revenue: number;
+  };
   top_services: Array<{
-    service_name: string;
+    service__id: number;
+    service__name: string;
     count: number;
   }>;
 }
 
-// Raporty - Popularne usługi
-export interface PopularService {
-  service: Service;
-  bookings_count: number;
-  completed_count: number;
-  total_revenue: string;
+export interface PopularServicesResponse {
+  period: { from: string; to: string };
+  top_services: Array<{ // Klucz zmieniony na 'top_services' zgodnie z views.py
+    service__id: number;
+    service__name: string;
+    count: number;
+  }>;
 }
 
-// Ustawienia systemu
+// ============================================================================
+// SYSTEM
+// ============================================================================
+
 export interface SystemSettings {
   id: number;
   salon_name: string;
@@ -236,31 +268,39 @@ export interface SystemSettings {
   updated_by_username: string | null;
 }
 
-// Auth - Login Request
+export interface SystemLog {
+  id: number;
+  action: string;
+  action_display: string;
+  performed_by_username: string;
+  target_user_username: string | null;
+  timestamp: string;
+}
+
+// ============================================================================
+// AUTH / API
+// ============================================================================
+
 export interface LoginRequest {
   username: string;
   password: string;
 }
 
-// Auth - Login Response
 export interface LoginResponse {
   detail: string;
   user: User;
 }
 
-// Auth - Status Response
 export interface AuthStatusResponse {
   isAuthenticated: boolean;
   user: User | null;
 }
 
-// Errors
 export interface ApiError {
   detail?: string;
   [key: string]: any;
 }
 
-// Pagination
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;

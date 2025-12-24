@@ -1,113 +1,141 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from "react";
 import {
-  Box,
-  Typography,
+  Alert,
+  Button,
+  CircularProgress,
   Paper,
-  Card,
-  CardContent,
+  Stack,
+  Typography,
   Chip,
-  Grid,
-} from '@mui/material';
-import { getAppointments } from '../../api/appointments';
-import { useAuth } from '../../context/AuthContext';
-import type { Appointment } from '../../types';
+  Box,
+} from "@mui/material";
+import type { Appointment } from "../../types";
+import { getAppointments, cancelAppointment } from "../../api/appointments";
 
-const ClientAppointmentsPage: React.FC = () => {
-  const { user } = useAuth();
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchAppointments = async () => {
-      if (!user?.client_profile?.id) return;
-
-      try {
-        const data = await getAppointments({ client: user.client_profile.id });
-        setAppointments(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAppointments();
-  }, [user]);
-
-  const getStatusColor = (status: string) => {
-    if (status === 'PENDING') return 'warning';
-    if (status === 'CONFIRMED') return 'info';
-    if (status === 'COMPLETED') return 'success';
-    if (status === 'CANCELLED') return 'error';
-    return 'default';
+// Funkcja pomocnicza do mapowania statusów na polskie nazwy i kolory
+function renderStatusChip(status: string) {
+  const statusMap: Record<string, { label: string; color: "warning" | "success" | "default" | "error" }> = {
+    PENDING: { label: "Oczekująca", color: "warning" },
+    CONFIRMED: { label: "Potwierdzona", color: "success" },
+    COMPLETED: { label: "Zakończona", color: "default" },
+    CANCELLED: { label: "Anulowana", color: "error" },
   };
 
-  if (loading) {
-    return <Typography>Ładowanie...</Typography>;
+  const current = statusMap[status] || { label: status, color: "default" };
+  return <Chip size="small" label={current.label} color={current.color} />;
+}
+
+export default function ClientAppointmentsPage() {
+  const [items, setItems] = useState<Appointment[] | null>(null);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+
+  async function load() {
+    setErr("");
+    setMsg("");
+    try {
+      const res = await getAppointments();
+      setItems(res);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || e?.message || "Błąd podczas ładowania wizyt.");
+    }
   }
 
-  return (
-    <Box>
-      <Typography variant="h4" fontWeight="bold" gutterBottom>
-        Moje wizyty
-      </Typography>
+  useEffect(() => {
+    load();
+  }, []);
 
-      <Paper sx={{ p: 3 }}>
-        {appointments.length === 0 ? (
-          <Typography color="text.secondary">
-            Nie masz żadnych wizyt
-          </Typography>
-        ) : (
-          appointments.map((appointment) => (
-            <Card key={appointment.id} sx={{ mb: 2 }}>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="h6">
-                    {appointment.service_name}
-                  </Typography>
-                  <Chip
-                    label={appointment.status_display}
-                    color={getStatusColor(appointment.status)}
-                    size="small"
-                  />
-                </Box>
+  async function handleCancel(id: number) {
+    if (!window.confirm("Czy na pewno chcesz anulować tę wizytę?")) return;
 
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Data
-                    </Typography>
-                    <Typography variant="body1">
-                      {new Date(appointment.start).toLocaleDateString('pl-PL')}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Godzina
-                    </Typography>
-                    <Typography variant="body1">
-                      {new Date(appointment.start).toLocaleTimeString('pl-PL', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Typography variant="body2" color="text.secondary">
-                      Pracownik
-                    </Typography>
-                    <Typography variant="body1">
-                      {appointment.employee_name}
-                    </Typography>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          ))
-        )}
-      </Paper>
+    setErr("");
+    setMsg("");
+    try {
+      await cancelAppointment(id);
+      setMsg("Wizyta została pomyślnie anulowana.");
+      await load();
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || e?.message || "Nie udało się anulować wizyty.");
+    }
+  }
+
+  if (err) return <Alert severity="error" sx={{ m: 2 }}>{err}</Alert>;
+  if (!items) return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+      <CircularProgress />
     </Box>
   );
-};
 
-export default ClientAppointmentsPage;
+  const upcoming = items.filter((a) => a.status === "PENDING" || a.status === "CONFIRMED");
+  const history = items.filter((a) => a.status === "COMPLETED" || a.status === "CANCELLED");
+
+  return (
+    <Stack spacing={3} sx={{ p: { xs: 1, md: 3 } }}>
+      <Typography variant="h5" fontWeight="bold">Moje wizyty</Typography>
+
+      {msg && <Alert severity="success">{msg}</Alert>}
+
+      <Paper sx={{ p: 2, borderRadius: 2 }}>
+        <Typography variant="h6" gutterBottom color="primary">Nadchodzące</Typography>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          {upcoming.length === 0 ? (
+            <Alert severity="info">Brak nadchodzących wizyt.</Alert>
+          ) : (
+            upcoming.map((a) => (
+              <Paper key={a.id} variant="outlined" sx={{ p: 2, transition: '0.2s', '&:hover': { boxShadow: 1 } }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {a.service_name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Pracownik: {a.employee_name}
+                    </Typography>
+                  </Box>
+                  {renderStatusChip(a.status)}
+                </Stack>
+
+                <Typography variant="body2" sx={{ mt: 1, fontWeight: 500 }}>
+                  {new Date(a.start).toLocaleString('pl-PL', { dateStyle: 'long', timeStyle: 'short' })}
+                </Typography>
+
+                <Button
+                  size="small"
+                  sx={{ mt: 2 }}
+                  color="error"
+                  variant="outlined"
+                  onClick={() => handleCancel(a.id)}
+                >
+                  Anuluj wizytę
+                </Button>
+              </Paper>
+            ))
+          )}
+        </Stack>
+      </Paper>
+
+      <Paper sx={{ p: 2, borderRadius: 2 }}>
+        <Typography variant="h6" gutterBottom color="text.secondary">Historia wizyt</Typography>
+        <Stack spacing={1} sx={{ mt: 1 }}>
+          {history.length === 0 ? (
+            <Alert severity="info">Brak historii wizyt.</Alert>
+          ) : (
+            history.map((a) => (
+              <Paper key={a.id} variant="outlined" sx={{ p: 1.5, opacity: 0.8, backgroundColor: '#fcfcfc' }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Box>
+                    <Typography variant="body1">{a.service_name} • {a.employee_name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(a.start).toLocaleString('pl-PL')}
+                    </Typography>
+                  </Box>
+                  {renderStatusChip(a.status)}
+                </Stack>
+              </Paper>
+            ))
+          )}
+        </Stack>
+      </Paper>
+    </Stack>
+  );
+}
