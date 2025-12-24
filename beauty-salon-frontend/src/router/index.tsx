@@ -17,7 +17,8 @@ import ClientsPage from "../pages/Admin/ClientsPage";
 import AdminAppointmentsPage from "../pages/Admin/AppointmentsPage";
 import SettingsPage from "../pages/Admin/SettingsPage";
 import EmployeesSchedulePage from "../pages/Admin/EmployeesSchedulePage";
-import ReportsPage from "../pages/Admin/ReportsPage"; // Import strony raportów
+import ReportsPage from "../pages/Admin/ReportsPage";
+import LogsPage from "../pages/Admin/LogsPage";
 
 // EMPLOYEE pages
 import EmployeeDashboardPage from "../pages/Employee/DashboardPage";
@@ -33,11 +34,12 @@ import BookingPage from "../pages/Client/BookingPage";
 export default function Router() {
   return (
     <Routes>
+      {/* Publiczne trasy */}
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/access-denied" element={<AccessDeniedPage />} />
 
-      {/* Layout (Navbar + Sidebar + Outlet) */}
+      {/* Trasy chronione z Layoutem (Navbar + Sidebar) */}
       <Route element={<Layout />}>
 
         {/* =========================================================
@@ -91,7 +93,6 @@ export default function Router() {
             </ProtectedRoute>
           }
         />
-        {/* TRASA DLA RAPORTÓW - Naprawia błąd 404 */}
         <Route
           path="/admin/reports"
           element={
@@ -105,6 +106,14 @@ export default function Router() {
           element={
             <ProtectedRoute allowedRoles={["ADMIN"]}>
               <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/logs"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <LogsPage />
             </ProtectedRoute>
           }
         />
@@ -174,6 +183,7 @@ export default function Router() {
         />
       </Route>
 
+      {/* 404 - Not Found */}
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

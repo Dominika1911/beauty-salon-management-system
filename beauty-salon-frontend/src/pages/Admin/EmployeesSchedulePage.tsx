@@ -43,8 +43,9 @@ function normalizeWeeklyHours(input: any): Partial<WeeklyHours> {
   return input;
 }
 
+// POPRAWKA: walidacja realnych godzin
 function isValidHHMM(s: string) {
-  return /^\d{2}:\d{2}$/.test(s);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 }
 
 export default function EmployeesSchedulePage() {
@@ -91,7 +92,6 @@ export default function EmployeesSchedulePage() {
         const sch = await getEmployeeSchedule(Number(employeeId));
         setWeekly(normalizeWeeklyHours(sch.weekly_hours));
       } catch (e: any) {
-        // jeśli brak schedule, backend tworzy get_or_create w widoku, ale na wszelki wypadek:
         setWeekly({});
         setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania grafiku.");
       } finally {
@@ -103,7 +103,7 @@ export default function EmployeesSchedulePage() {
   const setPeriod = (day: DayKey, idx: number, field: "start" | "end", value: string) => {
     setWeekly((prev) => {
       const copy = { ...(prev || {}) };
-      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
       const row = { ...(arr[idx] || { start: "09:00", end: "17:00" }) };
       row[field] = value;
       arr[idx] = row;
@@ -115,7 +115,7 @@ export default function EmployeesSchedulePage() {
   const addPeriod = (day: DayKey) => {
     setWeekly((prev) => {
       const copy = { ...(prev || {}) };
-      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
       arr.push({ start: "09:00", end: "17:00" });
       (copy as any)[day] = arr;
       return copy;
@@ -125,7 +125,7 @@ export default function EmployeesSchedulePage() {
   const removePeriod = (day: DayKey, idx: number) => {
     setWeekly((prev) => {
       const copy = { ...(prev || {}) };
-      const arr = Array.isArray(copy[day]) ? [...(copy[day] as any[])] : [];
+      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
       arr.splice(idx, 1);
       (copy as any)[day] = arr;
       return copy;
@@ -141,11 +141,14 @@ export default function EmployeesSchedulePage() {
       for (const p of periods) {
         const start = p?.start;
         const end = p?.end;
+
         if (!isValidHHMM(start) || !isValidHHMM(end)) {
           return `Nieprawidłowy format godziny w ${dayLabels[day]} (użyj HH:MM).`;
         }
+
+        // Porównanie stringów działa dla HH:MM
         if (start >= end) {
-          return `Godzina start musi być < end w ${dayLabels[day]}.`;
+          return `Godzina start musi być < koniec w ${dayLabels[day]}.`;
         }
       }
     }
@@ -222,18 +225,13 @@ export default function EmployeesSchedulePage() {
         ) : (
           <Stack spacing={2}>
             {(Object.keys(dayLabels) as DayKey[]).map((day) => {
-              const periods: Array<{ start: string; end: string }> = ((weekly as any)[day] ??
-                []) as any;
+              const periods: Array<{ start: string; end: string }> = ((weekly as any)[day] ?? []) as any;
 
               return (
                 <Paper key={day} variant="outlined" sx={{ p: 2 }}>
                   <Stack direction="row" justifyContent="space-between" alignItems="center">
                     <Typography fontWeight={600}>{dayLabels[day]}</Typography>
-                    <Button
-                      size="small"
-                      startIcon={<AddIcon />}
-                      onClick={() => addPeriod(day)}
-                    >
+                    <Button size="small" startIcon={<AddIcon />} onClick={() => addPeriod(day)}>
                       Dodaj przedział
                     </Button>
                   </Stack>
@@ -246,21 +244,26 @@ export default function EmployeesSchedulePage() {
                     <Stack spacing={1} sx={{ mt: 1 }}>
                       {periods.map((p, idx) => (
                         <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                          {/* POPRAWKA: type="time" => bez literówek, zawsze HH:MM */}
                           <TextField
                             label="Start"
+                            type="time"
                             value={p.start}
                             onChange={(e) => setPeriod(day, idx, "start", e.target.value)}
                             size="small"
-                            placeholder="09:00"
-                            sx={{ width: 140 }}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ step: 300 }}
+                            sx={{ width: 160 }}
                           />
                           <TextField
-                            label="End"
+                            label="Koniec"
+                            type="time"
                             value={p.end}
                             onChange={(e) => setPeriod(day, idx, "end", e.target.value)}
                             size="small"
-                            placeholder="17:00"
-                            sx={{ width: 140 }}
+                            InputLabelProps={{ shrink: true }}
+                            inputProps={{ step: 300 }}
+                            sx={{ width: 160 }}
                           />
 
                           <IconButton

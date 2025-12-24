@@ -177,7 +177,7 @@ export default function AdminAppointmentsPage() {
       <Divider />
 
       {/* SEKCJA: HISTORIA I W TRAKCIE */}
-      <Typography variant="h6" color="textSecondary">Historia i do rozliczenia</Typography>
+      <Typography variant="h6" color="textSecondary">Historia</Typography>
       <Stack spacing={1}>
         {history.length === 0 ? (
           <Alert severity="info">Brak wizyt w historii.</Alert>

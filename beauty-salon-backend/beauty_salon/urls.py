@@ -57,12 +57,11 @@ urlpatterns = [
     # Nowy uniwersalny endpoint dla raportów PDF
     # Wywołanie np. /api/reports/revenue/ lub /api/reports/employees/
     # ZMIANA TUTAJ: Dodajemy /pdf/ do ścieżki
-    path('reports/<str:report_type>/pdf/', ReportView.as_view(), name='report-pdf'),
 
-    # Opcjonalnie zachowaj to, jeśli chcesz mieć też listę raportów pod /api/reports/
-    path('reports/', ReportView.as_view(), name='reports-list'),
 
-    # USUNIĘTO stare ścieżki raportów API, ponieważ teraz generujemy PDFy przez ReportView
+    path("reports/<str:report_type>/", ReportView.as_view(), name="report-json"),
+    path("reports/<str:report_type>/pdf/", ReportView.as_view(), name="report-pdf"),
+    path("reports/", ReportView.as_view(), name="reports-list"),
 
     # CRUD - ROUTER NA KOŃCU
     path('', include(router.urls)),

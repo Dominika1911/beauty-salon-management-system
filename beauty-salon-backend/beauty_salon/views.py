@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-import io  # Naprawi błąd 'io'
+import os
+import io
 from datetime import datetime, timedelta, time
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth
+from django.http import HttpResponse
 from django.utils import timezone
-from django.http import HttpResponse  # Naprawi błąd 'HttpResponse'
 
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
@@ -18,11 +20,14 @@ from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 
-# IMPORTY DLA PDF (ReportLab) - To naprawi błędy 'A4', 'colors' itd.
+# IMPORTY DLA PDF (ReportLab)
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.fonts import addMapping
 
 from .models import (
     Service,
@@ -52,6 +57,29 @@ from .serializers import (
 from .permissions import IsAdmin, IsAdminOrEmployee, IsEmployee, CanCancelAppointment
 
 User = get_user_model()
+
+# =============================================================================
+# PDF FONT (DejaVuSans) - polskie znaki, naprawia "czarne kwadraty"
+# =============================================================================
+FONT_PATH = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
+PDF_FONT_NAME = "DejaVuSans"
+
+try:
+    if os.path.exists(FONT_PATH):
+        pdfmetrics.registerFont(TTFont(PDF_FONT_NAME, FONT_PATH))
+        addMapping(PDF_FONT_NAME, 0, 0, PDF_FONT_NAME)
+    else:
+        # Bezpieczny fallback, jeśli font nie został dodany do projektu
+        PDF_FONT_NAME = "Helvetica"
+except Exception:
+    # Bezpieczny fallback w razie problemów z fontem (np. brak pliku/permissions)
+    PDF_FONT_NAME = "Helvetica"
+
+
+def clean_text(s):
+    if s is None:
+        return ""
+    return str(s).replace("\u00a0", " ").replace("\u200b", "")
 
 
 # =============================================================================
@@ -175,7 +203,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return Response(EmployeeScheduleSerializer(schedule).data)
 
         # BLOKADA DLA PRACOWNIKÓW:
-        # Sprawdzamy, czy użytkownik to admin (is_staff). Jeśli nie - wyrzucamy błąd 403.
         if not request.user.is_staff:
             return Response(
                 {"detail": "Tylko administrator może zmieniać grafik."},
@@ -321,7 +348,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appt.status == Appointment.Status.COMPLETED:
             return Response({"detail": "Nie można anulować zakończonej wizyty."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # (opcjonalnie) tylko te dwa statusy:
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
             return Response({"detail": "Nie można anulować wizyty w tym statusie."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -629,6 +655,7 @@ class CheckAvailabilityView(APIView):
             "duration_minutes": service.duration_minutes + buffer_minutes,
         })
 
+
 # =============================================================================
 # Dashboard
 # =============================================================================
@@ -822,8 +849,20 @@ class ReportView(APIView):
     def _build_pdf_response(self, title_text, data, filename, landscape_mode=False):
         buffer = io.BytesIO()
         pagesize = landscape(A4) if landscape_mode else A4
-        doc = SimpleDocTemplate(buffer, pagesize=pagesize, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=18)
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=pagesize,
+            rightMargin=30,
+            leftMargin=30,
+            topMargin=30,
+            bottomMargin=18
+        )
         styles = getSampleStyleSheet()
+
+        # Font dla polskich znaków w nagłówkach i tekście
+        styles["Title"].fontName = PDF_FONT_NAME
+        styles["Normal"].fontName = PDF_FONT_NAME
+
         elements = []
 
         elements.append(Paragraph(title_text, styles['Title']))
@@ -832,13 +871,15 @@ class ReportView(APIView):
 
         table = Table(data, repeatRows=1)
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#9c27b0")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#9c27b0")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),      # header
+            ("FONTNAME", (0, 1), (-1, -1), PDF_FONT_NAME),     # body
+            ("FONTSIZE", (0, 0), (-1, -1), 10),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ]))
 
         elements.append(table)
@@ -861,7 +902,11 @@ class ReportView(APIView):
             since = timezone.make_aware(datetime.combine(datetime.strptime(date_from, "%Y-%m-%d"), time.min))
             until = timezone.make_aware(datetime.combine(datetime.strptime(date_to, "%Y-%m-%d"), time.max))
 
-        completed = Appointment.objects.filter(status=Appointment.Status.COMPLETED, start__gte=since, start__lte=until)
+        completed = Appointment.objects.filter(
+            status=Appointment.Status.COMPLETED,
+            start__gte=since,
+            start__lte=until
+        )
         trunc_func = TruncDate('start') if group_by == 'day' else TruncMonth('start')
 
         grouped = (
@@ -893,8 +938,8 @@ class ReportView(APIView):
     def _revenue_pdf_report(self, request):
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
+        group_by = request.query_params.get("group_by", "day")
 
-        # Filtrowanie
         since = timezone.now() - timedelta(days=30)
         until = timezone.now()
         if date_from and date_to:
@@ -911,13 +956,12 @@ class ReportView(APIView):
         data = [['Data', 'Klient', 'Usługa', 'Cena']]
 
         for a in appts:
-            # NAPRAWIONY BŁĄD AttributeError:
             c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
             data.append([
                 a.start.strftime('%Y-%m-%d'),
-                c_name,
-                a.service.name if a.service else "-",
-                f"{a.service.price} zł"
+                clean_text(c_name),
+                clean_text(a.service.name if a.service else "-"),
+                f"{a.service.price} zł" if a.service else "-"
             ])
 
         data.append(['', '', 'SUMA:', f"{total} zł"])
@@ -927,23 +971,40 @@ class ReportView(APIView):
         employees = EmployeeProfile.objects.all().order_by('last_name')
         data = [['Nr', 'Imię i Nazwisko', 'Telefon', 'Status']]
         for e in employees:
-            data.append([e.employee_number, f"{e.first_name} {e.last_name}", e.phone or "-",
-                         "Aktywny" if e.is_active else "Nieaktywny"])
+            data.append([
+                clean_text(e.employee_number),
+                clean_text(f"{e.first_name} {e.last_name}"),
+                clean_text(e.phone or "-"),
+                "Aktywny" if e.is_active else "Nieaktywny"
+            ])
         return self._build_pdf_response("Lista Pracowników", data, "pracownicy.pdf")
+
+    def _clients_report(self):
+        clients = ClientProfile.objects.all().order_by("last_name")
+        data = [["Nr", "Imię i Nazwisko", "Telefon", "Email"]]
+        for c in clients:
+            data.append([
+                clean_text(getattr(c, "client_number", c.id)),
+                clean_text(f"{c.first_name} {c.last_name}"),
+                clean_text(getattr(c, "phone", None) or "-"),
+                clean_text(getattr(c, "email", None) or "-"),
+            ])
+        return self._build_pdf_response("Baza Klientów", data, "klienci.pdf")
 
     def _today_appointments_report(self):
         today = timezone.now().date()
-        appts = Appointment.objects.filter(start__date=today).select_related('client', 'employee', 'service').order_by(
-            'start')
+        appts = Appointment.objects.filter(start__date=today).select_related('client', 'employee', 'service').order_by('start')
         data = [['Godz', 'Klient', 'Pracownik', 'Usługa', 'Cena']]
+
         for a in appts:
             c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
             e_name = f"{a.employee.first_name} {a.employee.last_name}" if a.employee else "-"
             data.append([
                 a.start.strftime('%H:%M'),
-                c_name,
-                e_name,
-                a.service.name if a.service else "-",
-                f"{a.service.price} zł"
+                clean_text(c_name),
+                clean_text(e_name),
+                clean_text(a.service.name if a.service else "-"),
+                f"{a.service.price} zł" if a.service else "-"
             ])
+
         return self._build_pdf_response(f"Grafik na dzień {today}", data, "grafik_dzis.pdf")
