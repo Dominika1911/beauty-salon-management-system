@@ -1,5 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { login as apiLogin, logout as apiLogout, checkAuthStatus, getCsrfToken } from '../api/auth';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  ReactNode,
+} from 'react';
+import { login as apiLogin, logout as apiLogout, checkAuthStatus } from '../api/auth';
 import type { User, LoginRequest } from '../types';
 
 interface AuthContextType {
@@ -20,11 +28,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await checkAuthStatus();
+      setUser(response.isAuthenticated && response.user ? response.user : null);
+    } catch {
+      setUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // CSRF jest kluczowe dla bezpieczeństwa sesji
-        await getCsrfToken();
         await refreshUser();
       } catch (error) {
         console.error('Inicjalizacja auth nieudana:', error);
@@ -32,62 +47,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLoading(false);
       }
     };
-    initAuth();
-  }, []);
+    void initAuth();
+  }, [refreshUser]);
 
-  const refreshUser = async () => {
-    try {
-      const response = await checkAuthStatus();
-      if (response.isAuthenticated && response.user) {
-        // Twoja ważna logika sprawdzania profilu klienta
-        if (response.user.role === 'CLIENT' && !response.user.client_profile?.id) {
-          console.error(' BŁĄD: Rola CLIENT bez client_profile!');
-        }
-        setUser(response.user);
-      } else {
-        setUser(null);
-      }
-    } catch (error) {
-      setUser(null);
-    }
-  };
-
-  const login = async (credentials: LoginRequest) => {
+  const login = useCallback(async (credentials: LoginRequest) => {
     try {
       const response = await apiLogin(credentials);
       setUser(response.user);
-      return response.user; // Zwracamy usera, by strona logowania wiedziała gdzie przekierować
+      return response.user;
     } catch (error: any) {
       console.error('Błąd logowania:', error);
       throw error;
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await apiLogout();
     } finally {
       setUser(null);
     }
-  };
+  }, []);
 
-  const value = {
-    user,
-    loading,
-    login,
-    logout,
-    refreshUser,
-    isAuthenticated: !!user,
-    isAdmin: user?.role === 'ADMIN',
-    isEmployee: user?.role === 'EMPLOYEE',
-    isClient: user?.role === 'CLIENT',
-  };
+  const value = useMemo<AuthContextType>(
+    () => ({
+      user,
+      loading,
+      login,
+      logout,
+      refreshUser,
+      isAuthenticated: Boolean(user),
+      isAdmin: user?.role === 'ADMIN',
+      isEmployee: user?.role === 'EMPLOYEE',
+      isClient: user?.role === 'CLIENT',
+    }),
+    [user, loading, login, logout, refreshUser]
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) throw new Error('useAuth must be used within AuthProvider');
+  if (context === undefined) throw new Error('useAuth musi być używany wewnątrz AuthProvider');
   return context;
 };

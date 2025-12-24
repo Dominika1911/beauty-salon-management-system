@@ -8,19 +8,19 @@ export type UserRole = "ADMIN" | "EMPLOYEE" | "CLIENT";
 
 export interface User {
   id: number;
-  username: string;
+  username: string | null;
   first_name: string;
   last_name: string;
   email: string;
   role: UserRole;
   role_display: string;
   is_active: boolean;
-  employee_profile?: {
+  employee_profile: {
     id: number;
     employee_number: string;
     full_name: string;
   } | null;
-  client_profile?: {
+  client_profile: {
     id: number;
     client_number: string;
     full_name: string;
@@ -144,7 +144,7 @@ export interface AvailableSlot {
 }
 
 // ============================================================================
-// DASHBOARD (Zgodny z DashboardView w views.py)
+// DASHBOARD
 // ============================================================================
 
 export interface AdminDashboard {
@@ -272,7 +272,7 @@ export interface SystemLog {
   id: number;
   action: string;
   action_display: string;
-  performed_by_username: string;
+  performed_by_username: string | null;
   target_user_username: string | null;
   timestamp: string;
 }
@@ -296,14 +296,3 @@ export interface AuthStatusResponse {
   user: User | null;
 }
 
-export interface ApiError {
-  detail?: string;
-  [key: string]: any;
-}
-
-export interface PaginatedResponse<T> {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: T[];
-}

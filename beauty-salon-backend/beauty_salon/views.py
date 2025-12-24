@@ -283,9 +283,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return qs.filter(client=profile)
 
         if role == "EMPLOYEE":
-            return qs
+            employee = getattr(user, "employee_profile", None)
+            return qs.filter(employee=employee) if employee else qs.none()
 
-        return qs  # ADMIN/EMPLOYEE
+        return qs  # ADMIN
 
     @action(detail=False, methods=["get"], url_path="my")
     def my(self, request):

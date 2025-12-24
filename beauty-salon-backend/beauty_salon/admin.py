@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import Group
-from django.contrib.admin.sites import NotRegistered
 
 from .models import (
     CustomUser,
@@ -20,7 +19,6 @@ admin.site.unregister(Group)
 
 @admin.register(CustomUser)
 class CustomUserAdmin(UserAdmin):
-    """Panel administracyjny dla użytkowników"""
     model = CustomUser
 
     list_display = ("username", "first_name", "last_name", "email", "role", "is_staff", "is_active")
@@ -46,7 +44,6 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla usług"""
     list_display = ("name", "category", "price", "duration_minutes", "is_active", "created_at")
     list_filter = ("is_active", "category", "created_at")
     search_fields = ("name", "category", "description")
@@ -62,13 +59,10 @@ class ServiceAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla profili pracowników"""
     list_display = ("employee_number", "first_name", "last_name", "phone", "is_active", "hired_at")
     list_filter = ("is_active", "hired_at")
     search_fields = ("employee_number", "first_name", "last_name", "phone")
     filter_horizontal = ("skills",)
-
-    # ✅ hired_at jest auto_now_add => non-editable, musi być readonly
     readonly_fields = ("hired_at", "created_at", "updated_at")
     ordering = ("employee_number",)
 
@@ -80,11 +74,9 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
             "fields": ("skills",)
         }),
         ("Status", {
-            # ✅ hired_at usuwamy z edytowalnych
             "fields": ("is_active",)
         }),
         ("Metadata", {
-            # ✅ hired_at pokazujemy jako readonly
             "fields": ("hired_at", "created_at", "updated_at"),
             "classes": ("collapse",)
         }),
@@ -93,7 +85,6 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ClientProfile)
 class ClientProfileAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla profili klientów"""
     list_display = ("client_number", "first_name", "last_name", "email", "phone", "is_active")
     list_filter = ("is_active", "created_at")
     search_fields = ("client_number", "first_name", "last_name", "email", "phone")
@@ -110,7 +101,6 @@ class ClientProfileAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeSchedule)
 class EmployeeScheduleAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla grafików pracowników"""
     list_display = ("employee", "created_at", "updated_at")
     search_fields = ("employee__employee_number", "employee__first_name", "employee__last_name")
     readonly_fields = ("created_at", "updated_at")
@@ -118,7 +108,6 @@ class EmployeeScheduleAdmin(admin.ModelAdmin):
 
 @admin.register(TimeOff)
 class TimeOffAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla nieobecności pracowników"""
     list_display = ("employee", "date_from", "date_to", "reason", "created_at")
     list_filter = ("date_from", "date_to", "created_at")
     search_fields = ("employee__employee_number", "employee__first_name", "employee__last_name", "reason")
@@ -134,7 +123,6 @@ class TimeOffAdmin(admin.ModelAdmin):
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla wizyt"""
     list_display = ("id", "client", "employee", "service", "start", "status", "created_at")
     list_filter = ("status", "start", "created_at")
     search_fields = (
@@ -155,7 +143,6 @@ class AppointmentAdmin(admin.ModelAdmin):
 
 @admin.register(SystemSettings)
 class SystemSettingsAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla ustawień systemowych"""
     list_display = ("salon_name", "slot_minutes", "buffer_minutes", "updated_at", "updated_by")
     readonly_fields = ("updated_at",)
 
@@ -169,7 +156,6 @@ class SystemSettingsAdmin(admin.ModelAdmin):
 
 @admin.register(SystemLog)
 class SystemLogAdmin(admin.ModelAdmin):
-    """Panel administracyjny dla logów systemowych"""
     list_display = ("action", "performed_by", "target_user", "timestamp")
     list_filter = ("action", "timestamp")
     search_fields = ("performed_by__username", "target_user__username", "action")

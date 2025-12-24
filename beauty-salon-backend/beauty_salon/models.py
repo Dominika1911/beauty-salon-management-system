@@ -49,7 +49,7 @@ class CustomUser(AbstractUser):
         EMPLOYEE = "EMPLOYEE", _("Pracownik")
         CLIENT = "CLIENT", _("Klient")
 
-    username = models.CharField(max_length=30, unique=True, blank=True)
+    username = models.CharField(max_length=30, unique=True, blank=True, null=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,6 +77,10 @@ class CustomUser(AbstractUser):
         super().clean()
 
         internal = (self.role in [self.Role.ADMIN, self.Role.EMPLOYEE]) or self.is_staff or self.is_superuser
+
+        # Normalize empty usernames to NULL in DB
+        if not self.username:
+            self.username = None
 
         if internal and not self.username:
             raise ValidationError({"username": "Username is required for internal users (admin/employee)."})

@@ -210,7 +210,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         skills_data = validated_data.pop('skills', [])
 
         with transaction.atomic():
-            user = validated_data.get('user')
+            user = validated_data.pop('user', None)
             if not user:
                 tmp_username = None
                 for _ in range(200):
@@ -301,13 +301,15 @@ class TimeOffSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class ClientSerializer(serializers.ModelSerializer):
-    user_username = serializers.CharField(source='user.username', read_only=True)
-    user_email = serializers.CharField(source='user.email', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True, allow_null=True)
+    user_email = serializers.CharField(source='user.email', read_only=True, allow_null=True)
 
-    # ✅ NOWE: zawsze zwracane (z annotate w queryset)
     appointments_count = serializers.IntegerField(read_only=True)
 
-    email = serializers.EmailField(write_only=True, required=False)
+    # teraz email wraca w response
+    email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+
+    # hasło tylko do zapisu
     password = serializers.CharField(write_only=True, required=False, min_length=8)
 
     class Meta:
@@ -315,9 +317,11 @@ class ClientSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_username', 'user_email',
             'client_number', 'first_name', 'last_name',
-            'email', 'phone', 'password',
+            'email', 'phone',
+            'internal_notes',
+            'password',
             'is_active',
-            'appointments_count',  # ✅ DODANE
+            'appointments_count',
             'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'client_number', 'created_at', 'updated_at']
@@ -335,7 +339,7 @@ class ClientSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        email = validated_data.pop('email', None)
+        email = validated_data.get('email', None)
         password = validated_data.pop('password', None)
 
         with transaction.atomic():
@@ -370,7 +374,6 @@ class ClientSerializer(serializers.ModelSerializer):
         return client
 
     def update(self, instance, validated_data):
-        email = validated_data.pop('email', None)
         password = validated_data.pop('password', None)
 
         for attr, value in validated_data.items():
@@ -384,15 +387,19 @@ class ClientSerializer(serializers.ModelSerializer):
             if "last_name" in validated_data:
                 user.last_name = instance.last_name
 
-            if email:
-                user.email = email
+            # jak email się zmienił w profilu klienta, to aktualizuj user.email
+            if "email" in validated_data:
+                user.email = instance.email or ""
+
             if password:
                 user.set_password(password)
 
-            if email or password or ("first_name" in validated_data) or ("last_name" in validated_data):
+            if ("first_name" in validated_data) or ("last_name" in validated_data) or ("email" in validated_data) or password:
                 user.save()
 
         return instance
+
+
 
 
 
