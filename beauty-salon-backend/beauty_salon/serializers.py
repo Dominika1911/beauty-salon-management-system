@@ -198,25 +198,25 @@ class EmployeeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "employee_number", "created_at", "updated_at"]
         extra_kwargs = {"user": {"required": False}}
 
+    def validate(self, data):
+        # CREATE: wymagaj email + password
+        if not self.instance:
+            if not data.get("email") or not data.get("password"):
+                raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu pracownika.")
+            validate_password(data["password"])
 
-        def validate(self, data):
-            if not self.instance:
-                if "email" not in data or "password" not in data:
-                    raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu pracownika.")
+        # UPDATE: jeśli podano password — waliduj względem usera
+        password = data.get("password")
+        if self.instance and password:
+            validate_password(password, user=self.instance.user)
 
-                # walidacja hasła pod walidatory Django
-                validate_password(data["password"])
+        # Spójność roli usera jeśli przekazano user ręcznie
+        user = data.get("user")
+        if user and getattr(user, "role", None) != "EMPLOYEE":
+            raise serializers.ValidationError("Użytkownik musi mieć rolę EMPLOYEE.")
 
-            password = data.get("password")
-            if self.instance and password:
-                # przy update waliduj względem usera
-                validate_password(password, user=self.instance.user)
+        return data
 
-            user = data.get("user")
-            if user and user.role != "EMPLOYEE":
-                raise serializers.ValidationError("Użytkownik musi mieć rolę EMPLOYEE.")
-
-            return data
 
     def create(self, validated_data):
         email = validated_data.pop("email", None)
@@ -526,8 +526,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if employee and start and end:
             conflicts = (
                 Appointment.objects
-                .filter(employee=employee, start__lt=end, end__gt=start)
-                .exclude(status=Appointment.Status.CANCELLED)
+                .filter(employee=employee, start__lt=end, end__gt=start,
+                        status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
             )
             if self.instance:
                 conflicts = conflicts.exclude(id=self.instance.id)
@@ -535,10 +535,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"employee": "Pracownik ma już zajęty termin w tym czasie."})
 
         if client and start and end:
+
             client_conflicts = (
                 Appointment.objects
-                .filter(client=client, start__lt=end, end__gt=start)
-                .exclude(status=Appointment.Status.CANCELLED)
+                .filter(client=client, start__lt=end, end__gt=start,
+                        status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
             )
             if self.instance:
                 client_conflicts = client_conflicts.exclude(id=self.instance.id)
@@ -658,13 +659,15 @@ class BookingCreateSerializer(serializers.Serializer):
 
         # konflikty (UX) — i tak powtórzymy po locku w create()
         if Appointment.objects.filter(
-            employee=employee, start__lt=end, end__gt=start
-        ).exclude(status=Appointment.Status.CANCELLED).exists():
+                employee=employee, start__lt=end, end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).exists():
             raise serializers.ValidationError({"start": "Ten pracownik ma już zajęty termin."})
 
         if Appointment.objects.filter(
-            client=client, start__lt=end, end__gt=start
-        ).exclude(status=Appointment.Status.CANCELLED).exists():
+                client=client, start__lt=end, end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).exists():
             raise serializers.ValidationError({"start": "Masz już zarezerwowaną wizytę w tym czasie."})
 
         data.update({
@@ -676,20 +679,32 @@ class BookingCreateSerializer(serializers.Serializer):
         return data
 
     def create(self, validated_data):
-        employee = validated_data["employee"]
-        client = validated_data["client"]
         start = validated_data["start"]
         end = validated_data["end"]
 
-        # Zakładamy, że widok ma @transaction.atomic
-        EmployeeProfile.objects.select_for_update().get(pk=employee.pk)
-        ClientProfile.objects.select_for_update().get(pk=client.pk)
+        # re-lock + re-fetch z is_active
+        employee = EmployeeProfile.objects.select_for_update().get(pk=validated_data["employee"].pk, is_active=True)
+        client = ClientProfile.objects.select_for_update().get(pk=validated_data["client"].pk, is_active=True)
+
+        # re-check TimeOff po locku (minimalnie)
+        if TimeOff.objects.select_for_update().filter(
+                employee=employee,
+                status=TimeOff.Status.APPROVED,
+                date_from__lte=start.date(),
+                date_to__gte=start.date(),
+        ).exists():
+            raise serializers.ValidationError(
+                {"start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."})
 
         emp_conflicts = (
             Appointment.objects
             .select_for_update()
-            .filter(employee=employee, start__lt=end, end__gt=start)
-            .exclude(status=Appointment.Status.CANCELLED)
+            .filter(
+                employee=employee,
+                start__lt=end,
+                end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+            )
         )
         if emp_conflicts.exists():
             raise serializers.ValidationError({"start": "Niestety, ten termin został właśnie zarezerwowany."})
@@ -697,8 +712,12 @@ class BookingCreateSerializer(serializers.Serializer):
         client_conflicts = (
             Appointment.objects
             .select_for_update()
-            .filter(client=client, start__lt=end, end__gt=start)
-            .exclude(status=Appointment.Status.CANCELLED)
+            .filter(
+                client=client,
+                start__lt=end,
+                end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+            )
         )
         if client_conflicts.exists():
             raise serializers.ValidationError({"start": "Masz już wizytę w tym czasie (równoległa rezerwacja)."})
@@ -711,3 +730,4 @@ class BookingCreateSerializer(serializers.Serializer):
             end=end,
             status=Appointment.Status.PENDING,
         )
+

@@ -10,6 +10,7 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models import F, Q, UniqueConstraint
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 
 
 # =============================================================================
@@ -300,14 +301,36 @@ class Appointment(models.Model):
         blank=True,
         related_name="appointments",
     )
-    employee = models.ForeignKey(EmployeeProfile, on_delete=models.PROTECT, related_name="appointments")
-    service = models.ForeignKey(Service, on_delete=models.PROTECT, related_name="appointments")
-    start = models.DateTimeField(db_index=True)
-    end = models.DateTimeField(db_index=True)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    employee = models.ForeignKey(
+        EmployeeProfile,
+        on_delete=models.CASCADE,
+        related_name="appointments",
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="appointments",
+    )
+
+    start = models.DateTimeField()
+    end = models.DateTimeField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+
     internal_notes = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    ACTIVE_STATUSES = {Status.PENDING, Status.CONFIRMED}
 
     class Meta:
         ordering = ["start"]
@@ -318,40 +341,39 @@ class Appointment(models.Model):
         indexes = [
             models.Index(fields=["employee", "start"]),
             models.Index(fields=["status", "start"]),
+            models.Index(fields=["client", "start"]),  # NOWE
         ]
-
-    def __str__(self) -> str:
-        num = self.employee.employee_number if self.employee.employee_number else "N/A"
-        return f"{num} - {self.service.name} - {self.start:%Y-%m-%d %H:%M}"
 
     def clean(self):
         super().clean()
 
-        # podstawowe sanity
+        # timezone sanity (minimalnie; nie rozbijam na osobny commit)
+        if self.start and timezone.is_naive(self.start):
+            raise ValidationError({"start": "start must be timezone-aware"})
+        if self.end and timezone.is_naive(self.end):
+            raise ValidationError({"end": "end must be timezone-aware"})
+
         if self.end and self.start and self.end <= self.start:
             raise ValidationError({"end": "End must be after start."})
 
         if not self.employee_id or not self.start or not self.end:
             return
 
-        # konflikty pracownika (jak było)
+        # konflikty pracownika: tylko aktywne statusy
+        # było: .exclude(status=Appointment.Status.CANCELLED)
         emp_qs = (
             Appointment.objects
-            .filter(employee_id=self.employee_id)
+            .filter(employee_id=self.employee_id, status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
             .exclude(pk=self.pk)
-            .exclude(status=Appointment.Status.CANCELLED)
         )
         if emp_qs.filter(start__lt=self.end, end__gt=self.start).exists():
             raise ValidationError("Employee is not available in this time range.")
 
-        # NOWE: konflikty klienta (spójność z serializerami)
-        # Uwaga: client może być NULL -> wtedy pomijamy.
         if self.client_id:
             client_qs = (
                 Appointment.objects
-                .filter(client_id=self.client_id)
+                .filter(client_id=self.client_id, status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
                 .exclude(pk=self.pk)
-                .exclude(status=Appointment.Status.CANCELLED)
             )
             if client_qs.filter(start__lt=self.end, end__gt=self.start).exists():
                 raise ValidationError("Client is not available in this time range.")
@@ -447,13 +469,18 @@ class SystemLog(models.Model):
         ordering = ["-timestamp"]
         indexes = [
             models.Index(fields=["action", "timestamp"]),
+            models.Index(fields=["performed_by", "timestamp"]),  # NOWE
+            models.Index(fields=["target_user", "timestamp"]),   # NOWE
         ]
 
-    def __str__(self) -> str:
-        return f"{self.timestamp} - {self.get_action_display()}"
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise ValidationError("SystemLog entries are append-only and cannot be modified.")
+        return super().save(*args, **kwargs)
 
     @classmethod
     def log(cls, *, action, performed_by=None, target_user=None):
+        # lekkie doprecyzowanie argumentów (bez zmiany architektury)
         return cls.objects.create(
             action=action,
             performed_by=performed_by,

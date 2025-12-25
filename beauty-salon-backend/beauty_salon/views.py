@@ -529,8 +529,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return Response(AppointmentSerializer(qs, many=True, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
+    @transaction.atomic
     def confirm(self, request, pk=None):
-        appt = self.get_object()
+        # row-lock: brak lost update
+        appt = (
+            Appointment.objects
+            .select_for_update()
+            .select_related("client", "client__user", "employee", "service")
+            .get(pk=pk)
+        )
+        self.check_object_permissions(request, appt)
 
         if appt.status != Appointment.Status.PENDING:
             return Response(
@@ -540,13 +548,25 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         appt.status = Appointment.Status.CONFIRMED
         appt.save(update_fields=["status"])
-        SystemLog.log(action=SystemLog.Action.APPOINTMENT_CONFIRMED, performed_by=request.user)
+
+        SystemLog.log(
+            action=SystemLog.Action.APPOINTMENT_CONFIRMED,
+            performed_by=request.user,
+            target_user=getattr(getattr(appt, "client", None), "user", None),
+        )
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="cancel")
+    @transaction.atomic
     def cancel(self, request, pk=None):
-        appt = self.get_object()
+        appt = (
+            Appointment.objects
+            .select_for_update()
+            .select_related("client", "client__user", "employee", "service")
+            .get(pk=pk)
+        )
+        self.check_object_permissions(request, appt)
 
         if appt.status == Appointment.Status.CANCELLED:
             return Response({"detail": "Wizyta jest już anulowana."}, status=status.HTTP_400_BAD_REQUEST)
@@ -563,12 +583,24 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
         appt.save(update_fields=["status", "internal_notes"])
 
-        SystemLog.log(action=SystemLog.Action.APPOINTMENT_CANCELLED, performed_by=request.user)
+        SystemLog.log(
+            action=SystemLog.Action.APPOINTMENT_CANCELLED,
+            performed_by=request.user,
+            target_user=getattr(getattr(appt, "client", None), "user", None),
+        )
+
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="complete")
+    @transaction.atomic
     def complete(self, request, pk=None):
-        appt = self.get_object()
+        appt = (
+            Appointment.objects
+            .select_for_update()
+            .select_related("client", "client__user", "employee", "service")
+            .get(pk=pk)
+        )
+        self.check_object_permissions(request, appt)
 
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
             return Response(
@@ -578,9 +610,15 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         appt.status = Appointment.Status.COMPLETED
         appt.save(update_fields=["status"])
-        SystemLog.log(action=SystemLog.Action.APPOINTMENT_COMPLETED, performed_by=request.user)
+
+        SystemLog.log(
+            action=SystemLog.Action.APPOINTMENT_COMPLETED,
+            performed_by=request.user,
+            target_user=getattr(getattr(appt, "client", None), "user", None),
+        )
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
+
 
 # =============================================================================
 # AUDIT LOG
@@ -751,8 +789,8 @@ class AvailabilitySlotsAPIView(APIView):
 
         busy = list(
             Appointment.objects
-            .filter(employee=employee, start__lt=day_end, end__gt=day_start)
-            .exclude(status=Appointment.Status.CANCELLED)
+            .filter(employee=employee, start__lt=day_end, end__gt=day_start,
+                    status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
             .values_list("start", "end")
         )
 
@@ -837,9 +875,11 @@ class CheckAvailabilityView(APIView):
         end = start + duration
 
         conflicts = (
-            Appointment.objects.filter(employee=employee, start__lt=end, end__gt=start)
-            .exclude(status=Appointment.Status.CANCELLED)
+            Appointment.objects
+            .filter(employee=employee, start__lt=end, end__gt=start,
+                    status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
         )
+
         if conflicts.exists():
             return Response({"available": False, "reason": "Pracownik ma już zarezerwowaną wizytę w tym czasie."})
 
