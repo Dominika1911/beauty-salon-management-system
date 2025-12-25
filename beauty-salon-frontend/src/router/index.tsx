@@ -19,12 +19,14 @@ import SettingsPage from "../pages/Admin/SettingsPage";
 import EmployeesSchedulePage from "../pages/Admin/EmployeesSchedulePage";
 import ReportsPage from "../pages/Admin/ReportsPage";
 import LogsPage from "../pages/Admin/LogsPage";
+import AdminTimeOffPage from "../pages/Admin/AdminTimeOffPage";
 
 // EMPLOYEE pages
 import EmployeeDashboardPage from "../pages/Employee/DashboardPage";
 import EmployeeAppointmentsPage from "../pages/Employee/AppointmentsPage";
 import EmployeeSchedulePage from "../pages/Employee/SchedulePage";
 import EmployeeCalendarPage from "../pages/Employee/CalendarPage";
+import EmployeeTimeOffPage from "../pages/Employee/EmployeeTimeOffPage";
 
 // CLIENT pages
 import ClientDashboardPage from "../pages/Client/DashboardPage";
@@ -41,7 +43,6 @@ export default function Router() {
 
       {/* Trasy chronione z Layoutem (Navbar + Sidebar) */}
       <Route element={<Layout />}>
-
         {/* =========================================================
             ADMIN ROUTES
         ========================================================= */}
@@ -117,6 +118,14 @@ export default function Router() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/time-offs"
+          element={
+            <ProtectedRoute allowedRoles={["ADMIN"]}>
+              <AdminTimeOffPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* =========================================================
             EMPLOYEE ROUTES
@@ -150,6 +159,14 @@ export default function Router() {
           element={
             <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
               <EmployeeSchedulePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/employee/time-offs"
+          element={
+            <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
+              <EmployeeTimeOffPage />
             </ProtectedRoute>
           }
         />

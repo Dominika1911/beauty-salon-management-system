@@ -54,6 +54,7 @@ const menuItems: MenuItem[] = [
   { text: 'Raporty', icon: <Assessment />, path: '/admin/reports', roles: ['ADMIN'] },
   { text: 'Ustawienia', icon: <Settings />, path: '/admin/settings', roles: ['ADMIN'] },
     { text: 'Logi', icon: <History />, path: '/admin/logs', roles: ['ADMIN'] },
+{ text: 'Urlopy', icon: <Event />, path: '/admin/time-offs', roles: ['ADMIN'] },
 
 
   // Employee
@@ -61,6 +62,7 @@ const menuItems: MenuItem[] = [
   { text: 'Terminarz', icon: <CalendarMonth />, path: '/employee/calendar', roles: ['EMPLOYEE'] },
   { text: 'Moje wizyty', icon: <Event />, path: '/employee/appointments', roles: ['EMPLOYEE'] },
   { text: 'Grafik', icon: <Schedule />, path: '/employee/schedule', roles: ['EMPLOYEE'] },
+{ text: 'Urlopy', icon: <Event />, path: '/employee/time-offs', roles: ['EMPLOYEE'] },
 
   // Client
   { text: 'Dashboard', icon: <Dashboard />, path: '/client/dashboard', roles: ['CLIENT'] },

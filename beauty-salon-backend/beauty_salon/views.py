@@ -13,7 +13,7 @@ from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 
-from rest_framework import status, viewsets, permissions
+from rest_framework import status, viewsets, permissions, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -59,7 +59,7 @@ from .permissions import IsAdmin, IsAdminOrEmployee, IsEmployee, CanCancelAppoin
 User = get_user_model()
 
 # =============================================================================
-# PDF FONT (DejaVuSans) - polskie znaki, naprawia "czarne kwadraty"
+# PDF FONT (DejaVuSans) - polskie znaki
 # =============================================================================
 FONT_PATH = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
 PDF_FONT_NAME = "DejaVuSans"
@@ -69,10 +69,8 @@ try:
         pdfmetrics.registerFont(TTFont(PDF_FONT_NAME, FONT_PATH))
         addMapping(PDF_FONT_NAME, 0, 0, PDF_FONT_NAME)
     else:
-        # Bezpieczny fallback, jeśli font nie został dodany do projektu
         PDF_FONT_NAME = "Helvetica"
 except Exception:
-    # Bezpieczny fallback w razie problemów z fontem (np. brak pliku/permissions)
     PDF_FONT_NAME = "Helvetica"
 
 
@@ -190,7 +188,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy", "schedule", "time_offs"]:
+        if self.action in ["create", "update", "partial_update", "destroy", "schedule"]:
             return [IsAdminOrEmployee()]
         return [permissions.AllowAny()]
 
@@ -202,32 +200,128 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if request.method == "GET":
             return Response(EmployeeScheduleSerializer(schedule).data)
 
-        # BLOKADA DLA PRACOWNIKÓW:
         if not request.user.is_staff:
-            return Response(
-                {"detail": "Tylko administrator może zmieniać grafik."},
-                status=403
-            )
+            return Response({"detail": "Tylko administrator może zmieniać grafik."}, status=status.HTTP_403_FORBIDDEN)
 
         ser = EmployeeScheduleSerializer(schedule, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
-
         return Response(ser.data)
 
-    @action(detail=True, methods=["get", "post"], url_path="time-off")
-    def time_offs(self, request, pk=None):
-        employee = self.get_object()
 
-        if request.method == "GET":
-            qs = TimeOff.objects.filter(employee=employee).order_by("-date_from")
-            return Response(TimeOffSerializer(qs, many=True).data)
+# =============================================================================
+# TIME OFF (SPÓJNY ENDPOINT)
+# =============================================================================
 
-        ser = TimeOffSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-        obj = ser.save(employee=employee)
+class TimeOffViewSet(viewsets.ModelViewSet):
+    """
+    Spójny endpoint do urlopów:
+    - EMPLOYEE: list/retrieve swoich + create dla siebie (PENDING)
+    - ADMIN: list/retrieve wszystkich + create dla dowolnego + approve/reject
+    """
+    serializer_class = TimeOffSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
+    filterset_fields = ["status", "employee"]
+    ordering_fields = ["created_at", "date_from", "date_to", "status"]
+    search_fields = ["reason", "employee__first_name", "employee__last_name"]
+
+    def get_permissions(self):
+        if self.action in ["approve", "reject", "update", "partial_update", "destroy"]:
+            return [IsAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    def get_queryset(self):
+        qs = (
+            TimeOff.objects
+            .select_related("employee", "requested_by", "decided_by")
+            .order_by("-created_at")
+        )
+
+        user = self.request.user
+        role = getattr(user, "role", None)
+
+        if not user.is_authenticated:
+            return qs.none()
+
+        if role == "CLIENT":
+            return qs.none()
+
+        if role == "EMPLOYEE":
+            emp = getattr(user, "employee_profile", None)
+            if not emp:
+                return qs.none()
+            qs = qs.filter(employee=emp)
+
+        date_from = self.request.query_params.get("date_from")
+        date_to = self.request.query_params.get("date_to")
+
+        if date_from:
+            try:
+                df = datetime.strptime(date_from, "%Y-%m-%d").date()
+                qs = qs.filter(date_to__gte=df)
+            except Exception:
+                pass
+
+        if date_to:
+            try:
+                dt = datetime.strptime(date_to, "%Y-%m-%d").date()
+                qs = qs.filter(date_from__lte=dt)
+            except Exception:
+                pass
+
+        return qs
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        role = getattr(user, "role", None)
+
+        if role == "EMPLOYEE":
+            emp = getattr(user, "employee_profile", None)
+            if not emp:
+                raise permissions.PermissionDenied("Brak profilu pracownika.")
+            serializer.save(employee=emp, status=TimeOff.Status.PENDING, requested_by=user)
+            SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=user)
+            return
+
+        if user.is_staff or role == "ADMIN":
+            employee = serializer.validated_data.get("employee")
+            if not employee:
+                raise serializers.ValidationError({"employee": "Pole employee jest wymagane dla ADMIN."})
+            serializer.save(status=TimeOff.Status.PENDING, requested_by=user)
+            SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=user)
+            return
+
+        raise permissions.PermissionDenied("Brak uprawnień.")
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        obj: TimeOff = self.get_object()
+
+        if obj.status != TimeOff.Status.PENDING:
+            return Response({"detail": "Można akceptować tylko wnioski PENDING."}, status=status.HTTP_400_BAD_REQUEST)
+
+        obj.status = TimeOff.Status.APPROVED
+        obj.decided_by = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "decided_by", "decided_at"])
+
         SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=request.user)
-        return Response(TimeOffSerializer(obj).data, status=status.HTTP_201_CREATED)
+        return Response(TimeOffSerializer(obj).data)
+
+    @action(detail=True, methods=["post"], url_path="reject")
+    def reject(self, request, pk=None):
+        obj: TimeOff = self.get_object()
+
+        if obj.status != TimeOff.Status.PENDING:
+            return Response({"detail": "Można odrzucać tylko wnioski PENDING."}, status=status.HTTP_400_BAD_REQUEST)
+
+        obj.status = TimeOff.Status.REJECTED
+        obj.decided_by = request.user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "decided_by", "decided_at"])
+
+        SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=request.user)
+        return Response(TimeOffSerializer(obj).data)
 
 
 # =============================================================================
@@ -243,9 +337,7 @@ class ClientViewSet(viewsets.ModelViewSet):
     ordering_fields = ["id", "client_number", "last_name", "created_at"]
 
     def get_queryset(self):
-        return super().get_queryset().annotate(
-            appointments_count=Count("appointments", distinct=True)
-        )
+        return super().get_queryset().annotate(appointments_count=Count("appointments", distinct=True))
 
     def get_permissions(self):
         if self.action == "me":
@@ -277,15 +369,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if self.action == "confirm":
+        if self.action in ["confirm", "complete"]:
             return [IsAdminOrEmployee()]
-
-        if self.action == "complete":
-            return [IsAdminOrEmployee()]
-
         if self.action == "cancel":
             return [CanCancelAppointment()]
-
         if self.action == "my":
             return [IsEmployee()]
 
@@ -320,7 +407,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         employee = getattr(request.user, "employee_profile", None)
         if not employee:
             return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
-        qs = self.get_queryset().filter(employee=employee)
+        qs = self.get_queryset()
         return Response(AppointmentSerializer(qs, many=True).data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
@@ -328,10 +415,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt = self.get_object()
 
         if appt.status != Appointment.Status.PENDING:
-            return Response(
-                {"detail": "Można potwierdzić tylko wizyty w statusie PENDING."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Można potwierdzić tylko wizyty w statusie PENDING."}, status=status.HTTP_400_BAD_REQUEST)
 
         appt.status = Appointment.Status.CONFIRMED
         appt.save(update_fields=["status"])
@@ -344,10 +428,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         if appt.status == Appointment.Status.CANCELLED:
             return Response({"detail": "Wizyta jest już anulowana."}, status=status.HTTP_400_BAD_REQUEST)
-
         if appt.status == Appointment.Status.COMPLETED:
             return Response({"detail": "Nie można anulować zakończonej wizyty."}, status=status.HTTP_400_BAD_REQUEST)
-
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
             return Response({"detail": "Nie można anulować wizyty w tym statusie."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -364,10 +446,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt = self.get_object()
 
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
-            return Response(
-                {"detail": "Można zakończyć tylko wizyty potwierdzone lub oczekujące."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Można zakończyć tylko wizyty potwierdzone lub oczekujące."}, status=status.HTTP_400_BAD_REQUEST)
 
         appt.status = Appointment.Status.COMPLETED
         appt.save(update_fields=["status"])
@@ -425,10 +504,8 @@ class StatisticsView(APIView):
                 start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
                 end_date = datetime.strptime(date_to, "%Y-%m-%d").date()
             except Exception:
-                return Response(
-                    {"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
             since = timezone.make_aware(datetime.combine(start_date, time(0, 0)))
             until = timezone.make_aware(datetime.combine(end_date, time(23, 59, 59)))
         else:
@@ -439,7 +516,6 @@ class StatisticsView(APIView):
 
         total = Appointment.objects.count()
         period_count = base.count()
-
         by_status = base.values("status").annotate(count=Count("id")).order_by("status")
 
         top_services = (
@@ -515,19 +591,18 @@ class AvailabilitySlotsAPIView(APIView):
         try:
             day = _parse_date(date_str)
         except Exception:
-            return Response(
-                {"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         today = timezone.now().date()
         if day < today:
-            return Response(
-                {"detail": "Nie można rezerwować wizyt w przeszłości."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Nie można rezerwować wizyt w przeszłości."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if TimeOff.objects.filter(employee=employee, date_from__lte=day, date_to__gte=day).exists():
+        if TimeOff.objects.filter(
+            employee=employee,
+            status=TimeOff.Status.APPROVED,
+            date_from__lte=day,
+            date_to__gte=day
+        ).exists():
             return Response({"date": date_str, "slots": []})
 
         schedule = getattr(employee, "schedule", None)
@@ -541,7 +616,6 @@ class AvailabilitySlotsAPIView(APIView):
         settings_obj = SystemSettings.get_settings()
         slot_minutes = int(settings_obj.slot_minutes)
         buffer_minutes = int(settings_obj.buffer_minutes)
-
         duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
 
         day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
@@ -588,6 +662,7 @@ class BookingCreateAPIView(APIView):
         ser = BookingCreateSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
         appointment = ser.save()
+
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
         return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
 
@@ -601,38 +676,31 @@ class CheckAvailabilityView(APIView):
         start_str = request.data.get("start")
 
         if not all([employee_id, service_id, start_str]):
-            return Response(
-                {"detail": "Wymagane pola: employee_id, service_id, start (ISO format)"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Wymagane pola: employee_id, service_id, start (ISO format)"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             employee = EmployeeProfile.objects.get(pk=int(employee_id), is_active=True)
         except Exception:
-            return Response(
-                {"available": False, "reason": "Nie znaleziono pracownika."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response({"available": False, "reason": "Nie znaleziono pracownika."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             service = Service.objects.get(pk=int(service_id), is_active=True)
         except Exception:
-            return Response(
-                {"available": False, "reason": "Nie znaleziono usługi."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response({"available": False, "reason": "Nie znaleziono usługi."}, status=status.HTTP_404_NOT_FOUND)
 
         try:
             start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             if timezone.is_naive(start):
                 start = timezone.make_aware(start)
         except Exception:
-            return Response(
-                {"available": False, "reason": "Nieprawidłowy format daty. Użyj ISO format."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"available": False, "reason": "Nieprawidłowy format daty. Użyj ISO format."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if TimeOff.objects.filter(employee=employee, date_from__lte=start.date(), date_to__gte=start.date()).exists():
+        if TimeOff.objects.filter(
+            employee=employee,
+            status=TimeOff.Status.APPROVED,
+            date_from__lte=start.date(),
+            date_to__gte=start.date()
+        ).exists():
             return Response({"available": False, "reason": "Pracownik jest nieobecny w tym dniu."})
 
         settings_obj = SystemSettings.get_settings()
@@ -644,7 +712,6 @@ class CheckAvailabilityView(APIView):
             Appointment.objects.filter(employee=employee, start__lt=end, end__gt=start)
             .exclude(status=Appointment.Status.CANCELLED)
         )
-
         if conflicts.exists():
             return Response({"available": False, "reason": "Pracownik ma już zarezerwowaną wizytę w tym czasie."})
 
@@ -680,7 +747,6 @@ class DashboardView(APIView):
         now = timezone.now()
 
         today_appointments = Appointment.objects.filter(start__date=today)
-
         pending_count = Appointment.objects.filter(status=Appointment.Status.PENDING).count()
 
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -699,10 +765,7 @@ class DashboardView(APIView):
             "today": {
                 "date": today.isoformat(),
                 "appointments_count": today_appointments.count(),
-                "appointments": AppointmentSerializer(
-                    today_appointments.order_by('start')[:10],
-                    many=True
-                ).data,
+                "appointments": AppointmentSerializer(today_appointments.order_by("start")[:10], many=True).data,
             },
             "pending_appointments": pending_count,
             "current_month": {
@@ -729,7 +792,7 @@ class DashboardView(APIView):
                 employee=employee,
                 start__date=today_date,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by('start')
+            ).order_by("start")
 
             week_later = today + timedelta(days=7)
             upcoming = Appointment.objects.filter(
@@ -737,7 +800,7 @@ class DashboardView(APIView):
                 start__gte=today,
                 start__lte=week_later,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by('start')
+            ).order_by("start")
 
             month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             month_completed = Appointment.objects.filter(
@@ -763,8 +826,7 @@ class DashboardView(APIView):
                 }
             })
         except Exception as e:
-            return Response({"detail": f"Brak profilu pracownika: {str(e)}"},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": f"Brak profilu pracownika: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
 
     def _client_dashboard(self, user):
         try:
@@ -775,17 +837,14 @@ class DashboardView(APIView):
                 client=client,
                 start__gte=now,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by('start')
+            ).order_by("start")
 
-            history_count = Appointment.objects.filter(
-                client=client,
-                status=Appointment.Status.COMPLETED
-            ).count()
+            history_count = Appointment.objects.filter(client=client, status=Appointment.Status.COMPLETED).count()
 
             recent_history = Appointment.objects.filter(
                 client=client,
                 status=Appointment.Status.COMPLETED
-            ).order_by('-start')[:3]
+            ).order_by("-start")[:3]
 
             return Response({
                 "role": "CLIENT",
@@ -801,8 +860,7 @@ class DashboardView(APIView):
                 }
             })
         except Exception as e:
-            return Response({"detail": f"Brak profilu klienta: {str(e)}"},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": f"Brak profilu klienta: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
 
 
 # =============================================================================
@@ -813,38 +871,31 @@ class ReportView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request, *args, **kwargs):
-        report_type = kwargs.get('report_type')
+        report_type = kwargs.get("report_type")
 
-        # 1. Lista dostępnych raportów (meta-informacja)
         if report_type is None:
             return Response({
-                'available_reports': [
-                    {'type': 'employees', 'description': 'Lista pracowników'},
-                    {'type': 'clients', 'description': 'Baza klientów'},
-                    {'type': 'today', 'description': 'Grafik na dziś'},
-                    {'type': 'revenue', 'description': 'Raport finansowy'},
+                "available_reports": [
+                    {"type": "employees", "description": "Lista pracowników"},
+                    {"type": "clients", "description": "Baza klientów"},
+                    {"type": "today", "description": "Grafik na dziś"},
+                    {"type": "revenue", "description": "Raport finansowy"},
                 ]
             })
 
-        # 2. Logika raportu REVENUE (Przychody)
-        if report_type == 'revenue':
-            # Jeśli w URL jest /pdf/ lub format=pdf, generujemy dokument
-            if "pdf" in request.path or request.query_params.get('format') == 'pdf':
+        if report_type == "revenue":
+            if "pdf" in request.path or request.query_params.get("format") == "pdf":
                 return self._revenue_pdf_report(request)
-            # W innym przypadku zwracamy JSON dla tabeli w React
             return self._revenue_json_report(request)
 
-        # 3. Pozostałe raporty (tylko PDF)
-        if report_type == 'employees':
+        if report_type == "employees":
             return self._employees_report()
-        if report_type == 'clients':
+        if report_type == "clients":
             return self._clients_report()
-        if report_type == 'today':
+        if report_type == "today":
             return self._today_appointments_report()
 
-        return Response({'error': 'Nieznany typ raportu.'}, status=400)
-
-    # --- METODY POMOCNICZE (PDF ENGINE) ---
+        return Response({"error": "Nieznany typ raportu."}, status=status.HTTP_400_BAD_REQUEST)
 
     def _build_pdf_response(self, title_text, data, filename, landscape_mode=False):
         buffer = io.BytesIO()
@@ -855,18 +906,15 @@ class ReportView(APIView):
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
-            bottomMargin=18
+            bottomMargin=18,
         )
         styles = getSampleStyleSheet()
-
-        # Font dla polskich znaków w nagłówkach i tekście
         styles["Title"].fontName = PDF_FONT_NAME
         styles["Normal"].fontName = PDF_FONT_NAME
 
         elements = []
-
-        elements.append(Paragraph(title_text, styles['Title']))
-        elements.append(Paragraph(f"Wygenerowano: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+        elements.append(Paragraph(title_text, styles["Title"]))
+        elements.append(Paragraph(f"Wygenerowano: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
         elements.append(Spacer(1, 24))
 
         table = Table(data, repeatRows=1)
@@ -874,8 +922,8 @@ class ReportView(APIView):
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#9c27b0")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),      # header
-            ("FONTNAME", (0, 1), (-1, -1), PDF_FONT_NAME),     # body
+            ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
+            ("FONTNAME", (0, 1), (-1, -1), PDF_FONT_NAME),
             ("FONTSIZE", (0, 0), (-1, -1), 10),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
             ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
@@ -885,11 +933,9 @@ class ReportView(APIView):
         elements.append(table)
         doc.build(elements)
         buffer.seek(0)
-        resp = HttpResponse(buffer, content_type='application/pdf')
-        resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+        resp = HttpResponse(buffer, content_type="application/pdf")
+        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
-
-    # --- KONKRETNE RAPORTY ---
 
     def _revenue_json_report(self, request):
         date_from = request.query_params.get("date_from")
@@ -907,8 +953,8 @@ class ReportView(APIView):
             start__gte=since,
             start__lte=until
         )
-        trunc_func = TruncDate('start') if group_by == 'day' else TruncMonth('start')
 
+        trunc_func = TruncDate("start") if group_by == "day" else TruncMonth("start")
         grouped = (
             completed.annotate(period=trunc_func)
             .values("period")
@@ -917,16 +963,18 @@ class ReportView(APIView):
         )
 
         data = [{
-            "period": item["period"].strftime("%Y-%m-%d" if group_by == 'day' else "%Y-%m"),
+            "period": item["period"].strftime("%Y-%m-%d" if group_by == "day" else "%Y-%m"),
             "revenue": float(item["revenue"] or 0),
-            "appointments_count": item["count"]
+            "appointments_count": item["count"],
         } for item in grouped]
 
         summary = completed.aggregate(total_rev=Sum("service__price"), total_app=Count("id"))
-        total_rev = summary['total_rev'] or 0
-        total_app = summary['total_app'] or 0
+        total_rev = summary["total_rev"] or 0
+        total_app = summary["total_app"] or 0
 
         return Response({
+            "range": {"from": since.date().isoformat(), "to": until.date().isoformat()},
+            "group_by": group_by,
             "summary": {
                 "total_revenue": float(total_rev),
                 "total_appointments": total_app,
@@ -938,7 +986,6 @@ class ReportView(APIView):
     def _revenue_pdf_report(self, request):
         date_from = request.query_params.get("date_from")
         date_to = request.query_params.get("date_to")
-        group_by = request.query_params.get("group_by", "day")
 
         since = timezone.now() - timedelta(days=30)
         until = timezone.now()
@@ -950,26 +997,26 @@ class ReportView(APIView):
             status=Appointment.Status.COMPLETED,
             start__gte=since,
             start__lte=until
-        ).select_related('client', 'service', 'employee').order_by('start')
+        ).select_related("client", "service", "employee").order_by("start")
 
-        total = appts.aggregate(s=Sum('service__price'))['s'] or 0
-        data = [['Data', 'Klient', 'Usługa', 'Cena']]
+        total = appts.aggregate(s=Sum("service__price"))["s"] or 0
+        data = [["Data", "Klient", "Usługa", "Cena"]]
 
         for a in appts:
             c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
             data.append([
-                a.start.strftime('%Y-%m-%d'),
+                a.start.strftime("%Y-%m-%d"),
                 clean_text(c_name),
                 clean_text(a.service.name if a.service else "-"),
                 f"{a.service.price} zł" if a.service else "-"
             ])
 
-        data.append(['', '', 'SUMA:', f"{total} zł"])
+        data.append(["", "", "SUMA:", f"{total} zł"])
         return self._build_pdf_response("Raport Przychodów", data, "raport_finansowy.pdf")
 
     def _employees_report(self):
-        employees = EmployeeProfile.objects.all().order_by('last_name')
-        data = [['Nr', 'Imię i Nazwisko', 'Telefon', 'Status']]
+        employees = EmployeeProfile.objects.all().order_by("last_name")
+        data = [["Nr", "Imię i Nazwisko", "Telefon", "Status"]]
         for e in employees:
             data.append([
                 clean_text(e.employee_number),
@@ -993,14 +1040,14 @@ class ReportView(APIView):
 
     def _today_appointments_report(self):
         today = timezone.now().date()
-        appts = Appointment.objects.filter(start__date=today).select_related('client', 'employee', 'service').order_by('start')
-        data = [['Godz', 'Klient', 'Pracownik', 'Usługa', 'Cena']]
+        appts = Appointment.objects.filter(start__date=today).select_related("client", "employee", "service").order_by("start")
+        data = [["Godz", "Klient", "Pracownik", "Usługa", "Cena"]]
 
         for a in appts:
             c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
             e_name = f"{a.employee.first_name} {a.employee.last_name}" if a.employee else "-"
             data.append([
-                a.start.strftime('%H:%M'),
+                a.start.strftime("%H:%M"),
                 clean_text(c_name),
                 clean_text(e_name),
                 clean_text(a.service.name if a.service else "-"),

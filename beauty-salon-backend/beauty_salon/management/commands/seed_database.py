@@ -72,10 +72,14 @@ def seed(clear: bool = False) -> None:
         admin.save()
 
     employees_data = [
-        {"username": "anna.kowalska", "first_name": "Anna", "last_name": "Kowalska", "email": "anna.kowalska@beautysalon.pl", "phone": "+48501234567"},
-        {"username": "maria.nowak", "first_name": "Maria", "last_name": "Nowak", "email": "maria.nowak@beautysalon.pl", "phone": "+48502345678"},
-        {"username": "zofia.wisniewski", "first_name": "Zofia", "last_name": "Wisniewski", "email": "zofia.wisniewski@beautysalon.pl", "phone": "+48503456789"},
+        {"username": "anna.kowalska", "first_name": "Anna", "last_name": "Kowalska",
+         "email": "anna.kowalska@beautysalon.pl", "phone": "+48501234567"},
+        {"username": "maria.nowak", "first_name": "Maria", "last_name": "Nowak", "email": "maria.nowak@beautysalon.pl",
+         "phone": "+48502345678"},
+        {"username": "zofia.wisniewski", "first_name": "Zofia", "last_name": "Wisniewski",
+         "email": "zofia.wisniewski@beautysalon.pl", "phone": "+48503456789"},
     ]
+
     employee_users = []
     for e in employees_data:
         u, created = CustomUser.objects.get_or_create(
@@ -86,17 +90,27 @@ def seed(clear: bool = False) -> None:
                 "email": e["email"],
                 "role": "EMPLOYEE",
                 "is_active": True,
+                "is_staff": False,  # Anna musi mieć is_staff, żeby API ją wpuściło
             },
         )
         if created:
             u.set_password("employee123")
             u.save()
+        else:
+            # Jeśli użytkownik już istniał, upewniamy się, że ma poprawne uprawnienia
+            u.is_staff = True
+            u.role = "EMPLOYEE"
+            u.save()
+
         employee_users.append(u)
 
     clients_data = [
-        {"username": "klient-00000001", "first_name": "Katarzyna", "last_name": "Zielinska", "email": "katarzyna.zielinska@gmail.com", "phone": "+48601234567"},
-        {"username": "klient-00000002", "first_name": "Magdalena", "last_name": "Lewandowska", "email": "magdalena.lewandowska@gmail.com", "phone": "+48602345678"},
-        {"username": "klient-00000003", "first_name": "Agnieszka", "last_name": "Kaminska", "email": "agnieszka.kaminska@gmail.com", "phone": "+48603456789"},
+        {"username": "klient-00000001", "first_name": "Katarzyna", "last_name": "Zielinska",
+         "email": "katarzyna.zielinska@gmail.com", "phone": "+48601234567"},
+        {"username": "klient-00000002", "first_name": "Magdalena", "last_name": "Lewandowska",
+         "email": "magdalena.lewandowska@gmail.com", "phone": "+48602345678"},
+        {"username": "klient-00000003", "first_name": "Agnieszka", "last_name": "Kaminska",
+         "email": "agnieszka.kaminska@gmail.com", "phone": "+48603456789"},
     ]
     client_users = []
     for c in clients_data:
@@ -116,25 +130,39 @@ def seed(clear: bool = False) -> None:
         client_users.append(u)
 
     services_data = [
-        {"name": "Manicure klasyczny", "category": "Paznokcie", "price": 50, "duration": 45, "desc": "Podstawowy manicure z malowaniem"},
-        {"name": "Manicure hybrydowy", "category": "Paznokcie", "price": 80, "duration": 60, "desc": "Manicure z użyciem lakieru hybrydowego"},
-        {"name": "Manicure żelowy", "category": "Paznokcie", "price": 100, "duration": 90, "desc": "Przedłużanie paznokci metodą żelową"},
-        {"name": "Pedicure klasyczny", "category": "Paznokcie", "price": 60, "duration": 60, "desc": "Podstawowy pedicure z malowaniem"},
-        {"name": "Pedicure hybrydowy", "category": "Paznokcie", "price": 90, "duration": 75, "desc": "Pedicure z lakierem hybrydowym"},
-        {"name": "Przedłużanie rzęs 1:1", "category": "Rzęsy", "price": 120, "duration": 90, "desc": "Klasyczne przedłużanie metodą 1:1"},
-        {"name": "Przedłużanie rzęs 2D-3D", "category": "Rzęsy", "price": 150, "duration": 120, "desc": "Przedłużanie metodą objętościową"},
-        {"name": "Lifting rzęs", "category": "Rzęsy", "price": 100, "duration": 60, "desc": "Laminacja i lifting naturalnych rzęs"},
-        {"name": "Uzupełnienie rzęs", "category": "Rzęsy", "price": 80, "duration": 60, "desc": "Uzupełnienie po 2-3 tygodniach"},
+        {"name": "Manicure klasyczny", "category": "Paznokcie", "price": 50, "duration": 45,
+         "desc": "Podstawowy manicure z malowaniem"},
+        {"name": "Manicure hybrydowy", "category": "Paznokcie", "price": 80, "duration": 60,
+         "desc": "Manicure z użyciem lakieru hybrydowego"},
+        {"name": "Manicure żelowy", "category": "Paznokcie", "price": 100, "duration": 90,
+         "desc": "Przedłużanie paznokci metodą żelową"},
+        {"name": "Pedicure klasyczny", "category": "Paznokcie", "price": 60, "duration": 60,
+         "desc": "Podstawowy pedicure z malowaniem"},
+        {"name": "Pedicure hybrydowy", "category": "Paznokcie", "price": 90, "duration": 75,
+         "desc": "Pedicure z lakierem hybrydowym"},
+        {"name": "Przedłużanie rzęs 1:1", "category": "Rzęsy", "price": 120, "duration": 90,
+         "desc": "Klasyczne przedłużanie metodą 1:1"},
+        {"name": "Przedłużanie rzęs 2D-3D", "category": "Rzęsy", "price": 150, "duration": 120,
+         "desc": "Przedłużanie metodą objętościową"},
+        {"name": "Lifting rzęs", "category": "Rzęsy", "price": 100, "duration": 60,
+         "desc": "Laminacja i lifting naturalnych rzęs"},
+        {"name": "Uzupełnienie rzęs", "category": "Rzęsy", "price": 80, "duration": 60,
+         "desc": "Uzupełnienie po 2-3 tygodniach"},
         {"name": "Stylizacja brwi", "category": "Brwi", "price": 40, "duration": 30, "desc": "Regulacja kształtu brwi"},
         {"name": "Henna brwi", "category": "Brwi", "price": 50, "duration": 45, "desc": "Farbowanie henną"},
         {"name": "Microblading", "category": "Brwi", "price": 400, "duration": 120, "desc": "Makijaż permanentny brwi"},
-        {"name": "Oczyszczanie wodorowe", "category": "Twarz", "price": 120, "duration": 60, "desc": "Głębokie oczyszczanie twarzy"},
+        {"name": "Oczyszczanie wodorowe", "category": "Twarz", "price": 120, "duration": 60,
+         "desc": "Głębokie oczyszczanie twarzy"},
         {"name": "Mezoterapia igłowa", "category": "Twarz", "price": 200, "duration": 45, "desc": "Zabieg mezoterapii"},
-        {"name": "Peeling kawitacyjny", "category": "Twarz", "price": 100, "duration": 45, "desc": "Peeling ultradźwiękowy"},
+        {"name": "Peeling kawitacyjny", "category": "Twarz", "price": 100, "duration": 45,
+         "desc": "Peeling ultradźwiękowy"},
         {"name": "Masaż twarzy", "category": "Twarz", "price": 80, "duration": 45, "desc": "Relaksujący masaż twarzy"},
-        {"name": "Depilacja woskiem - nogi", "category": "Depilacja", "price": 80, "duration": 45, "desc": "Depilacja całych nóg"},
-        {"name": "Depilacja woskiem - pachy", "category": "Depilacja", "price": 40, "duration": 20, "desc": "Depilacja pach"},
-        {"name": "Depilacja laserowa - nogi", "category": "Depilacja", "price": 300, "duration": 60, "desc": "Laserowe usuwanie owłosienia"},
+        {"name": "Depilacja woskiem - nogi", "category": "Depilacja", "price": 80, "duration": 45,
+         "desc": "Depilacja całych nóg"},
+        {"name": "Depilacja woskiem - pachy", "category": "Depilacja", "price": 40, "duration": 20,
+         "desc": "Depilacja pach"},
+        {"name": "Depilacja laserowa - nogi", "category": "Depilacja", "price": 300, "duration": 60,
+         "desc": "Laserowe usuwanie owłosienia"},
         {"name": "Masaż relaksacyjny", "category": "Masaż", "price": 150, "duration": 60, "desc": "Masaż całego ciała"},
     ]
 

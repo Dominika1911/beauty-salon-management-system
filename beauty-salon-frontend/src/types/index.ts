@@ -90,7 +90,7 @@ export interface Client {
   email: string;
   phone: string;
 
-  internal_notes: string;
+  internal_notes: string | null;
   password?: string;
 
   is_active: boolean;
@@ -122,7 +122,7 @@ export interface Appointment {
   end: string;
   status: AppointmentStatus;
   status_display: string;
-  internal_notes: string;
+  internal_notes: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -296,3 +296,23 @@ export interface AuthStatusResponse {
   user: User | null;
 }
 
+
+export type TimeOffStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface TimeOff {
+  id: number;
+  employee: number;
+  employee_name?: string;
+
+  date_from: string; // "YYYY-MM-DD"
+  date_to: string;   // "YYYY-MM-DD"
+  reason: string;
+
+  status: TimeOffStatus;
+
+  requested_by?: number;
+  decided_by?: number | null;
+  decided_at?: string | null;
+
+  created_at: string;
+}

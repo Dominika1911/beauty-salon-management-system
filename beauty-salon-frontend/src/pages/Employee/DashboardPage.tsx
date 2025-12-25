@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Alert, CircularProgress, Grid, Paper, Stack, Typography } from "@mui/material";
+import { Alert, CircularProgress, Grid, Paper, Stack, Typography, Box } from "@mui/material";
 import { getDashboard } from "../../api/dashboard";
 import type { DashboardResponse, EmployeeDashboard } from "../../types";
 
@@ -17,7 +17,14 @@ export default function EmployeeDashboardPage() {
   }, []);
 
   if (err) return <Alert severity="error">{err}</Alert>;
-  if (!data) return <CircularProgress />;
+
+  if (!data) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Stack spacing={2}>
@@ -30,6 +37,7 @@ export default function EmployeeDashboardPage() {
             <Typography variant="h4">{data.today.appointments.length}</Typography>
           </Paper>
         </Grid>
+
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="h6">Zakończone w tym miesiącu</Typography>
@@ -46,9 +54,12 @@ export default function EmployeeDashboardPage() {
           ) : (
             data.upcoming.appointments.map((a) => (
               <Paper key={a.id} variant="outlined" sx={{ p: 1.5 }}>
-                <Typography>{a.service_name} • {a.client_name ?? "—"}</Typography>
+                <Typography>
+                  {a.service_name} • {a.client_name ?? "—"}
+                </Typography>
                 <Typography variant="body2" sx={{ opacity: 0.8 }}>
-                  {new Date(a.start).toLocaleString()} – {new Date(a.end).toLocaleString()}
+                  {new Date(a.start).toLocaleString("pl-PL")} –{" "}
+                  {new Date(a.end).toLocaleString("pl-PL")}
                 </Typography>
               </Paper>
             ))

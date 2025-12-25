@@ -1,3 +1,4 @@
+# models.py
 from __future__ import annotations
 
 import re
@@ -8,7 +9,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
-from django.db.models import Q, UniqueConstraint
+from django.db.models import F, Q, UniqueConstraint
 from django.utils.translation import gettext_lazy as _
 
 
@@ -244,24 +245,67 @@ class EmployeeSchedule(models.Model):
 
 
 class TimeOff(models.Model):
-    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="time_offs")
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Oczekuje"
+        APPROVED = "APPROVED", "Zaakceptowany"
+        REJECTED = "REJECTED", "Odrzucony"
+
+    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs")
     date_from = models.DateField()
     date_to = models.DateField()
-    reason = models.TextField(blank=True)
+    reason = models.CharField(max_length=255, blank=True, default="")
+
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="timeoff_requests",
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name="timeoff_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["-date_from"]
-        constraints = [
-            models.CheckConstraint(check=Q(date_to__gte=models.F("date_from")), name="timeoff_date_range_valid"),
-        ]
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=["employee", "date_from", "date_to"]),
+            models.Index(fields=["employee", "status", "date_from"]),
+            models.Index(fields=["employee", "date_to"]),
+        ]
+        constraints = [
+            models.CheckConstraint(check=Q(date_to__gte=F("date_from")), name="timeoff_to_gte_from"),
         ]
 
-    def __str__(self) -> str:
-        return f"{self.employee.employee_number} - {self.date_from}..{self.date_to}"
+    def __str__(self):
+        return f"{self.employee} {self.date_from}..{self.date_to} ({self.status})"
+
+    def clean(self):
+        super().clean()
+
+        if self.date_to and self.date_from and self.date_to < self.date_from:
+            raise ValidationError({"date_to": "date_to nie może być wcześniejsze niż date_from."})
+
+        # Blokada nakładania się APPROVED urlopów (czytelna i bezpieczna)
+        if self.employee_id and self.date_from and self.date_to and self.status == self.Status.APPROVED:
+            overlap = (
+                TimeOff.objects
+                .filter(
+                    employee_id=self.employee_id,
+                    status=self.Status.APPROVED,
+                    date_from__lte=self.date_to,
+                    date_to__gte=self.date_from,
+                )
+                .exclude(pk=self.pk)
+            )
+            if overlap.exists():
+                raise ValidationError("Ten urlop nakłada się na inny zaakceptowany urlop.")
 
 
 # =============================================================================
@@ -297,9 +341,8 @@ class Appointment(models.Model):
     class Meta:
         ordering = ["start"]
         constraints = [
-            models.CheckConstraint(check=Q(end__gt=models.F("start")), name="appointment_end_after_start"),
+            models.CheckConstraint(check=Q(end__gt=F("start")), name="appointment_end_after_start"),
             UniqueConstraint(fields=["employee", "start"], name="unique_employee_start"),
-            # USUNIĘTO: UniqueConstraint(fields=["employee", "end"], name="unique_employee_end"),
         ]
         indexes = [
             models.Index(fields=["employee", "start"]),
@@ -312,12 +355,15 @@ class Appointment(models.Model):
     def clean(self):
         super().clean()
 
-        if self.end <= self.start:
+        if self.end and self.start and self.end <= self.start:
             raise ValidationError({"end": "End must be after start."})
+
+        if not self.employee_id or not self.start or not self.end:
+            return
 
         qs = (
             Appointment.objects
-            .filter(employee=self.employee)
+            .filter(employee_id=self.employee_id)
             .exclude(pk=self.pk)
             .exclude(status=Appointment.Status.CANCELLED)  # anulowane nie blokują
         )

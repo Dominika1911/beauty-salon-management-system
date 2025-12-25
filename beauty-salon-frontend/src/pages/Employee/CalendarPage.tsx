@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
+import type { EventInput } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -16,46 +17,78 @@ import {
   DialogActions,
   Button,
   Stack,
-  Chip
+  Chip,
 } from "@mui/material";
 
 import {
   getMyAppointments,
   confirmAppointment,
   cancelAppointment,
-  completeAppointment
+  completeAppointment,
 } from "../../api/appointments";
-import type { Appointment } from "../../types";
+import type { Appointment, AppointmentStatus } from "../../types";
+
+function statusChipColor(
+  status: AppointmentStatus
+): "default" | "success" | "warning" | "error" {
+  switch (status) {
+    case "CONFIRMED":
+      return "success";
+    case "PENDING":
+      return "warning";
+    case "CANCELLED":
+      return "error";
+    case "COMPLETED":
+      return "success";
+    default:
+      return "default";
+  }
+}
+
+function eventBg(status: AppointmentStatus) {
+  switch (status) {
+    case "CONFIRMED":
+      return "#2e7d32";
+    case "PENDING":
+      return "#ed6c02";
+    case "COMPLETED":
+      return "#1976d2";
+    case "CANCELLED":
+      return "#d32f2f";
+    default:
+      return "#9e9e9e";
+  }
+}
 
 export default function EmployeeCalendarPage() {
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // Stan dla Modala
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-
-  const now = new Date();
+  const [busy, setBusy] = useState(false);
 
   const loadAppointments = async () => {
+    setErr("");
+    setLoading(true);
     try {
       const data = await getMyAppointments();
-      const calendarEvents = data.map((a: Appointment) => ({
+
+      const calendarEvents: EventInput[] = data.map((a: Appointment) => ({
         id: String(a.id),
         title: a.service_name,
         start: a.start,
         end: a.end,
-        // Kolory spójne z resztą systemu
-        backgroundColor: a.status === "CONFIRMED" ? "#2e7d32" :
-                         a.status === "PENDING" ? "#ed6c02" :
-                         a.status === "COMPLETED" ? "#1976d2" : "#d32f2f",
+        backgroundColor: eventBg(a.status),
         borderColor: "transparent",
-        extendedProps: { ...a }
+        extendedProps: { ...a },
       }));
+
       setEvents(calendarEvents);
     } catch (e: any) {
-      setErr("Błąd podczas ładowania terminarza.");
+      setErr(e?.response?.data?.detail || e?.message || "Błąd podczas ładowania terminarza.");
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -72,16 +105,41 @@ export default function EmployeeCalendarPage() {
 
   const handleAction = async (fn: (id: number) => Promise<any>) => {
     if (!selectedAppt) return;
+    setBusy(true);
     try {
       await fn(selectedAppt.id);
       setModalOpen(false);
-      await loadAppointments(); // Odświeżamy kalendarz
+      setSelectedAppt(null);
+      await loadAppointments();
     } catch (e: any) {
-      alert("Błąd podczas wykonywania akcji.");
+      alert(e?.response?.data?.detail || e?.message || "Błąd podczas wykonywania akcji.");
+    } finally {
+      setBusy(false);
     }
   };
 
-  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>;
+  const canComplete = useMemo(() => {
+    if (!selectedAppt) return false;
+    const start = new Date(selectedAppt.start);
+    const now = new Date(); // zawsze aktualne
+    return (
+      start <= now &&
+      (selectedAppt.status === "CONFIRMED" || selectedAppt.status === "PENDING")
+    );
+  }, [selectedAppt]);
+
+  const canCancel = useMemo(() => {
+    if (!selectedAppt) return false;
+    return selectedAppt.status === "CONFIRMED" || selectedAppt.status === "PENDING";
+  }, [selectedAppt]);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: { xs: 1, md: 3 } }}>
@@ -89,7 +147,11 @@ export default function EmployeeCalendarPage() {
         Mój Terminarz
       </Typography>
 
-      {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
+      {err && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {err}
+        </Alert>
+      )}
 
       <Paper sx={{ p: 2, borderRadius: 2, boxShadow: 3 }}>
         <FullCalendar
@@ -110,70 +172,99 @@ export default function EmployeeCalendarPage() {
           stickyHeaderDates={true}
           eventClick={handleEventClick}
           eventTimeFormat={{
-            hour: '2-digit',
-            minute: '2-digit',
-            meridiem: false
+            hour: "2-digit",
+            minute: "2-digit",
+            meridiem: false,
           }}
         />
       </Paper>
 
-      {/* MODAL SZCZEGÓŁÓW WIZYTY */}
-      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={modalOpen}
+        onClose={() => (!busy ? setModalOpen(false) : null)}
+        maxWidth="xs"
+        fullWidth
+      >
         {selectedAppt && (
           <>
-            <DialogTitle sx={{ bgcolor: '#f5f5f5' }}>
-              Szczegóły wizyty
-            </DialogTitle>
+            <DialogTitle sx={{ bgcolor: "#f5f5f5" }}>Szczegóły wizyty</DialogTitle>
+
             <DialogContent dividers>
               <Stack spacing={2} sx={{ mt: 1 }}>
                 <Box>
-                  <Typography variant="caption" color="textSecondary">Usługa</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Usługa
+                  </Typography>
                   <Typography variant="h6">{selectedAppt.service_name}</Typography>
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" color="textSecondary">Klient</Typography>
-                  <Typography variant="body1" fontWeight={500}>{selectedAppt.client_name || "Brak danych"}</Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant="caption" color="textSecondary">Termin</Typography>
-                  <Typography variant="body1">
-                    {new Date(selectedAppt.start).toLocaleString('pl-PL')}
+                  <Typography variant="caption" color="text.secondary">
+                    Klient
+                  </Typography>
+                  <Typography variant="body1" fontWeight={500}>
+                    {selectedAppt.client_name || "Brak danych"}
                   </Typography>
                 </Box>
 
                 <Box>
-                  <Typography variant="caption" color="textSecondary">Status</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Termin
+                  </Typography>
+                  <Typography variant="body1">
+                    {new Date(selectedAppt.start).toLocaleString("pl-PL")}
+                  </Typography>
+                </Box>
+
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Status
+                  </Typography>
                   <Box sx={{ mt: 0.5 }}>
                     <Chip
                       label={selectedAppt.status_display || selectedAppt.status}
                       size="small"
-                      color={selectedAppt.status === "CONFIRMED" ? "success" : "warning"}
+                      color={statusChipColor(selectedAppt.status)}
+                      variant="outlined"
                     />
                   </Box>
                 </Box>
               </Stack>
             </DialogContent>
-            <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
-              <Button onClick={() => setModalOpen(false)} color="inherit">Zamknij</Button>
+
+            <DialogActions sx={{ p: 2, justifyContent: "space-between" }}>
+              <Button onClick={() => setModalOpen(false)} color="inherit" disabled={busy}>
+                Zamknij
+              </Button>
 
               <Stack direction="row" spacing={1}>
                 {selectedAppt.status === "PENDING" && (
-                  <Button variant="contained" onClick={() => handleAction(confirmAppointment)}>
+                  <Button
+                    variant="contained"
+                    onClick={() => handleAction(confirmAppointment)}
+                    disabled={busy}
+                  >
                     Potwierdź
                   </Button>
                 )}
 
-                {/* Logika przycisków uzależniona od czasu (tak jak na liście) */}
-                {new Date(selectedAppt.start) <= now && (selectedAppt.status === 'CONFIRMED' || selectedAppt.status === 'PENDING') && (
-                  <Button variant="contained" color="success" onClick={() => handleAction(completeAppointment)}>
+                {canComplete && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={() => handleAction(completeAppointment)}
+                    disabled={busy}
+                  >
                     Zakończ
                   </Button>
                 )}
 
-                {(selectedAppt.status === 'CONFIRMED' || selectedAppt.status === 'PENDING') && (
-                  <Button color="error" onClick={() => handleAction(cancelAppointment)}>
+                {canCancel && (
+                  <Button
+                    color="error"
+                    onClick={() => handleAction(cancelAppointment)}
+                    disabled={busy}
+                  >
                     Anuluj
                   </Button>
                 )}
