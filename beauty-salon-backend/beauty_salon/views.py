@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import io
+import os
 from datetime import datetime, timedelta, time
 from decimal import Decimal
 
@@ -13,14 +13,14 @@ from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
 
-from rest_framework import status, viewsets, permissions, serializers
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import status, viewsets, permissions, serializers, filters
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters
 
-# IMPORTY DLA PDF (ReportLab)
+# PDF (ReportLab)
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -107,7 +107,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
-        return Response(UserDetailSerializer(request.user).data)
+        return Response(UserDetailSerializer(request.user, context={"request": request}).data)
 
 
 # =============================================================================
@@ -125,7 +125,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if not (user and user.is_authenticated) or getattr(user, "role", None) == "CLIENT":
+        if not (user and user.is_authenticated) or getattr(user, "role", None) == User.Role.CLIENT:
             return qs.filter(is_active=True)
         return qs
 
@@ -183,13 +183,20 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
 
         user = self.request.user
-        if not (user and user.is_authenticated) or getattr(user, "role", None) == "CLIENT":
+        if not (user and user.is_authenticated) or getattr(user, "role", None) == User.Role.CLIENT:
             return qs.filter(is_active=True)
         return qs
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy", "schedule"]:
+        # Commit 4: schedule GET -> admin/employee, PATCH -> tylko admin
+        if self.action == "schedule":
+            if self.request.method in ["PATCH", "PUT"]:
+                return [IsAdmin()]
             return [IsAdminOrEmployee()]
+
+        if self.action in ["create", "update", "partial_update", "destroy"]:
+            return [IsAdminOrEmployee()]
+
         return [permissions.AllowAny()]
 
     @action(detail=True, methods=["get", "patch"], url_path="schedule")
@@ -198,12 +205,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         schedule, _ = EmployeeSchedule.objects.get_or_create(employee=employee)
 
         if request.method == "GET":
-            return Response(EmployeeScheduleSerializer(schedule).data)
+            return Response(EmployeeScheduleSerializer(schedule, context={"request": request}).data)
 
-        if not request.user.is_staff:
-            return Response({"detail": "Tylko administrator może zmieniać grafik."}, status=status.HTTP_403_FORBIDDEN)
-
-        ser = EmployeeScheduleSerializer(schedule, data=request.data, partial=True)
+        ser = EmployeeScheduleSerializer(schedule, data=request.data, partial=True, context={"request": request})
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response(ser.data)
@@ -215,7 +219,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
 class TimeOffViewSet(viewsets.ModelViewSet):
     """
-    Spójny endpoint do urlopów:
     - EMPLOYEE: list/retrieve swoich + create dla siebie (PENDING)
     - ADMIN: list/retrieve wszystkich + create dla dowolnego + approve/reject
     """
@@ -233,20 +236,17 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = (
             TimeOff.objects
-            .select_related("employee", "requested_by", "decided_by")
+            .select_related("employee", "employee__user", "requested_by", "decided_by")
             .order_by("-created_at")
         )
 
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if not user.is_authenticated:
+        if not user.is_authenticated or role == User.Role.CLIENT:
             return qs.none()
 
-        if role == "CLIENT":
-            return qs.none()
-
-        if role == "EMPLOYEE":
+        if role == User.Role.EMPLOYEE:
             emp = getattr(user, "employee_profile", None)
             if not emp:
                 return qs.none()
@@ -275,23 +275,26 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if role == "EMPLOYEE":
+        if role == User.Role.EMPLOYEE:
             emp = getattr(user, "employee_profile", None)
             if not emp:
-                raise permissions.PermissionDenied("Brak profilu pracownika.")
-            serializer.save(employee=emp, status=TimeOff.Status.PENDING, requested_by=user)
-            SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=user)
-            return
+                raise PermissionDenied("Brak profilu pracownika.")
+            obj = serializer.save(employee=emp, status=TimeOff.Status.PENDING, requested_by=user)
 
-        if user.is_staff or role == "ADMIN":
+        elif role == User.Role.ADMIN or user.is_staff:
             employee = serializer.validated_data.get("employee")
             if not employee:
                 raise serializers.ValidationError({"employee": "Pole employee jest wymagane dla ADMIN."})
-            serializer.save(status=TimeOff.Status.PENDING, requested_by=user)
-            SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=user)
-            return
+            obj = serializer.save(status=TimeOff.Status.PENDING, requested_by=user)
 
-        raise permissions.PermissionDenied("Brak uprawnień.")
+        else:
+            raise PermissionDenied("Brak uprawnień.")
+
+        SystemLog.log(
+            action=SystemLog.Action.TIMEOFF_CREATED,
+            performed_by=user,
+            target_user=getattr(obj.employee, "user", None),
+        )
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
@@ -305,8 +308,12 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj.decided_at = timezone.now()
         obj.save(update_fields=["status", "decided_by", "decided_at"])
 
-        SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=request.user)
-        return Response(TimeOffSerializer(obj).data)
+        SystemLog.log(
+            action=SystemLog.Action.TIMEOFF_APPROVED,
+            performed_by=request.user,
+            target_user=getattr(obj.employee, "user", None),
+        )
+        return Response(TimeOffSerializer(obj, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="reject")
     def reject(self, request, pk=None):
@@ -320,8 +327,12 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj.decided_at = timezone.now()
         obj.save(update_fields=["status", "decided_by", "decided_at"])
 
-        SystemLog.log(action=SystemLog.Action.EMPLOYEE_UPDATED, performed_by=request.user)
-        return Response(TimeOffSerializer(obj).data)
+        SystemLog.log(
+            action=SystemLog.Action.TIMEOFF_REJECTED,
+            performed_by=request.user,
+            target_user=getattr(obj.employee, "user", None),
+        )
+        return Response(TimeOffSerializer(obj, context={"request": request}).data)
 
 
 # =============================================================================
@@ -351,7 +362,7 @@ class ClientViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Brak profilu klienta dla tego konta."}, status=status.HTTP_404_NOT_FOUND)
 
         obj = self.get_queryset().filter(pk=profile.pk).first()
-        return Response(ClientSerializer(obj).data)
+        return Response(ClientSerializer(obj, context={"request": request}).data)
 
 
 # =============================================================================
@@ -376,7 +387,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if self.action == "my":
             return [IsEmployee()]
 
-        if self.action in ["list", "retrieve"] and role == "CLIENT":
+        if self.action in ["list", "retrieve"] and role == User.Role.CLIENT:
             return [permissions.IsAuthenticated()]
 
         return [IsAdminOrEmployee()]
@@ -390,13 +401,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         role = getattr(user, "role", None)
 
-        if role == "CLIENT":
+        if role == User.Role.CLIENT:
             profile = getattr(user, "client_profile", None)
             if not profile:
                 return qs.none()
             return qs.filter(client=profile)
 
-        if role == "EMPLOYEE":
+        if role == User.Role.EMPLOYEE:
             employee = getattr(user, "employee_profile", None)
             return qs.filter(employee=employee) if employee else qs.none()
 
@@ -407,8 +418,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         employee = getattr(request.user, "employee_profile", None)
         if not employee:
             return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
-        qs = self.get_queryset()
-        return Response(AppointmentSerializer(qs, many=True).data)
+
+        qs = self.get_queryset().order_by("start")
+
+        # Bonus A: paginacja
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            ser = AppointmentSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(ser.data)
+
+        return Response(AppointmentSerializer(qs, many=True, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
     def confirm(self, request, pk=None):
@@ -420,7 +439,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt.status = Appointment.Status.CONFIRMED
         appt.save(update_fields=["status"])
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CONFIRMED, performed_by=request.user)
-        return Response(AppointmentSerializer(appt).data)
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
@@ -439,7 +458,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
         appt.save(update_fields=["status", "internal_notes"])
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CANCELLED, performed_by=request.user)
-        return Response(AppointmentSerializer(appt).data)
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
@@ -451,7 +470,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt.status = Appointment.Status.COMPLETED
         appt.save(update_fields=["status"])
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_COMPLETED, performed_by=request.user)
-        return Response(AppointmentSerializer(appt).data)
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
 
 # =============================================================================
@@ -476,11 +495,11 @@ class SystemSettingsView(APIView):
 
     def get(self, request):
         obj = SystemSettings.get_settings()
-        return Response(SystemSettingsSerializer(obj).data)
+        return Response(SystemSettingsSerializer(obj, context={"request": request}).data)
 
     def patch(self, request):
         obj = SystemSettings.get_settings()
-        ser = SystemSettingsSerializer(obj, data=request.data, partial=True)
+        ser = SystemSettingsSerializer(obj, data=request.data, partial=True, context={"request": request})
         ser.is_valid(raise_exception=True)
         ser.save(updated_by=request.user)
         SystemLog.log(action=SystemLog.Action.SETTINGS_UPDATED, performed_by=request.user)
@@ -664,7 +683,7 @@ class BookingCreateAPIView(APIView):
         appointment = ser.save()
 
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
-        return Response(AppointmentSerializer(appointment).data, status=status.HTTP_201_CREATED)
+        return Response(AppointmentSerializer(appointment, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
 class CheckAvailabilityView(APIView):
@@ -733,16 +752,16 @@ class DashboardView(APIView):
     def get(self, request):
         user = request.user
 
-        if user.is_admin_role:
-            return self._admin_dashboard()
-        elif user.is_employee:
-            return self._employee_dashboard(user)
-        elif user.is_client:
-            return self._client_dashboard(user)
+        if getattr(user, "is_admin_role", False):
+            return self._admin_dashboard(request)
+        if getattr(user, "is_employee", False):
+            return self._employee_dashboard(request, user)
+        if getattr(user, "is_client", False):
+            return self._client_dashboard(request, user)
 
         return Response({"detail": "Brak uprawnień"}, status=status.HTTP_403_FORBIDDEN)
 
-    def _admin_dashboard(self):
+    def _admin_dashboard(self, request):
         today = timezone.now().date()
         now = timezone.now()
 
@@ -765,7 +784,7 @@ class DashboardView(APIView):
             "today": {
                 "date": today.isoformat(),
                 "appointments_count": today_appointments.count(),
-                "appointments": AppointmentSerializer(today_appointments.order_by("start")[:10], many=True).data,
+                "appointments": AppointmentSerializer(today_appointments.order_by("start")[:10], many=True, context={"request": request}).data,
             },
             "pending_appointments": pending_count,
             "current_month": {
@@ -782,85 +801,85 @@ class DashboardView(APIView):
             }
         })
 
-    def _employee_dashboard(self, user):
-        try:
-            employee = user.employee_profile
-            today = timezone.now()
-            today_date = today.date()
+    def _employee_dashboard(self, request, user):
+        employee = getattr(user, "employee_profile", None)
+        if not employee:
+            return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
 
-            today_schedule = Appointment.objects.filter(
-                employee=employee,
-                start__date=today_date,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by("start")
+        today = timezone.now()
+        today_date = today.date()
 
-            week_later = today + timedelta(days=7)
-            upcoming = Appointment.objects.filter(
-                employee=employee,
-                start__gte=today,
-                start__lte=week_later,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by("start")
+        today_schedule = Appointment.objects.filter(
+            employee=employee,
+            start__date=today_date,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).order_by("start")
 
-            month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            month_completed = Appointment.objects.filter(
-                employee=employee,
-                status=Appointment.Status.COMPLETED,
-                start__gte=month_start
-            ).count()
+        week_later = today + timedelta(days=7)
+        upcoming = Appointment.objects.filter(
+            employee=employee,
+            start__gte=today,
+            start__lte=week_later,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).order_by("start")
 
-            return Response({
-                "role": "EMPLOYEE",
-                "employee_number": employee.employee_number,
-                "full_name": employee.get_full_name(),
-                "today": {
-                    "date": today_date.isoformat(),
-                    "appointments": AppointmentSerializer(today_schedule, many=True).data,
-                },
-                "upcoming": {
-                    "count": upcoming.count(),
-                    "appointments": AppointmentSerializer(upcoming[:5], many=True).data,
-                },
-                "this_month": {
-                    "completed_appointments": month_completed,
-                }
-            })
-        except Exception as e:
-            return Response({"detail": f"Brak profilu pracownika: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
+        month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_completed = Appointment.objects.filter(
+            employee=employee,
+            status=Appointment.Status.COMPLETED,
+            start__gte=month_start
+        ).count()
 
-    def _client_dashboard(self, user):
-        try:
-            client = user.client_profile
-            now = timezone.now()
+        return Response({
+            "role": "EMPLOYEE",
+            "employee_number": employee.employee_number,
+            "full_name": employee.get_full_name(),
+            "today": {
+                "date": today_date.isoformat(),
+                "appointments": AppointmentSerializer(today_schedule, many=True, context={"request": request}).data,
+            },
+            "upcoming": {
+                "count": upcoming.count(),
+                "appointments": AppointmentSerializer(upcoming[:5], many=True, context={"request": request}).data,
+            },
+            "this_month": {
+                "completed_appointments": month_completed,
+            }
+        })
 
-            upcoming = Appointment.objects.filter(
-                client=client,
-                start__gte=now,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
-            ).order_by("start")
+    def _client_dashboard(self, request, user):
+        client = getattr(user, "client_profile", None)
+        if not client:
+            return Response({"detail": "Brak profilu klienta."}, status=status.HTTP_404_NOT_FOUND)
 
-            history_count = Appointment.objects.filter(client=client, status=Appointment.Status.COMPLETED).count()
+        now = timezone.now()
 
-            recent_history = Appointment.objects.filter(
-                client=client,
-                status=Appointment.Status.COMPLETED
-            ).order_by("-start")[:3]
+        upcoming = Appointment.objects.filter(
+            client=client,
+            start__gte=now,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).order_by("start")
 
-            return Response({
-                "role": "CLIENT",
-                "client_number": client.client_number,
-                "full_name": client.get_full_name(),
-                "upcoming_appointments": {
-                    "count": upcoming.count(),
-                    "appointments": AppointmentSerializer(upcoming[:5], many=True).data,
-                },
-                "history": {
-                    "total_completed": history_count,
-                    "recent": AppointmentSerializer(recent_history, many=True).data,
-                }
-            })
-        except Exception as e:
-            return Response({"detail": f"Brak profilu klienta: {str(e)}"}, status=status.HTTP_404_NOT_FOUND)
+        history_count = Appointment.objects.filter(client=client, status=Appointment.Status.COMPLETED).count()
+
+        recent_history = Appointment.objects.filter(
+            client=client,
+            status=Appointment.Status.COMPLETED
+        ).order_by("-start")[:3]
+
+        return Response({
+            "role": "CLIENT",
+            "client_number": client.client_number,
+            "full_name": client.get_full_name(),
+            "upcoming_appointments": {
+                "count": upcoming.count(),
+                "appointments": AppointmentSerializer(upcoming[:5], many=True, context={"request": request}).data,
+            },
+            "history": {
+                "total_completed": history_count,
+                "recent": AppointmentSerializer(recent_history, many=True, context={"request": request}).data,
+            }
+        })
 
 
 # =============================================================================
@@ -912,10 +931,11 @@ class ReportView(APIView):
         styles["Title"].fontName = PDF_FONT_NAME
         styles["Normal"].fontName = PDF_FONT_NAME
 
-        elements = []
-        elements.append(Paragraph(title_text, styles["Title"]))
-        elements.append(Paragraph(f"Wygenerowano: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
-        elements.append(Spacer(1, 24))
+        elements = [
+            Paragraph(title_text, styles["Title"]),
+            Paragraph(f"Wygenerowano: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]),
+            Spacer(1, 24),
+        ]
 
         table = Table(data, repeatRows=1)
         table.setStyle(TableStyle([
@@ -933,6 +953,7 @@ class ReportView(APIView):
         elements.append(table)
         doc.build(elements)
         buffer.seek(0)
+
         resp = HttpResponse(buffer, content_type="application/pdf")
         resp["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp

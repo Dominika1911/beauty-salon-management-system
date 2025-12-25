@@ -4,6 +4,7 @@ import secrets
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
@@ -87,9 +88,10 @@ class UserCreateSerializer(serializers.ModelSerializer):
         if password:
             user.set_password(password)
         else:
-            temp_password = secrets.token_urlsafe(8)
-            user.set_password(temp_password)
+            user.set_password(secrets.token_urlsafe(8))
 
+        # Commit 2: uruchom CustomUser.clean() + walidatory modelu
+        user.full_clean()
         user.save()
         return user
 
@@ -102,7 +104,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(write_only=True)
 
     def validate_old_password(self, value):
         user = self.context["request"].user
@@ -111,17 +113,17 @@ class PasswordChangeSerializer(serializers.Serializer):
         return value
 
     def validate_new_password(self, value):
-        if len(value) < 8:
-            raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
+        user = self.context["request"].user
+        validate_password(value, user=user)
         return value
 
 
 class PasswordResetSerializer(serializers.Serializer):
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(write_only=True)
 
     def validate_new_password(self, value):
-        if len(value) < 8:
-            raise serializers.ValidationError("Hasło musi mieć co najmniej 8 znaków.")
+        # Zwykle reset hasła odbywa się bez zalogowania -> walidacja ogólna
+        validate_password(value)
         return value
 
 
@@ -173,7 +175,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     )
 
     email = serializers.EmailField(write_only=True, required=False)
-    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = EmployeeProfile
@@ -218,7 +220,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 if not tmp_username:
                     raise serializers.ValidationError("Nie można wygenerować unikalnego loginu pracownika.")
 
-                user = User.objects.create(
+                user = User(
                     username=tmp_username,
                     email=email or "",
                     first_name=validated_data.get("first_name", ""),
@@ -229,8 +231,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 if password:
                     user.set_password(password)
                 else:
-                    # jeśli chcesz wymuszać hasło, usuń else i waliduj wyżej
                     user.set_password(secrets.token_urlsafe(10))
+
+                # Commit 2: walidacje modelowe usera
+                user.full_clean()
                 user.save()
 
             employee = EmployeeProfile.objects.create(user=user, **validated_data)
@@ -243,6 +247,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 if User.objects.filter(username=final_username).exclude(pk=user.pk).exists():
                     raise serializers.ValidationError("Login pracownika już istnieje.")
                 user.username = final_username
+                user.full_clean()
                 user.save(update_fields=["username"])
 
             if skills_data:
@@ -263,17 +268,25 @@ class EmployeeSerializer(serializers.ModelSerializer):
             instance.skills.set(skills_data)
 
         user = instance.user
+        user_changed = False
+
         if "first_name" in validated_data:
             user.first_name = instance.first_name
+            user_changed = True
         if "last_name" in validated_data:
             user.last_name = instance.last_name
+            user_changed = True
 
-        if email:
+        if email is not None:
             user.email = email
+            user_changed = True
+
         if password:
             user.set_password(password)
+            user_changed = True
 
-        if email or password or ("first_name" in validated_data) or ("last_name" in validated_data):
+        if user_changed:
+            user.full_clean()
             user.save()
 
         return instance
@@ -287,14 +300,13 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
 
 
 # =============================================================================
-# TIME OFF SERIALIZER (spójny pod /time-offs/)
+# TIME OFF SERIALIZER
 # =============================================================================
 
 class TimeOffSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
-    # kluczowe: employee nie jest wymagane dla EMPLOYEE (ustawiasz w perform_create)
     employee = serializers.PrimaryKeyRelatedField(
         queryset=EmployeeProfile.objects.all(),
         required=False
@@ -340,7 +352,7 @@ class ClientSerializer(serializers.ModelSerializer):
     appointments_count = serializers.IntegerField(read_only=True)
 
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
-    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = ClientProfile
@@ -383,7 +395,7 @@ class ClientSerializer(serializers.ModelSerializer):
                 if User.objects.filter(username=username).exists():
                     raise serializers.ValidationError("Użytkownik dla tego client_number już istnieje.")
 
-                user = User.objects.create(
+                user = User(
                     username=username,
                     email=email or client.email or "",
                     first_name=client.first_name,
@@ -395,6 +407,8 @@ class ClientSerializer(serializers.ModelSerializer):
                     user.set_password(password)
                 else:
                     user.set_password(secrets.token_urlsafe(10))
+
+                user.full_clean()
                 user.save()
 
                 client.user = user
@@ -414,18 +428,25 @@ class ClientSerializer(serializers.ModelSerializer):
 
         user = instance.user
         if user:
+            user_changed = False
+
             if "first_name" in validated_data:
                 user.first_name = instance.first_name
+                user_changed = True
             if "last_name" in validated_data:
                 user.last_name = instance.last_name
+                user_changed = True
 
             if "email" in validated_data:
                 user.email = instance.email or ""
+                user_changed = True
 
             if password:
                 user.set_password(password)
+                user_changed = True
 
-            if ("first_name" in validated_data) or ("last_name" in validated_data) or ("email" in validated_data) or password:
+            if user_changed:
+                user.full_clean()
                 user.save()
 
         return instance
@@ -648,12 +669,30 @@ class BookingCreateSerializer(serializers.Serializer):
         return data
 
     def create(self, validated_data):
+        employee = validated_data["employee"]
+        start = validated_data["start"]
+        end = validated_data["end"]
+
         with transaction.atomic():
+            # blokada pracownika (pessimistic locking)
+            EmployeeProfile.objects.select_for_update().get(pk=employee.pk)
+
+            conflicts = Appointment.objects.filter(
+                employee=employee,
+                start__lt=end,
+                end__gt=start
+            ).exclude(status=Appointment.Status.CANCELLED)
+
+            if conflicts.exists():
+                raise serializers.ValidationError(
+                    {"start": "Niestety, ten termin został właśnie zarezerwowany przez kogoś innego."}
+                )
+
             return Appointment.objects.create(
                 client=validated_data["client"],
-                employee=validated_data["employee"],
+                employee=employee,
                 service=validated_data["service"],
-                start=validated_data["start"],
-                end=validated_data["end"],
+                start=start,
+                end=end,
                 status=Appointment.Status.PENDING,
             )

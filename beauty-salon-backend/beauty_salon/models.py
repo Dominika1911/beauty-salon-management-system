@@ -1,4 +1,3 @@
-# models.py
 from __future__ import annotations
 
 import re
@@ -50,7 +49,7 @@ class CustomUser(AbstractUser):
         EMPLOYEE = "EMPLOYEE", _("Pracownik")
         CLIENT = "CLIENT", _("Klient")
 
-    username = models.CharField(max_length=30, unique=True, blank=True, null=True)
+    username = models.CharField(max_length=30, unique=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -76,22 +75,9 @@ class CustomUser(AbstractUser):
 
     def clean(self):
         super().clean()
-
-        internal = (self.role in [self.Role.ADMIN, self.Role.EMPLOYEE]) or self.is_staff or self.is_superuser
-
-        # Normalize empty usernames to NULL in DB
         if not self.username:
-            self.username = None
-
-        if internal and not self.username:
-            raise ValidationError({"username": "Username is required for internal users (admin/employee)."})
-
-        # klient może nie mieć username
-        if not internal and not self.username:
-            return
-
-        username = (self.username or "").strip().lower()
-
+            raise ValidationError({"username": "Username is required for all users."})
+        username = self.username.strip().lower()
         if not USERNAME_PATTERN.match(username):
             raise ValidationError({
                 "username": (
@@ -99,7 +85,6 @@ class CustomUser(AbstractUser):
                     "'imie.nazwisko' or 'pracownik-00000001' or 'admin-00000001' or 'klient-00000001'."
                 )
             })
-
         self.username = username
 
 
@@ -111,12 +96,9 @@ class Service(models.Model):
     name = models.CharField(max_length=255, unique=True)
     category = models.CharField(max_length=100, blank=True, db_index=True)
     description = models.TextField(blank=True)
-
     price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     duration_minutes = models.PositiveIntegerField(validators=[MinValueValidator(5)])
-
     is_active = models.BooleanField(default=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -140,23 +122,19 @@ class Service(models.Model):
 
 class EmployeeProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="employee_profile")
-
     employee_number = models.CharField(
         max_length=8,
         unique=True,
         validators=[employee_number_validator],
         blank=True,
+        null=True,
     )
-
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
     phone = models.CharField(max_length=16, blank=True, validators=[phone_validator])
-
     skills = models.ManyToManyField(Service, related_name="employees", blank=True)
-
     is_active = models.BooleanField(default=True)
     hired_at = models.DateField(auto_now_add=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -168,13 +146,16 @@ class EmployeeProfile(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.employee_number} - {self.get_full_name()}"
+        num = self.employee_number if self.employee_number else "N/A"
+        return f"{num} - {self.get_full_name()}"
 
     def get_full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
     def clean(self):
         super().clean()
+        if self.employee_number == "":
+            self.employee_number = None
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.EMPLOYEE:
             raise ValidationError("EmployeeProfile can only be assigned to a user with EMPLOYEE role.")
 
@@ -187,23 +168,19 @@ class ClientProfile(models.Model):
         blank=True,
         related_name="client_profile",
     )
-
     client_number = models.CharField(
         max_length=8,
         unique=True,
         validators=[client_number_validator],
         blank=True,
+        null=True,
     )
-
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
-
     email = models.EmailField(blank=True, null=True)
     phone = models.CharField(max_length=16, blank=True, validators=[phone_validator])
-
     internal_notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -215,13 +192,16 @@ class ClientProfile(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.client_number} - {self.get_full_name()}"
+        num = self.client_number if self.client_number else "N/A"
+        return f"{num} - {self.get_full_name()}"
 
     def get_full_name(self) -> str:
         return f"{self.first_name} {self.last_name}".strip()
 
     def clean(self):
         super().clean()
+        if self.client_number == "":
+            self.client_number = None
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.CLIENT:
             raise ValidationError("ClientProfile can only be assigned to a user with CLIENT role.")
 
@@ -233,7 +213,6 @@ class ClientProfile(models.Model):
 class EmployeeSchedule(models.Model):
     employee = models.OneToOneField(EmployeeProfile, on_delete=models.CASCADE, related_name="schedule")
     weekly_hours = models.JSONField(default=dict, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -241,7 +220,8 @@ class EmployeeSchedule(models.Model):
         ordering = ["pk"]
 
     def __str__(self) -> str:
-        return f"Schedule - {self.employee.employee_number}"
+        num = self.employee.employee_number if self.employee.employee_number else "N/A"
+        return f"Schedule - {num}"
 
 
 class TimeOff(models.Model):
@@ -254,9 +234,7 @@ class TimeOff(models.Model):
     date_from = models.DateField()
     date_to = models.DateField()
     reason = models.CharField(max_length=255, blank=True, default="")
-
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
-
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True, blank=True,
@@ -270,7 +248,6 @@ class TimeOff(models.Model):
         related_name="timeoff_decisions",
     )
     decided_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -288,11 +265,8 @@ class TimeOff(models.Model):
 
     def clean(self):
         super().clean()
-
         if self.date_to and self.date_from and self.date_to < self.date_from:
             raise ValidationError({"date_to": "date_to nie może być wcześniejsze niż date_from."})
-
-        # Blokada nakładania się APPROVED urlopów (czytelna i bezpieczna)
         if self.employee_id and self.date_from and self.date_to and self.status == self.Status.APPROVED:
             overlap = (
                 TimeOff.objects
@@ -328,13 +302,10 @@ class Appointment(models.Model):
     )
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.PROTECT, related_name="appointments")
     service = models.ForeignKey(Service, on_delete=models.PROTECT, related_name="appointments")
-
     start = models.DateTimeField(db_index=True)
     end = models.DateTimeField(db_index=True)
-
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
     internal_notes = models.TextField(blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -350,22 +321,20 @@ class Appointment(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.employee.employee_number} - {self.service.name} - {self.start:%Y-%m-%d %H:%M}"
+        num = self.employee.employee_number if self.employee.employee_number else "N/A"
+        return f"{num} - {self.service.name} - {self.start:%Y-%m-%d %H:%M}"
 
     def clean(self):
         super().clean()
-
         if self.end and self.start and self.end <= self.start:
             raise ValidationError({"end": "End must be after start."})
-
         if not self.employee_id or not self.start or not self.end:
             return
-
         qs = (
             Appointment.objects
             .filter(employee_id=self.employee_id)
             .exclude(pk=self.pk)
-            .exclude(status=Appointment.Status.CANCELLED)  # anulowane nie blokują
+            .exclude(status=Appointment.Status.CANCELLED)
         )
         if qs.filter(start__lt=self.end, end__gt=self.start).exists():
             raise ValidationError("Employee is not available in this time range.")
@@ -379,9 +348,7 @@ class SystemSettings(models.Model):
     salon_name = models.CharField(max_length=255, default="Salon Kosmetyczny")
     slot_minutes = models.IntegerField(default=15, validators=[MinValueValidator(5)])
     buffer_minutes = models.IntegerField(default=0, validators=[MinValueValidator(0)])
-
     opening_hours = models.JSONField(default=dict, blank=True)
-
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True)
 
@@ -420,6 +387,11 @@ class SystemLog(models.Model):
         APPOINTMENT_CONFIRMED = "APPOINTMENT_CONFIRMED", "Appointment confirmed"
         APPOINTMENT_CANCELLED = "APPOINTMENT_CANCELLED", "Appointment cancelled"
         APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", "Appointment completed"
+
+        # NOWE AKCJE WORKFLOW URLOPOWEGO
+        TIMEOFF_CREATED = "TIMEOFF_CREATED", "Time off created"
+        TIMEOFF_APPROVED = "TIMEOFF_APPROVED", "Time off approved"
+        TIMEOFF_REJECTED = "TIMEOFF_REJECTED", "Time off rejected"
 
         AUTH_LOGIN = "AUTH_LOGIN", "User login"
         AUTH_LOGOUT = "AUTH_LOGOUT", "User logout"
