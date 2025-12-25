@@ -1,32 +1,24 @@
 from django.contrib.auth import authenticate, login, logout
-from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_http_methods
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from django.http import JsonResponse
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
+
 
 from .models import SystemLog
 from .serializers import UserDetailSerializer
 
 
 @ensure_csrf_cookie
-@require_http_methods(["GET"])
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@authentication_classes([])
 def csrf(request):
-    """
-    Endpoint do pobierania tokena CSRF.
-    Frontend musi wywołać ten endpoint przed logowaniem.
+    return Response({"detail": "CSRF cookie set"})
 
-    GET /api/auth/csrf/
-
-    Response:
-    {
-        "csrfToken": "..."
-    }
-    """
-    return JsonResponse({'csrfToken': get_token(request)})
 
 
 class SessionLoginView(APIView):
@@ -80,17 +72,19 @@ class SessionLoginView(APIView):
             )
 
         # Zaloguj użytkownika
+        # Zaloguj użytkownika
         login(request, user)
 
-        # Loguj akcję w systemie
+        # Loguj akcję w systemie (audyt)
         SystemLog.log(
             action=SystemLog.Action.AUTH_LOGIN,
-            performed_by=user
+            performed_by=user,
+            target_user=user,
         )
 
         return Response({
-            'detail': 'Zalogowano pomyślnie.',
-            'user': UserDetailSerializer(user).data
+            "detail": "Zalogowano pomyślnie.",
+            "user": UserDetailSerializer(user, context={"request": request}).data
         }, status=status.HTTP_200_OK)
 
 
@@ -108,17 +102,19 @@ class SessionLogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        user = request.user
+
         # Loguj akcję przed wylogowaniem
         SystemLog.log(
             action=SystemLog.Action.AUTH_LOGOUT,
-            performed_by=request.user
+            performed_by=user,
+            target_user=user,
         )
 
-        # Wyloguj użytkownika
         logout(request)
 
         return Response(
-            {'detail': 'Wylogowano pomyślnie.'},
+            {"detail": "Wylogowano pomyślnie."},
             status=status.HTTP_200_OK
         )
 
@@ -147,11 +143,6 @@ class AuthStatusView(APIView):
     def get(self, request):
         if request.user.is_authenticated:
             return Response({
-                'isAuthenticated': True,
-                'user': UserDetailSerializer(request.user).data
+                "isAuthenticated": True,
+                "user": UserDetailSerializer(request.user, context={"request": request}).data
             })
-
-        return Response({
-            'isAuthenticated': False,
-            'user': None
-        })

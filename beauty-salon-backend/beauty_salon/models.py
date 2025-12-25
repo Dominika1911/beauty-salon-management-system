@@ -326,18 +326,35 @@ class Appointment(models.Model):
 
     def clean(self):
         super().clean()
+
+        # podstawowe sanity
         if self.end and self.start and self.end <= self.start:
             raise ValidationError({"end": "End must be after start."})
+
         if not self.employee_id or not self.start or not self.end:
             return
-        qs = (
+
+        # konflikty pracownika (jak było)
+        emp_qs = (
             Appointment.objects
             .filter(employee_id=self.employee_id)
             .exclude(pk=self.pk)
             .exclude(status=Appointment.Status.CANCELLED)
         )
-        if qs.filter(start__lt=self.end, end__gt=self.start).exists():
+        if emp_qs.filter(start__lt=self.end, end__gt=self.start).exists():
             raise ValidationError("Employee is not available in this time range.")
+
+        # NOWE: konflikty klienta (spójność z serializerami)
+        # Uwaga: client może być NULL -> wtedy pomijamy.
+        if self.client_id:
+            client_qs = (
+                Appointment.objects
+                .filter(client_id=self.client_id)
+                .exclude(pk=self.pk)
+                .exclude(status=Appointment.Status.CANCELLED)
+            )
+            if client_qs.filter(start__lt=self.end, end__gt=self.start).exists():
+                raise ValidationError("Client is not available in this time range.")
 
 
 # =============================================================================
@@ -371,34 +388,43 @@ class SystemSettings(models.Model):
 
 class SystemLog(models.Model):
     class Action(models.TextChoices):
+        # SERVICES
         SERVICE_CREATED = "SERVICE_CREATED", "Service created"
         SERVICE_UPDATED = "SERVICE_UPDATED", "Service updated"
         SERVICE_DISABLED = "SERVICE_DISABLED", "Service disabled"
+        SERVICE_ENABLED = "SERVICE_ENABLED", "Service enabled"  # <-- NOWE
 
+        # EMPLOYEES
         EMPLOYEE_CREATED = "EMPLOYEE_CREATED", "Employee created"
         EMPLOYEE_UPDATED = "EMPLOYEE_UPDATED", "Employee updated"
         EMPLOYEE_DEACTIVATED = "EMPLOYEE_DEACTIVATED", "Employee deactivated"
 
+        # CLIENTS
         CLIENT_CREATED = "CLIENT_CREATED", "Client created"
         CLIENT_UPDATED = "CLIENT_UPDATED", "Client updated"
         CLIENT_DEACTIVATED = "CLIENT_DEACTIVATED", "Client deactivated"
 
+        # APPOINTMENTS
         APPOINTMENT_CREATED = "APPOINTMENT_CREATED", "Appointment created"
+        APPOINTMENT_UPDATED = "APPOINTMENT_UPDATED", "Appointment updated"  # <-- NOWE
         APPOINTMENT_CONFIRMED = "APPOINTMENT_CONFIRMED", "Appointment confirmed"
         APPOINTMENT_CANCELLED = "APPOINTMENT_CANCELLED", "Appointment cancelled"
         APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", "Appointment completed"
 
-        # NOWE AKCJE WORKFLOW URLOPOWEGO
+        # TIME OFF WORKFLOW
         TIMEOFF_CREATED = "TIMEOFF_CREATED", "Time off created"
         TIMEOFF_APPROVED = "TIMEOFF_APPROVED", "Time off approved"
         TIMEOFF_REJECTED = "TIMEOFF_REJECTED", "Time off rejected"
 
+        # AUTH
         AUTH_LOGIN = "AUTH_LOGIN", "User login"
         AUTH_LOGOUT = "AUTH_LOGOUT", "User logout"
 
+        # SETTINGS
         SETTINGS_UPDATED = "SETTINGS_UPDATED", "Settings updated"
 
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
+
     performed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -406,6 +432,7 @@ class SystemLog(models.Model):
         null=True,
         related_name="system_logs",
     )
+
     target_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -413,6 +440,7 @@ class SystemLog(models.Model):
         null=True,
         related_name="system_logs_as_target",
     )
+
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

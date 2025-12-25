@@ -13,37 +13,44 @@ const axiosInstance = axios.create({
 });
 
 // Funkcja do pobierania tokenu CSRF
-export const getCsrfToken = async (): Promise<string> => {
+export const getCsrfToken = async (): Promise<void> => {
   try {
-    const response = await axiosInstance.get('/auth/csrf/');
-    return response.data.csrfToken;
+    await axiosInstance.get('/auth/csrf/');
   } catch (error) {
-    console.error('Błąd pobierania CSRF token:', error);
+    console.error('Błąd pobierania CSRF cookie:', error);
     throw error;
   }
 };
 
+
 // Interceptor - dodawanie CSRF tokenu do każdego żądania
 axiosInstance.interceptors.request.use(
   async (config) => {
-    // Dodaj CSRF token dla metod POST, PUT, PATCH, DELETE
-    if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
-      // Pobierz token z cookies
+    const method = (config.method || '').toLowerCase();
+    const isUnsafe = ['post', 'put', 'patch', 'delete'].includes(method);
+
+    if (isUnsafe) {
+      // jeśli nie ma csrftoken, pobierz go przez GET /auth/csrf/
+      if (!document.cookie.split('; ').some((row) => row.startsWith('csrftoken='))) {
+        await getCsrfToken();
+      }
+
       const csrfToken = document.cookie
         .split('; ')
         .find((row) => row.startsWith('csrftoken='))
         ?.split('=')[1];
 
       if (csrfToken) {
+        config.headers = config.headers ?? {};
         config.headers['X-CSRFToken'] = csrfToken;
       }
     }
+
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
+
 
 // Interceptor - obsługa błędów
 axiosInstance.interceptors.response.use(
