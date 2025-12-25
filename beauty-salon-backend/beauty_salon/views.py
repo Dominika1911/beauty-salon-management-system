@@ -377,22 +377,40 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "status", "created_at"]
 
     def get_permissions(self):
+        """
+        Minimalnie i jasno:
+        - confirm/complete: ADMIN/EMPLOYEE
+        - cancel: specyficzna logika (np. klient może anulować swoje)
+        - my: EMPLOYEE
+        - list/retrieve: zalogowany (bo i tak filtrujemy queryset do "swoich")
+        - reszta (create/update/destroy): ADMIN/EMPLOYEE
+        """
         user = self.request.user
         role = getattr(user, "role", None)
 
         if self.action in ["confirm", "complete"]:
             return [IsAdminOrEmployee()]
+
         if self.action == "cancel":
+            # Zakładam, że dodasz/masz CanCancelAppointment w permissions.py
+            from .permissions import CanCancelAppointment
             return [CanCancelAppointment()]
+
         if self.action == "my":
             return [IsEmployee()]
 
-        if self.action in ["list", "retrieve"] and role == User.Role.CLIENT:
+        if self.action in ["list", "retrieve"]:
             return [permissions.IsAuthenticated()]
 
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
+        """
+        Kluczowe zabezpieczenie:
+        - CLIENT: tylko swoje wizyty
+        - EMPLOYEE: tylko swoje wizyty
+        - ADMIN: wszystko
+        """
         qs = super().get_queryset()
         user = self.request.user
 
@@ -403,9 +421,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         if role == User.Role.CLIENT:
             profile = getattr(user, "client_profile", None)
-            if not profile:
-                return qs.none()
-            return qs.filter(client=profile)
+            return qs.filter(client=profile) if profile else qs.none()
 
         if role == User.Role.EMPLOYEE:
             employee = getattr(user, "employee_profile", None)
@@ -415,13 +431,22 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="my")
     def my(self, request):
+        """
+        Endpoint dla EMPLOYEE: lista jego wizyt.
+        Paginacja: używa globalnej PageNumberPagination + PAGE_SIZE.
+        """
         employee = getattr(request.user, "employee_profile", None)
         if not employee:
             return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
 
-        qs = self.get_queryset().order_by("start")
+        # Nie polegamy na "MVP" — jawnie filtrujemy do pracownika.
+        qs = (
+            Appointment.objects
+            .select_related("client", "employee", "service")
+            .filter(employee=employee)
+            .order_by("start")
+        )
 
-        # Bonus A: paginacja
         page = self.paginate_queryset(qs)
         if page is not None:
             ser = AppointmentSerializer(page, many=True, context={"request": request})
@@ -434,11 +459,15 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt = self.get_object()
 
         if appt.status != Appointment.Status.PENDING:
-            return Response({"detail": "Można potwierdzić tylko wizyty w statusie PENDING."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Można potwierdzić tylko wizyty w statusie PENDING."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         appt.status = Appointment.Status.CONFIRMED
         appt.save(update_fields=["status"])
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CONFIRMED, performed_by=request.user)
+
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="cancel")
@@ -447,8 +476,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         if appt.status == Appointment.Status.CANCELLED:
             return Response({"detail": "Wizyta jest już anulowana."}, status=status.HTTP_400_BAD_REQUEST)
+
         if appt.status == Appointment.Status.COMPLETED:
             return Response({"detail": "Nie można anulować zakończonej wizyty."}, status=status.HTTP_400_BAD_REQUEST)
+
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
             return Response({"detail": "Nie można anulować wizyty w tym statusie."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -457,6 +488,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             f"\n[ANULOWANO {timezone.now():%Y-%m-%d %H:%M}] przez {request.user.username}"
         )
         appt.save(update_fields=["status", "internal_notes"])
+
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_CANCELLED, performed_by=request.user)
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
@@ -465,11 +497,15 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt = self.get_object()
 
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
-            return Response({"detail": "Można zakończyć tylko wizyty potwierdzone lub oczekujące."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Można zakończyć tylko wizyty potwierdzone lub oczekujące."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         appt.status = Appointment.Status.COMPLETED
         appt.save(update_fields=["status"])
         SystemLog.log(action=SystemLog.Action.APPOINTMENT_COMPLETED, performed_by=request.user)
+
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
 
