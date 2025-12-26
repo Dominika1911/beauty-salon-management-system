@@ -6,9 +6,15 @@
 
 export type UserRole = "ADMIN" | "EMPLOYEE" | "CLIENT";
 
+/**
+ * Zgodny z backendem:
+ * - /api/users/me/ -> UserDetailSerializer (pełny obiekt z employee_profile/client_profile, updated_at)
+ * - /api/auth/login/ -> zwraca user: UserDetailSerializer
+ * - /api/auth/status/ -> zwraca user: UserDetailSerializer | null
+ */
 export interface User {
   id: number;
-  username: string | null;
+  username: string;
   first_name: string;
   last_name: string;
   email: string;
@@ -38,7 +44,7 @@ export interface Service {
   name: string;
   category: string;
   description: string;
-  price: string; // DRF Decimal przesyła jako string
+  price: string; // DRF Decimal -> string
   duration_minutes: number;
   duration_display: string;
   is_active: boolean;
@@ -58,19 +64,24 @@ export interface Employee {
   employee_number: string;
   first_name: string;
   last_name: string;
+  full_name: string; // ✅ EmployeeSerializer zwraca full_name
   phone: string;
   skills: Service[];
+
+  // write-only fields (używane przy create/update)
   skill_ids?: number[];
   email?: string;
   password?: string;
+
   is_active: boolean;
   hired_at: string;
   created_at: string;
   updated_at: string;
-  // Pola dodawane przez annotate w EmployeeViewSet
+
+  // annotate z EmployeeViewSet
   appointments_count: number;
   completed_appointments_count: number;
-  revenue_completed_total: string;
+  revenue_completed_total: string; // DRF Decimal -> string
 }
 
 // ============================================================================
@@ -80,23 +91,24 @@ export interface Employee {
 export interface Client {
   id: number;
   user: number | null;
-  user_username?: string;
-  user_email?: string;
+
+  // ✅ serializer zwraca te pola zawsze (mogą być null)
+  user_username: string | null;
+  user_email: string | null;
 
   client_number: string;
   first_name: string;
   last_name: string;
 
-  email: string;
+  email: string | null;
   phone: string;
 
   internal_notes: string | null;
+
+  // write-only
   password?: string;
 
   is_active: boolean;
-
-  // Poprawione: Backend zawsze to zwraca dzięki annotate w ClientViewSet
-  // Brak znaku zapytania naprawia błąd TS18048 w Twoim kodzie React
   appointments_count: number;
 
   created_at: string;
@@ -107,22 +119,55 @@ export interface Client {
 // WIZYTY
 // ============================================================================
 
-export type AppointmentStatus = "PENDING" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
+export type AppointmentStatus =
+  | "PENDING"
+  | "CONFIRMED"
+  | "COMPLETED"
+  | "CANCELLED";
 
+/**
+ * Jedno źródło prawdy dla flag statusów wizyt
+ * (do selectów, filtrów, mapowań)
+ */
+export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
+  "PENDING",
+  "CONFIRMED",
+  "COMPLETED",
+  "CANCELLED",
+];
+
+/**
+ * Zgodny z AppointmentSerializer:
+ * - pola relacyjne: client, employee, service (id)
+ * - pola "display": client_name, employee_name, service_name, service_price, status_display
+ * - UI flags: can_confirm, can_cancel, can_complete
+ */
 export interface Appointment {
   id: number;
+
   client: number | null;
   client_name: string | null;
+
   employee: number;
   employee_name: string;
+
   service: number;
   service_name: string;
-  service_price: string;
-  start: string;
-  end: string;
+  service_price: string; // DRF Decimal -> string
+
+  start: string; // ISO datetime
+  end: string; // ISO datetime
+
   status: AppointmentStatus;
   status_display: string;
+
+  // UI flags (backend jako jedyne źródło prawdy)
+  can_confirm: boolean;
+  can_cancel: boolean;
+  can_complete: boolean;
+
   internal_notes: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -131,11 +176,17 @@ export interface Appointment {
 // REZERWACJA I DOSTĘPNOŚĆ
 // ============================================================================
 
+/**
+ * Zgodny z BookingCreateSerializer:
+ * - service_id, employee_id, start są wymagane
+ * - client_id jest opcjonalne (CLIENT ma nadpisywane przez backend,
+ *   ADMIN/EMPLOYEE muszą podać, ale to jest walidacja backendu)
+ */
 export interface BookingCreate {
-  client_id?: number;
-  employee_id: number;
   service_id: number;
-  start: string;
+  employee_id: number;
+  start: string; // ISO datetime
+  client_id?: number;
 }
 
 export interface AvailableSlot {
@@ -197,7 +248,10 @@ export interface ClientDashboard {
   };
 }
 
-export type DashboardResponse = AdminDashboard | EmployeeDashboard | ClientDashboard;
+export type DashboardResponse =
+  | AdminDashboard
+  | EmployeeDashboard
+  | ClientDashboard;
 
 // ============================================================================
 // RAPORTY
@@ -218,39 +272,19 @@ export interface RevenueReport {
   }>;
 }
 
-export interface EmployeePerformanceReport {
-  employee: {
-    id: number;
-    employee_number: string;
-    full_name: string;
-  };
-  period: { from: string; to: string };
-  statistics: {
-    total_appointments: number;
-    completed: number;
-    cancelled: number;
-    completion_rate: number;
-    total_revenue: number;
-  };
-  top_services: Array<{
-    service__id: number;
-    service__name: string;
-    count: number;
-  }>;
-}
-
-export interface PopularServicesResponse {
-  period: { from: string; to: string };
-  top_services: Array<{ // Klucz zmieniony na 'top_services' zgodnie z views.py
-    service__id: number;
-    service__name: string;
-    count: number;
-  }>;
-}
-
 // ============================================================================
 // SYSTEM
 // ============================================================================
+
+/**
+ * Globalny typ paginacji DRF (PageNumberPagination)
+ */
+export type DRFPaginated<T> = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+};
 
 export interface SystemSettings {
   id: number;
@@ -272,13 +306,19 @@ export interface SystemLog {
   id: number;
   action: string;
   action_display: string;
+
+  // ✅ serializer zwraca zawsze (nullable), więc nie opcjonalne
+  performed_by: number | null;
   performed_by_username: string | null;
+
+  target_user: number | null;
   target_user_username: string | null;
+
   timestamp: string;
 }
 
 // ============================================================================
-// AUTH / API
+// AUTH
 // ============================================================================
 
 export interface LoginRequest {
@@ -296,23 +336,49 @@ export interface AuthStatusResponse {
   user: User | null;
 }
 
+// ============================================================================
+// TIME OFF
+// ============================================================================
 
 export type TimeOffStatus = "PENDING" | "APPROVED" | "REJECTED";
 
+/**
+ * Jedno źródło prawdy dla flag urlopów
+ */
+export const TIME_OFF_STATUSES: TimeOffStatus[] = [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+];
+
+/**
+ * Zgodny z TimeOffSerializer:
+ * - employee_name
+ * - status_display
+ * - UI flags: can_cancel, can_approve, can_reject
+ */
 export interface TimeOff {
   id: number;
-  employee: number;
-  employee_name?: string;
 
-  date_from: string; // "YYYY-MM-DD"
-  date_to: string;   // "YYYY-MM-DD"
+  employee: number;
+  employee_name: string;
+
+  date_from: string; // YYYY-MM-DD
+  date_to: string; // YYYY-MM-DD
   reason: string;
 
   status: TimeOffStatus;
+  status_display: string;
 
-  requested_by?: number;
-  decided_by?: number | null;
-  decided_at?: string | null;
+  // UI flags (backend jako jedyne źródło prawdy)
+  can_cancel: boolean;
+  can_approve: boolean;
+  can_reject: boolean;
+
+  requested_by: number | null;
+
+  decided_by: number | null;
+  decided_at: string | null;
 
   created_at: string;
 }

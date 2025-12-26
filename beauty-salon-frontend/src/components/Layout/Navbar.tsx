@@ -1,6 +1,7 @@
-import React from 'react';
-import { AppBar, Toolbar, Typography } from '@mui/material';
-import { useAuth } from '../../context/AuthContext';
+import React from "react";
+import { AppBar, Toolbar, Typography } from "@mui/material";
+
+import { useAuth } from "@/context/AuthContext";
 
 const drawerWidth = 240;
 
@@ -19,9 +20,9 @@ const Navbar: React.FC = () => {
     >
       <Toolbar>
         <Typography variant="h6" noWrap component="div">
-          {user.role === 'ADMIN' && 'Panel Administracyjny'}
-          {user.role === 'EMPLOYEE' && 'Panel Pracownika'}
-          {user.role === 'CLIENT' && 'Panel Klienta'}
+          {user.role === "ADMIN" && "Panel Administracyjny"}
+          {user.role === "EMPLOYEE" && "Panel Pracownika"}
+          {user.role === "CLIENT" && "Panel Klienta"}
         </Typography>
       </Toolbar>
     </AppBar>

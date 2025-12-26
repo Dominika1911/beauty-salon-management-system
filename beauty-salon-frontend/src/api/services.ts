@@ -1,83 +1,87 @@
-import axiosInstance from "./axios";
-import type { Service } from "../types";
+import axiosInstance from "@/api/axios";
+import type { DRFPaginated, Service } from "@/types";
 
 /**
- * API dla usług salonu
- * Backend:
- * - GET    /services/
- * - POST   /services/
- * - PATCH  /services/{id}/
- * - POST   /services/{id}/disable/
- * - POST   /services/{id}/enable/
+ * Backend (ServiceViewSet):
+ * - filterset_fields = ["is_active", "category"]
+ * - search_fields = ["name", "category", "description"]
+ * - ordering_fields = ["id", "name", "price", "duration_minutes", "created_at"]
  */
-
-/**
- * Helper – obsługa paginacji DRF albo czystej listy
- */
-function unwrapList<T>(data: any): T[] {
-  if (Array.isArray(data)) return data as T[];
-  if (data && Array.isArray(data.results)) return data.results as T[];
-  return [];
-}
-
-// -----------------------------------------------------------------------------
-// READ
-// -----------------------------------------------------------------------------
-
-// Wszystkie usługi (ADMIN / EMPLOYEE)
-export const getServices = async (): Promise<Service[]> => {
-  const response = await axiosInstance.get("/services/");
-  return unwrapList<Service>(response.data);
+type ServiceListParams = {
+  is_active?: boolean;
+  category?: string;
+  search?: string;
+  ordering?: string;
+  page?: number;
 };
 
-// Tylko aktywne usługi (PUBLIC / CLIENT)
-export const getActiveServices = async (): Promise<Service[]> => {
-  const response = await axiosInstance.get("/services/", {
-    params: { is_active: true },
-  });
-  return unwrapList<Service>(response.data);
+type ServiceCreatePayload = {
+  name: string;
+  category?: string;
+  description?: string;
+  price: number | string; // DRF DecimalField przyjmie string/number, zwraca string
+  duration_minutes: number;
+  is_active?: boolean;
 };
 
-// Jedna usługa
-export const getService = async (id: number): Promise<Service> => {
-  const response = await axiosInstance.get<Service>(`/services/${id}/`);
-  return response.data;
-};
+type ServiceUpdatePayload = Partial<ServiceCreatePayload>;
 
-// -----------------------------------------------------------------------------
-// CREATE / UPDATE
-// -----------------------------------------------------------------------------
+export const servicesApi = {
+  /**
+   * GET /api/services/
+   * DRF PageNumberPagination -> DRFPaginated<Service>
+   */
+  list: async (params?: ServiceListParams): Promise<DRFPaginated<Service>> => {
+    const response = await axiosInstance.get<DRFPaginated<Service>>("/services/", { params });
+    return response.data;
+  },
 
-// Utwórz usługę
-export const createService = async (
-  data: Partial<Service>
-): Promise<Service> => {
-  const response = await axiosInstance.post<Service>("/services/", data);
-  return response.data;
-};
+  /**
+   * GET /api/services/{id}/
+   */
+  get: async (id: number): Promise<Service> => {
+    const response = await axiosInstance.get<Service>(`/services/${id}/`);
+    return response.data;
+  },
 
-// Aktualizuj usługę
-export const updateService = async (
-  id: number,
-  data: Partial<Service>
-): Promise<Service> => {
-  const response = await axiosInstance.patch<Service>(
-    `/services/${id}/`,
-    data
-  );
-  return response.data;
-};
+  /**
+   * POST /api/services/
+   */
+  create: async (data: ServiceCreatePayload): Promise<Service> => {
+    const response = await axiosInstance.post<Service>("/services/", data);
+    return response.data;
+  },
 
-// -----------------------------------------------------------------------------
-// BUSINESS ACTIONS (zamiast DELETE)
-// -----------------------------------------------------------------------------
+  /**
+   * PATCH /api/services/{id}/
+   */
+  update: async (id: number, data: ServiceUpdatePayload): Promise<Service> => {
+    const response = await axiosInstance.patch<Service>(`/services/${id}/`, data);
+    return response.data;
+  },
 
-// Wyłącz usługę
-export const disableService = async (id: number): Promise<void> => {
-  await axiosInstance.post(`/services/${id}/disable/`);
-};
+  /**
+   * DELETE /api/services/{id}/
+   */
+  delete: async (id: number): Promise<void> => {
+    await axiosInstance.delete(`/services/${id}/`);
+  },
 
-// Włącz usługę
-export const enableService = async (id: number): Promise<void> => {
-  await axiosInstance.post(`/services/${id}/enable/`);
+  /**
+   * POST /api/services/{id}/disable/
+   * Backend zwraca: {"detail": "..."}
+   */
+  disable: async (id: number): Promise<{ detail: string }> => {
+    const response = await axiosInstance.post<{ detail: string }>(`/services/${id}/disable/`);
+    return response.data;
+  },
+
+  /**
+   * POST /api/services/{id}/enable/
+   * Backend zwraca: {"detail": "..."}
+   */
+  enable: async (id: number): Promise<{ detail: string }> => {
+    const response = await axiosInstance.post<{ detail: string }>(`/services/${id}/enable/`);
+    return response.data;
+  },
 };

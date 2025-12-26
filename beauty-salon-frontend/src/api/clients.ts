@@ -1,37 +1,93 @@
-import axiosInstance from './axios';
-import type { Client } from '../types';
+// src/api/clients.ts
+import axiosInstance from "@/api/axios";
+import type { Client, DRFPaginated } from "@/types";
 
-// Pobierz wszystkich klientów
-export const getClients = async (): Promise<Client[]> => {
-  const response = await axiosInstance.get('/clients/');
-  return response.data.results || response.data;
+/**
+ * Backend (ClientViewSet):
+ * - filterset_fields = ["is_active", "client_number"]
+ * - search_fields = ["client_number", "first_name", "last_name", "email", "phone"]
+ * - ordering_fields = ["id", "client_number", "last_name", "created_at"]
+ */
+type ClientListParams = {
+  is_active?: boolean;
+  client_number?: string;
+  search?: string;
+  ordering?: string;
+  page?: number;
 };
 
-// Pobierz aktywnych klientów
-export const getActiveClients = async (): Promise<Client[]> => {
-  const response = await axiosInstance.get('/clients/?is_active=true');
-  return response.data.results || response.data;
+/**
+ * Backend ClientSerializer:
+ * - create validate: wymaga kluczy "email" i "password" (nawet jeśli email może być null/blank)
+ */
+type ClientCreatePayload = {
+  first_name: string;
+  last_name: string;
+
+  /**
+   * Musi być wysłane przy tworzeniu (backend sprawdza obecność klucza),
+   * może być null/"" jeśli chcesz, ale klucz ma istnieć.
+   */
+  email: string | null;
+
+  phone?: string;
+
+  internal_notes?: string | null;
+
+  password: string;
+  is_active?: boolean;
 };
 
-// Pobierz klienta po ID
-export const getClient = async (id: number): Promise<Client> => {
-  const response = await axiosInstance.get<Client>(`/clients/${id}/`);
-  return response.data;
+type ClientUpdatePayload = Partial<Omit<ClientCreatePayload, "password">> & {
+  password?: string;
 };
 
-// Utwórz klienta
-export const createClient = async (data: Partial<Client>): Promise<Client> => {
-  const response = await axiosInstance.post<Client>('/clients/', data);
-  return response.data;
-};
+export const clientsApi = {
+  /**
+   * GET /api/clients/
+   * DRF PageNumberPagination -> DRFPaginated<Client>
+   */
+  list: async (params?: ClientListParams): Promise<DRFPaginated<Client>> => {
+    const response = await axiosInstance.get<DRFPaginated<Client>>("/clients/", { params });
+    return response.data;
+  },
 
-// Zaktualizuj klienta
-export const updateClient = async (id: number, data: Partial<Client>): Promise<Client> => {
-  const response = await axiosInstance.patch<Client>(`/clients/${id}/`, data);
-  return response.data;
-};
+  /**
+   * GET /api/clients/{id}/
+   */
+  get: async (id: number): Promise<Client> => {
+    const response = await axiosInstance.get<Client>(`/clients/${id}/`);
+    return response.data;
+  },
 
-// Usuń klienta
-export const deleteClient = async (id: number): Promise<void> => {
-  await axiosInstance.delete(`/clients/${id}/`);
+  /**
+   * POST /api/clients/
+   */
+  create: async (data: ClientCreatePayload): Promise<Client> => {
+    const response = await axiosInstance.post<Client>("/clients/", data);
+    return response.data;
+  },
+
+  /**
+   * PATCH /api/clients/{id}/
+   */
+  update: async (id: number, data: ClientUpdatePayload): Promise<Client> => {
+    const response = await axiosInstance.patch<Client>(`/clients/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * DELETE /api/clients/{id}/
+   */
+  delete: async (id: number): Promise<void> => {
+    await axiosInstance.delete(`/clients/${id}/`);
+  },
+
+  /**
+   * GET /api/clients/me/
+   */
+  me: async (): Promise<Client> => {
+    const response = await axiosInstance.get<Client>("/clients/me/");
+    return response.data;
+  },
 };

@@ -1,84 +1,56 @@
-import axios from 'axios';
+import axios from "axios";
 
-// Bazowy URL API - zmień w produkcji
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-
-// Instancja axios z konfiguracją
 const axiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  withCredentials: true, // Ważne dla session cookies i CSRF
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: "/api",
+  withCredentials: true,
+  xsrfCookieName: "csrftoken",
+  xsrfHeaderName: "X-CSRFToken",
 });
 
-// Funkcja do pobierania tokenu CSRF
-export const getCsrfToken = async (): Promise<void> => {
-  try {
-    await axiosInstance.get('/auth/csrf/');
-  } catch (error) {
-    console.error('Błąd pobierania CSRF cookie:', error);
-    throw error;
+function getCookie(name: string): string | null {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(";").shift() || null;
+  return null;
+}
+
+axiosInstance.interceptors.request.use((config) => {
+  config.headers = config.headers ?? {};
+
+  const csrfToken = getCookie("csrftoken");
+  if (csrfToken) {
+    (config.headers as any)["X-CSRFToken"] = csrfToken;
   }
-};
 
+  // U Was na razie JSON, ale zostawiamy bezpiecznie obsługę FormData
+  const isFD =
+    typeof FormData !== "undefined" && config.data instanceof FormData;
 
-// Interceptor - dodawanie CSRF tokenu do każdego żądania
-axiosInstance.interceptors.request.use(
-  async (config) => {
-    const method = (config.method || '').toLowerCase();
-    const isUnsafe = ['post', 'put', 'patch', 'delete'].includes(method);
+  if (!isFD) {
+    (config.headers as any)["Content-Type"] = "application/json";
+  } else {
+    delete (config.headers as any)["Content-Type"];
+  }
 
-    if (isUnsafe) {
-      // jeśli nie ma csrftoken, pobierz go przez GET /auth/csrf/
-      if (!document.cookie.split('; ').some((row) => row.startsWith('csrftoken='))) {
-        await getCsrfToken();
-      }
+  return config;
+});
 
-      const csrfToken = document.cookie
-        .split('; ')
-        .find((row) => row.startsWith('csrftoken='))
-        ?.split('=')[1];
-
-      if (csrfToken) {
-        config.headers = config.headers ?? {};
-        config.headers['X-CSRFToken'] = csrfToken;
-      }
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-
-// Interceptor - obsługa błędów
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
-    // 401 - Unauthorized (wyloguj użytkownika)
     if (error.response?.status === 401) {
-      // Przekieruj do logowania
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+      // Nie przekierowuj jeśli to /auth/status/ (unikamy pętli)
+      const reqUrl = (error.config?.url || "").toString();
+      const isAuthEndpoint =
+        reqUrl.includes("/auth/status/") ||
+        reqUrl.includes("/auth/login/") ||
+        reqUrl.includes("/auth/logout/") ||
+        reqUrl.includes("/auth/csrf/");
+
+      if (!isAuthEndpoint && window.location.pathname !== "/login") {
+        window.location.href = "/login";
       }
     }
-
-    // 403 - Forbidden
-    if (error.response?.status === 403) {
-      console.error('Brak uprawnień do tego zasobu');
-    }
-
-    // 404 - Not Found
-    if (error.response?.status === 404) {
-      console.error('Zasób nie znaleziony');
-    }
-
-    // 500 - Internal Server Error
-    if (error.response?.status === 500) {
-      console.error('Błąd serwera');
-    }
-
     return Promise.reject(error);
   }
 );

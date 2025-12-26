@@ -1,76 +1,186 @@
-import axiosInstance from './axios';
-import type { Appointment } from '../types';
+import axiosInstance from "@/api/axios";
+import type {
+  Appointment,
+  AppointmentStatus,
+  BookingCreate,
+  DRFPaginated,
+} from "@/types";
 
 /**
- * API dla wizyt (Appointments)
+ * Parametry filtrowania dla listy wizyt (AppointmentViewSet)
+ *
+ * Backend:
+ * - filterset_fields = ["status", "employee", "service", "client"]
+ * - ordering_fields = ["start", "status", "created_at"]
+ * - brak SearchFilter w AppointmentViewSet (nie wysyłamy search)
  */
-
-// Pobierz wszystkie wizyty (Widok Admina)
-export const getAppointments = async (): Promise<Appointment[]> => {
-  const response = await axiosInstance.get('/appointments/');
-  return response.data.results || response.data;
+type AppointmentListParams = {
+  status?: AppointmentStatus;
+  employee?: number;
+  service?: number;
+  client?: number;
+  ordering?: string;
+  page?: number;
 };
 
-// Pobierz wizyty zalogowanego użytkownika (Przez endpoint 'my' z Twojego views.py)
-export const getMyAppointments = async (): Promise<Appointment[]> => {
-  const response = await axiosInstance.get('/appointments/my/');
-  return response.data.results || response.data;
-};
+export const appointmentsApi = {
+  /**
+   * GET /api/appointments/
+   * DRF PageNumberPagination -> DRFPaginated<Appointment>
+   */
+  list: async (params?: AppointmentListParams): Promise<DRFPaginated<Appointment>> => {
+    const response = await axiosInstance.get<DRFPaginated<Appointment>>("/appointments/", { params });
+    return response.data;
+  },
 
-// Pobierz szczegóły jednej wizyty
-export const getAppointment = async (id: number): Promise<Appointment> => {
-  const response = await axiosInstance.get<Appointment>(`/appointments/${id}/`);
-  return response.data;
-};
+  /**
+   * GET /api/appointments/my/
+   * DRF action: AppointmentViewSet.my
+   * Zawsze paginowane (backend wymusza paginację)
+   *
+   * Backend ordering_fields: ["start", "status", "created_at"]
+   */
+  getMy: async (params?: { page?: number; ordering?: string }): Promise<DRFPaginated<Appointment>> => {
+    const response = await axiosInstance.get<DRFPaginated<Appointment>>("/appointments/my/", { params });
+    return response.data;
+  },
 
-// --- POPRAWIONE: Utwórz nową wizytę (Rezerwacja dla Klienta) ---
-export const createAppointment = async (data: {
-  employee_id: number; // Zmienione na employee_id zgodnie z backendem
-  service_id: number;  // Zmienione na service_id zgodnie z backendem
-  start: string;       // Format ISO
-}): Promise<Appointment> => {
-  // ZMIANA: URL na /appointments/book/ zgodnie z Twoim urls.py
-  const response = await axiosInstance.post<Appointment>('/appointments/book/', data);
-  return response.data;
-};
 
-// =============================================================================
-// AKCJE NA WIZYTACH (Statusy)
-// =============================================================================
+  /**
+   * GET /api/appointments/{id}/
+   */
+  get: async (id: number): Promise<Appointment> => {
+    const response = await axiosInstance.get<Appointment>(`/appointments/${id}/`);
+    return response.data;
+  },
 
-export const cancelAppointment = async (id: number): Promise<void> => {
-  await axiosInstance.post(`/appointments/${id}/cancel/`);
-};
+  /**
+   * POST /api/appointments/
+   * (W panelu admin/employee możesz tworzyć Appointment bez booking flow)
+   *
+   * Uwaga:
+   * Backend AppointmentSerializer oczekuje pól: client, employee, service, start, end, status? (opcjonalnie)
+   * i waliduje konflikty. Jeśli nie używasz tego endpointu w UI, możesz go pominąć.
+   */
+  create: async (data: {
+    client: number | null;
+    employee: number;
+    service: number;
+    start: string;
+    end: string;
+    status?: AppointmentStatus;
+    internal_notes?: string | null;
+  }): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>("/appointments/", data);
+    return response.data;
+  },
 
-export const confirmAppointment = async (id: number): Promise<void> => {
-  await axiosInstance.post(`/appointments/${id}/confirm/`);
-};
+  /**
+   * PATCH /api/appointments/{id}/
+   */
+  update: async (
+    id: number,
+    data: Partial<{
+      client: number | null;
+      employee: number;
+      service: number;
+      start: string;
+      end: string;
+      status: AppointmentStatus;
+      internal_notes: string | null;
+    }>
+  ): Promise<Appointment> => {
+    const response = await axiosInstance.patch<Appointment>(`/appointments/${id}/`, data);
+    return response.data;
+  },
 
-export const completeAppointment = async (id: number): Promise<void> => {
-  await axiosInstance.post(`/appointments/${id}/complete/`);
-};
+  /**
+   * Rezerwacja (booking flow)
+   * POST /api/appointments/book/
+   */
+  book: async (payload: BookingCreate): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>("/appointments/book/", payload);
+    return response.data;
+  },
 
-// =============================================================================
-// LOGIKA DOSTĘPNOŚCI (Zgodna z Twoim AvailabilitySlotsAPIView)
-// =============================================================================
+  /**
+   * POST /api/appointments/{id}/confirm/
+   */
+  confirm: async (id: number): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/confirm/`);
+    return response.data;
+  },
 
-export const getAvailableSlots = async (
-  employeeId: number,
-  date: string,
-  serviceId: number
-): Promise<string[]> => {
-  // ZMIANA: URL na /availability/slots/ zgodnie z Twoim urls.py
-  const response = await axiosInstance.get('/availability/slots/', {
-    params: {
+  /**
+   * POST /api/appointments/{id}/cancel/
+   */
+  cancel: async (id: number): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/cancel/`);
+    return response.data;
+  },
+
+  /**
+   * POST /api/appointments/{id}/complete/
+   */
+  complete: async (id: number): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/complete/`);
+    return response.data;
+  },
+
+  /**
+   * DELETE /api/appointments/{id}/
+   */
+  remove: async (id: number): Promise<void> => {
+    await axiosInstance.delete(`/appointments/${id}/`);
+  },
+
+  /**
+   * GET /api/availability/slots/
+   */
+  getAvailableSlots: async (
+    employeeId: number,
+    serviceId: number,
+    date: string
+  ): Promise<{
+    date: string;
+    slots: Array<{ start: string; end: string }>;
+  }> => {
+    const response = await axiosInstance.get<{
+      date: string;
+      slots: Array<{ start: string; end: string }>;
+    }>("/availability/slots/", {
+      params: { employee_id: employeeId, service_id: serviceId, date },
+    });
+
+    return response.data;
+  },
+
+  /**
+   * POST /api/appointments/check-availability/
+   */
+  checkAvailability: async (
+    employeeId: number,
+    serviceId: number,
+    start: string
+  ): Promise<{
+    available: boolean;
+    reason?: string;
+    start?: string;
+    end?: string;
+    duration_minutes?: number;
+  }> => {
+    const response = await axiosInstance.post<{
+      available: boolean;
+      reason?: string;
+      start?: string;
+      end?: string;
+      duration_minutes?: number;
+    }>("/appointments/check-availability/", {
       employee_id: employeeId,
-      date: date,
-      service_id: serviceId
-    }
-  });
+      service_id: serviceId,
+      start,
+    });
 
-  // Mapowanie: z obiektu {"start": "2023-10-10T09:00:00", ...} na string "09:00"
-  return response.data.slots.map((slot: any) => {
-    const timePart = slot.start.split('T')[1];
-    return timePart.substring(0, 5);
-  });
+    return response.data;
+  },
 };

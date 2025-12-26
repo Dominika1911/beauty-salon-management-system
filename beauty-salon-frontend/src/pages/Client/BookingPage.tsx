@@ -9,9 +9,6 @@ import {
   Typography,
   Paper,
   Grid,
-  Card,
-  CardActionArea,
-  CardContent,
   Stack,
   Alert,
   CircularProgress,
@@ -21,7 +18,6 @@ import {
   FormControl,
   Select,
   MenuItem,
-  Pagination,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 
@@ -29,36 +25,40 @@ import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { pl } from "date-fns/locale";
 
-import { getServices } from "../../api/services";
-import { getEmployees } from "../../api/employees";
-import { getAvailableSlots, createAppointment } from "../../api/appointments";
-import type { Service, Employee, BookingCreate } from "../../types";
+import { servicesApi } from "@/api/services";
+import { employeesApi, type EmployeePublic } from "@/api/employees";
+import { appointmentsApi } from "@/api/appointments";
+import type { BookingCreate, Service } from "@/types";
 
 const steps = ["Wybierz usługę", "Wybierz specjalistę", "Termin wizyty"];
 
-// Ujednolicona obsługa błędów (bez dodatkowych plików)
+type AvailabilitySlot = { start: string; end: string };
+
 function getErrorMessage(e: unknown, fallback = "Wystąpił błąd"): string {
   const anyErr = e as any;
   const d = anyErr?.response?.data;
 
   if (typeof d?.detail === "string") return d.detail;
-
   if (d && typeof d === "object") {
     const k = Object.keys(d)[0];
     const v = d[k];
     if (Array.isArray(v) && v.length) return String(v[0]);
     if (typeof v === "string") return v;
   }
-
   return anyErr?.message || fallback;
 }
 
-// YYYY-MM-DD w lokalnym czasie (bez przesunięć strefy)
 function toLocalISODate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatTimeRange(start: string, end: string): string {
+  const s = new Date(start).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  const e = new Date(end).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  return `${s} – ${e}`;
 }
 
 export default function BookingPage() {
@@ -67,423 +67,248 @@ export default function BookingPage() {
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fetchingSlots, setFetchingSlots] = useState(false);
+  const [booking, setBooking] = useState(false);
 
-  // Dane z API
   const [services, setServices] = useState<Service[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<EmployeePublic[]>([]);
 
-  // Wybory klienta
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeePublic | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+
+  const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
+  const [selectedSlotStart, setSelectedSlotStart] = useState<string | null>(null);
+
   const [error, setError] = useState("");
 
-  // UX: wyszukiwanie/sort/paginacja usług
   const [serviceQuery, setServiceQuery] = useState("");
   const [serviceSort, setServiceSort] = useState<"name" | "price" | "duration">("name");
-  const [page, setPage] = useState(1);
-  const pageSize = 9;
 
-  // 1) Inicjalne ładowanie danych
+  // === LOAD SERVICES ===
   useEffect(() => {
-    let mounted = true;
-
-    async function init() {
+    (async () => {
       try {
-        setLoading(true);
-        const [sData, eData] = await Promise.all([getServices(), getEmployees()]);
-        if (!mounted) return;
-
-        setServices(sData);
-        setEmployees(eData);
+        const res = await servicesApi.list({ is_active: true });
+        setServices(res.results);
       } catch (e) {
-        if (!mounted) return;
-        setError(getErrorMessage(e, "Błąd połączenia z serwerem."));
+        setError(getErrorMessage(e));
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
-    }
-
-    init();
-    return () => {
-      mounted = false;
-    };
+    })();
   }, []);
 
-  // 2) Widoczne usługi: filtr + sort
+  // === FILTER + SORT ===
   const visibleServices = useMemo(() => {
-    const q = serviceQuery.trim().toLowerCase();
+    const q = serviceQuery.toLowerCase();
+    const list = services.filter((s) => s.name.toLowerCase().includes(q));
 
-    let list = services.filter((s) => {
-      if (!q) return true;
-      const name = (s.name || "").toLowerCase();
-      return name.includes(q);
+    return [...list].sort((a, b) => {
+      if (serviceSort === "price") return Number(a.price) - Number(b.price);
+      if (serviceSort === "duration") return a.duration_minutes - b.duration_minutes;
+      return a.name.localeCompare(b.name, "pl");
     });
-
-    list = [...list].sort((a, b) => {
-  if (serviceSort === "price") {
-    // Number() zamienia string/Decimal na liczbę, || 0 chroni przed undefined
-    const priceA = Number(a.price) || 0;
-    const priceB = Number(b.price) || 0;
-    return priceA - priceB;
-  }
-  if (serviceSort === "duration") {
-    const durA = Number(a.duration_minutes) || 0;
-    const durB = Number(b.duration_minutes) || 0;
-    return durA - durB;
-  }
-  return (a.name || "").localeCompare(b.name || "", "pl");
-});
-
-    return list;
   }, [services, serviceQuery, serviceSort]);
 
-  // Paginacja usług
-  const pageCount = Math.max(1, Math.ceil(visibleServices.length / pageSize));
-  const pageServices = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return visibleServices.slice(start, start + pageSize);
-  }, [visibleServices, page]);
-
+  // === LOAD EMPLOYEES ===
   useEffect(() => {
-    setPage(1);
-  }, [serviceQuery, serviceSort]);
+    if (!selectedService) return;
 
-  // 3) Filtrowanie pracowników pod wybraną usługę
-  const filteredEmployees = useMemo(() => {
-    const sid = selectedService?.id;
-    if (!sid) return [];
-    return employees.filter(
-      (emp) => emp.skill_ids?.includes(sid) || emp.skills?.some((s) => s.id === sid)
-    );
-  }, [employees, selectedService]);
-
-  // 4) Przy zmianie usługi: reset pracownika + terminu
-  useEffect(() => {
-    setSelectedEmployee(null);
-    setSelectedSlot(null);
-    setAvailableSlots([]);
-  }, [selectedService?.id]);
-
-  // 5) Przy zmianie pracownika: reset terminu
-  useEffect(() => {
-    setSelectedSlot(null);
-    setAvailableSlots([]);
-  }, [selectedEmployee?.id]);
-
-  // 6) Pobieranie realnych slotów z backendu (krok 3)
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadSlots() {
-      if (activeStep !== 2) return;
-      if (!selectedEmployee || !selectedService || !selectedDate) return;
-
-      setFetchingSlots(true);
-      setError("");
-
-      const dateStr = toLocalISODate(selectedDate);
-
+    (async () => {
       try {
-        const slots = await getAvailableSlots(selectedEmployee.id, dateStr, selectedService.id);
-        if (!mounted) return;
-        setAvailableSlots(slots);
+        const res = await employeesApi.list({ service_id: selectedService.id });
+        setEmployees(res.results);
       } catch (e) {
-        if (!mounted) return;
-        setError(getErrorMessage(e, "Nie udało się pobrać wolnych terminów."));
-        setAvailableSlots([]);
-      } finally {
-        if (mounted) setFetchingSlots(false);
+        setError(getErrorMessage(e));
       }
-    }
+    })();
+  }, [selectedService]);
 
-    loadSlots();
-    return () => {
-      mounted = false;
-    };
-  }, [activeStep, selectedEmployee?.id, selectedService?.id, selectedDate]);
+  // === LOAD SLOTS ===
+  useEffect(() => {
+    if (activeStep !== 2 || !selectedEmployee || !selectedService || !selectedDate) return;
 
-  const handleNext = () => {
-    setError("");
-    setActiveStep((prev) => prev + 1);
-  };
-
-  const handleBack = () => {
-    setError("");
-    setActiveStep((prev) => prev - 1);
-  };
+    (async () => {
+      setFetchingSlots(true);
+      try {
+        const res = await appointmentsApi.getAvailableSlots(
+          selectedEmployee.id,
+          selectedService.id,
+          toLocalISODate(selectedDate)
+        );
+        setAvailableSlots(res.slots);
+      } catch (e) {
+        setError(getErrorMessage(e));
+      } finally {
+        setFetchingSlots(false);
+      }
+    })();
+  }, [activeStep, selectedEmployee, selectedService, selectedDate]);
 
   const handleConfirmBooking = async () => {
-    if (!selectedService || !selectedEmployee || !selectedDate || !selectedSlot) return;
+    if (!selectedService || !selectedEmployee || !selectedSlotStart) return;
 
+    setBooking(true);
     setError("");
 
-    const dateStr = toLocalISODate(selectedDate);
-
     const payload: BookingCreate = {
-      employee_id: selectedEmployee.id,
       service_id: selectedService.id,
-      start: `${dateStr}T${selectedSlot}:00`,
+      employee_id: selectedEmployee.id,
+      start: selectedSlotStart,
     };
 
     try {
-      await createAppointment(payload);
+      await appointmentsApi.book(payload);
       navigate("/client/appointments?msg=reserved");
     } catch (e) {
-      setError(getErrorMessage(e, "Ten termin został właśnie zajęty. Wybierz inny."));
+      setError(getErrorMessage(e, "Termin został zajęty. Wybierz inny."));
+    } finally {
+      setBooking(false);
     }
   };
 
   const nextDisabled =
     (activeStep === 0 && !selectedService) ||
     (activeStep === 1 && !selectedEmployee) ||
-    (activeStep === 2 && (!selectedSlot || fetchingSlots));
+    (activeStep === 2 && (!selectedSlotStart || fetchingSlots || booking));
 
   if (loading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 950, mx: "auto", py: 4, px: 2 }}>
-      <Paper sx={{ p: 4, borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.1)" }}>
-        <Typography variant="h4" fontWeight={800} textAlign="center" gutterBottom color="primary">
+    <Box sx={{ maxWidth: 950, mx: "auto", py: 4 }}>
+      <Paper sx={{ p: 4, borderRadius: 4 }}>
+        <Typography variant="h4" fontWeight={800} align="center" gutterBottom>
           Rezerwacja wizyty
         </Typography>
 
-        {/* Podsumowanie wyboru (małe, ale bardzo pomaga) */}
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" color="text.secondary">
-            Wybrano:{" "}
-            <b>{selectedService ? selectedService.name : "—"}</b>{" "}
-            • Specjalista: <b>{selectedEmployee ? `${selectedEmployee.first_name} ${selectedEmployee.last_name}` : "—"}</b>{" "}
-            • Termin: <b>{selectedDate ? toLocalISODate(selectedDate) : "—"}</b>{" "}
-            {selectedSlot ? ` ${selectedSlot}` : ""}
-          </Typography>
-        </Box>
-
-        <Stepper activeStep={activeStep} sx={{ mb: 5, mt: 2 }}>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
+        <Stepper activeStep={activeStep} sx={{ my: 4 }}>
+          {steps.map((s) => (
+            <Step key={s}>
+              <StepLabel>{s}</StepLabel>
             </Step>
           ))}
         </Stepper>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError("")}>
-            {error}
-          </Alert>
+        {error && <Alert severity="error">{error}</Alert>}
+
+        {/* STEP 0 – SERVICES */}
+        {activeStep === 0 && (
+          <Stack spacing={3}>
+            <TextField
+              placeholder="Szukaj usługi"
+              value={serviceQuery}
+              onChange={(e) => setServiceQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <FormControl size="small" sx={{ maxWidth: 240 }}>
+              <Select value={serviceSort} onChange={(e) => setServiceSort(e.target.value as any)}>
+                <MenuItem value="name">Nazwa</MenuItem>
+                <MenuItem value="price">Cena</MenuItem>
+                <MenuItem value="duration">Czas</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Grid container spacing={2}>
+              {visibleServices.map((s) => (
+                <Grid item xs={12} sm={6} md={4} key={s.id}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      p: 2,
+                      cursor: "pointer",
+                      borderColor: selectedService?.id === s.id ? "primary.main" : undefined,
+                    }}
+                    onClick={() => setSelectedService(s)}
+                  >
+                    <Typography fontWeight={700}>{s.name}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {s.duration_display} • {s.price} zł
+                    </Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Stack>
         )}
 
-        <Box sx={{ minHeight: 360 }}>
-          {/* KROK 1: USŁUGA (bez nieskończonego scrolla) */}
-          {activeStep === 0 && (
-            <Stack spacing={2}>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={7}>
-                  <TextField
-                    fullWidth
-                    label="Szukaj usługi"
-                    value={serviceQuery}
-                    onChange={(e) => setServiceQuery(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
+        {/* STEP 1 – EMPLOYEES */}
+        {activeStep === 1 && (
+          <Stack spacing={2}>
+            {employees.length === 0 ? (
+              <Alert severity="info">Brak dostępnych specjalistów.</Alert>
+            ) : (
+              employees.map((e) => (
+                <Button
+                  key={e.id}
+                  variant={selectedEmployee?.id === e.id ? "contained" : "outlined"}
+                  onClick={() => setSelectedEmployee(e)}
+                >
+                  {e.full_name}
+                </Button>
+              ))
+            )}
+          </Stack>
+        )}
 
-                <Grid item xs={12} md={5}>
-                  <FormControl fullWidth>
-                    <Select
-                      value={serviceSort}
-                      onChange={(e) => setServiceSort(e.target.value as "name" | "price" | "duration")}
-                    >
-                      <MenuItem value="name">Sortuj: nazwa</MenuItem>
-                      <MenuItem value="price">Sortuj: cena rosnąco</MenuItem>
-                      <MenuItem value="duration">Sortuj: czas trwania rosnąco</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-              </Grid>
+        {/* STEP 2 – DATE + SLOTS */}
+        {activeStep === 2 && (
+          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+            <Stack spacing={3}>
+              <DatePicker
+                label="Dzień wizyty"
+                value={selectedDate}
+                disablePast
+                onChange={(d) => {
+                  setSelectedDate(d);
+                  setSelectedSlotStart(null);
+                }}
+              />
 
-              {pageServices.length === 0 ? (
-                <Alert severity="info">Brak usług dla podanego wyszukiwania.</Alert>
+              {fetchingSlots ? (
+                <CircularProgress />
               ) : (
-                <Grid container spacing={2}>
-                  {pageServices.map((s) => (
-                    <Grid item xs={12} sm={6} md={4} key={s.id}>
-                      <Card
-                        variant="outlined"
-                        sx={{
-                          height: "100%",
-                          borderRadius: 3,
-                          transition: "0.2s",
-                          borderColor: selectedService?.id === s.id ? "primary.main" : "divider",
-                          bgcolor: selectedService?.id === s.id ? "primary.light" : "inherit",
-                          "&:hover": { boxShadow: 3, transform: "translateY(-2px)" },
-                        }}
-                      >
-                        <CardActionArea sx={{ height: "100%" }} onClick={() => setSelectedService(s)}>
-                          <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" fontWeight={800} sx={{ mb: 0.5 }}>
-                              {s.name}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              {s.duration_display || `${s.duration_minutes} min`}
-                            </Typography>
-
-                            <Divider sx={{ my: 1.5 }} />
-
-                            <Typography variant="h5" color="primary.main" fontWeight={900}>
-                              {s.price} zł
-                            </Typography>
-                          </CardContent>
-                        </CardActionArea>
-                      </Card>
-                    </Grid>
+                <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
+                  {availableSlots.map((slot) => (
+                    <Button
+                      key={slot.start}
+                      variant={selectedSlotStart === slot.start ? "contained" : "outlined"}
+                      onClick={() => setSelectedSlotStart(slot.start)}
+                    >
+                      {formatTimeRange(slot.start, slot.end)}
+                    </Button>
                   ))}
-                </Grid>
-              )}
-
-              {pageCount > 1 && (
-                <Box sx={{ display: "flex", justifyContent: "center", pt: 1 }}>
-                  <Pagination count={pageCount} page={page} onChange={(_, p) => setPage(p)} color="primary" />
                 </Box>
               )}
             </Stack>
-          )}
-
-          {/* KROK 2: PRACOWNIK */}
-          {activeStep === 1 && (
-            <Grid container spacing={2}>
-              {filteredEmployees.length === 0 ? (
-                <Grid item xs={12}>
-                  <Alert severity="info">Przepraszamy, obecnie żaden pracownik nie wykonuje tej usługi.</Alert>
-                </Grid>
-              ) : (
-                filteredEmployees.map((e) => (
-                  <Grid item xs={12} sm={6} md={4} key={e.id}>
-                    <Card
-                      variant="outlined"
-                      sx={{
-                        borderRadius: 3,
-                        borderColor: selectedEmployee?.id === e.id ? "primary.main" : "divider",
-                        height: "100%",
-                      }}
-                    >
-                      <CardActionArea onClick={() => setSelectedEmployee(e)} sx={{ height: "100%" }}>
-                        <CardContent sx={{ p: 4, textAlign: "center" }}>
-                          <Box
-                            sx={{
-                              width: 64,
-                              height: 64,
-                              bgcolor: "secondary.main",
-                              color: "white",
-                              borderRadius: "50%",
-                              mx: "auto",
-                              mb: 2,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: "1.5rem",
-                              fontWeight: 800,
-                            }}
-                          >
-                            {(e.first_name?.[0] || "?") + (e.last_name?.[0] || "?")}
-                          </Box>
-
-                          <Typography variant="h6" fontWeight={800}>
-                            {e.first_name} {e.last_name}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Specjalista
-                          </Typography>
-                        </CardContent>
-                      </CardActionArea>
-                    </Card>
-                  </Grid>
-                ))
-              )}
-            </Grid>
-          )}
-
-          {/* KROK 3: TERMIN */}
-          {activeStep === 2 && (
-            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
-              <Stack spacing={4}>
-                <DatePicker
-                  label="Dzień wizyty"
-                  value={selectedDate}
-                  onChange={(val) => {
-                    setSelectedDate(val);
-                    setSelectedSlot(null);
-                    setAvailableSlots([]);
-                    setError("");
-                  }}
-                  disablePast
-                  slotProps={{ textField: { fullWidth: true } }}
-                />
-
-                <Box>
-                  <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2 }}>
-                    Dostępne godziny:
-                  </Typography>
-
-                  {fetchingSlots ? (
-                    <Box sx={{ textAlign: "center" }}>
-                      <CircularProgress size={24} />
-                    </Box>
-                  ) : (
-                    <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.25 }}>
-                      {availableSlots.length > 0 ? (
-                        availableSlots.map((slot) => (
-                          <Button
-                            key={slot}
-                            variant={selectedSlot === slot ? "contained" : "outlined"}
-                            onClick={() => setSelectedSlot(slot)}
-                            sx={{ borderRadius: 2, minWidth: 96, py: 1 }}
-                          >
-                            {slot}
-                          </Button>
-                        ))
-                      ) : (
-                        <Alert severity="warning" sx={{ width: "100%" }}>
-                          Brak wolnych terminów u tego pracownika w wybranym dniu.
-                        </Alert>
-                      )}
-                    </Box>
-                  )}
-                </Box>
-              </Stack>
-            </LocalizationProvider>
-          )}
-        </Box>
+          </LocalizationProvider>
+        )}
 
         <Divider sx={{ my: 4 }} />
 
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Button disabled={activeStep === 0} onClick={handleBack} size="large">
+          <Button disabled={activeStep === 0} onClick={() => setActiveStep((s) => s - 1)}>
             Wstecz
           </Button>
 
           <Button
             variant="contained"
-            size="large"
             disabled={nextDisabled}
-            onClick={activeStep === steps.length - 1 ? handleConfirmBooking : handleNext}
-            sx={{ px: 4, borderRadius: 2 }}
+            onClick={activeStep === 2 ? handleConfirmBooking : () => setActiveStep((s) => s + 1)}
           >
-            {activeStep === steps.length - 1 ? "Potwierdzam rezerwację" : "Dalej"}
+            {booking ? "Rezerwuję…" : activeStep === 2 ? "Potwierdzam rezerwację" : "Dalej"}
           </Button>
         </Box>
       </Paper>

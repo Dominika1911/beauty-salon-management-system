@@ -1,28 +1,74 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
-  IconButton, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, TextField, Typography, Alert, CircularProgress,
-  FormControlLabel, Switch,
-} from '@mui/material';
-import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
-import { Formik, Form, Field } from 'formik';
-import * as Yup from 'yup';
-import { getClients, createClient, updateClient, deleteClient } from '../../api/clients';
-import type { Client } from '../../types';
+  Box,
+  Button,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography,
+  Alert,
+  CircularProgress,
+  FormControlLabel,
+  Switch,
+  Stack,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+} from "@mui/material";
+import { Add, Edit, Delete, Visibility } from "@mui/icons-material";
+import { Formik, Form, Field } from "formik";
+import * as Yup from "yup";
 
-// Walidacja formularza (hasło wymagane tylko przy tworzeniu)
+import { clientsApi } from "@/api/clients";
+import type { Client, DRFPaginated } from "@/types";
+
+/**
+ * Backend (ClientViewSet):
+ * - filterset_fields = ["is_active", "client_number"]
+ * - search_fields = ["client_number", "first_name", "last_name", "email", "phone"]
+ * - ordering_fields = ["id", "client_number", "last_name", "created_at"]
+ */
+
+const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "-created_at", label: "Najnowsi (created_at desc)" },
+  { value: "created_at", label: "Najstarsi (created_at asc)" },
+  { value: "last_name", label: "Nazwisko (A→Z)" },
+  { value: "-last_name", label: "Nazwisko (Z→A)" },
+  { value: "client_number", label: "Nr klienta (A→Z)" },
+  { value: "-client_number", label: "Nr klienta (Z→A)" },
+  { value: "id", label: "ID (rosnąco)" },
+  { value: "-id", label: "ID (malejąco)" },
+];
+
+/**
+ * ✅ Dopasowanie do backendu:
+ * - email: w serializerze może być null/blank, ale przy CREATE klucz "email" musi istnieć (api/clients.ts)
+ * - phone: backend dopuszcza blank
+ * - password: wymagane tylko przy CREATE
+ */
 const ClientSchema = Yup.object().shape({
-  first_name: Yup.string().min(2, 'Imię musi mieć co najmniej 2 znaki').required('Imię jest wymagane'),
-  last_name: Yup.string().min(2, 'Nazwisko musi mieć co najmniej 2 znaki').required('Nazwisko jest wymagane'),
-  phone: Yup.string().matches(/^[0-9+\s-()]+$/, 'Nieprawidłowy format telefonu').required('Telefon jest wymagany'),
-  email: Yup.string().email('Nieprawidłowy adres email').required('Email jest wymagany'),
-  password: Yup.string().when('$isNew', {
+  first_name: Yup.string().min(2, "Imię musi mieć co najmniej 2 znaki").required("Imię jest wymagane"),
+  last_name: Yup.string().min(2, "Nazwisko musi mieć co najmniej 2 znaki").required("Nazwisko jest wymagane"),
+  phone: Yup.string().matches(/^[0-9+\s-()]*$/, "Nieprawidłowy format telefonu").notRequired(),
+  email: Yup.string().email("Nieprawidłowy adres email").notRequired(),
+  password: Yup.string().when("$isNew", {
     is: true,
-    then: (schema) => schema.min(8, 'Hasło musi mieć co najmniej 8 znaków').required('Hasło jest wymagane'),
+    then: (schema) => schema.min(8, "Hasło musi mieć co najmniej 8 znaków").required("Hasło jest wymagane"),
     otherwise: (schema) => schema.notRequired(),
   }),
-  internal_notes: Yup.string().max(1000, 'Notatki mogą mieć maksymalnie 1000 znaków'),
+  internal_notes: Yup.string().max(1000, "Notatki mogą mieć maksymalnie 1000 znaków").notRequired(),
   is_active: Yup.boolean(),
 });
 
@@ -30,14 +76,27 @@ interface ClientFormData {
   first_name: string;
   last_name: string;
   phone: string;
-  email: string; // jeśli w backendzie dopuszczasz null, możesz zmienić na string | null i w UI wymusić string
+  email: string; // UI string; do API mapujemy "" -> null
   password?: string;
-  internal_notes: string;
+  internal_notes: string; // UI string; do API mapujemy "" -> null
   is_active: boolean;
 }
 
+function getErrorMessage(err: unknown): string {
+  const e = err as any;
+  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
+}
+
 const ClientsPage: React.FC = () => {
-  const [clients, setClients] = useState<Client[]>([]);
+  const [data, setData] = useState<DRFPaginated<Client> | null>(null);
+  const [page, setPage] = useState(1);
+
+  // backend params
+  const [search, setSearch] = useState("");
+  const [clientNumber, setClientNumber] = useState(""); // backend filter: client_number
+  const [onlyActive, setOnlyActive] = useState<boolean>(false);
+  const [ordering, setOrdering] = useState<string>("-created_at"); // backend ordering
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,50 +109,44 @@ const ClientsPage: React.FC = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
 
-  const [query, setQuery] = useState('');
-
+  // reset page when backend params change
   useEffect(() => {
-    loadClients();
-  }, []);
+    setPage(1);
+  }, [search, clientNumber, onlyActive, ordering]);
 
-  const normalizeClientsResponse = (data: any): Client[] => {
-    if (Array.isArray(data)) return data;
-    if (data && Array.isArray(data.results)) return data.results;
-    return [];
-  };
-
-  const loadClients = async () => {
+  const loadClients = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await getClients();
-      setClients(normalizeClientsResponse(data));
-    } catch (err: any) {
-      setError('Nie udało się załadować listy klientów.');
+
+      const res = await clientsApi.list({
+        page,
+        ordering,
+        search: search.trim() || undefined,
+        // backend DjangoFilterBackend:
+        is_active: onlyActive ? true : undefined,
+        client_number: clientNumber.trim() || undefined,
+      });
+
+      setData(res);
+    } catch (err) {
+      setError(getErrorMessage(err));
+      setData({
+        count: 0,
+        next: null,
+        previous: null,
+        results: [],
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, search, clientNumber, onlyActive, ordering]);
 
-  const filteredClients = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return clients;
+  useEffect(() => {
+    void loadClients();
+  }, [loadClients]);
 
-    return clients.filter((c) => {
-      const haystack = [
-        c.first_name,
-        c.last_name,
-        c.client_number,
-        c.phone,
-        // email może być null po stronie backendu
-        (c as any).email ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-
-      return haystack.includes(q);
-    });
-  }, [clients, query]);
+  const clients = useMemo(() => data?.results ?? [], [data]);
 
   const handleOpenDialog = (client?: Client) => {
     setEditingClient(client || null);
@@ -107,21 +160,35 @@ const ClientsPage: React.FC = () => {
 
   const handleSubmit = async (values: ClientFormData, { setErrors }: any) => {
     try {
-      const clientData: any = {
-        first_name: values.first_name,
-        last_name: values.last_name,
-        phone: values.phone,
-        email: values.email,
-        internal_notes: values.internal_notes,
-        is_active: values.is_active,
-      };
+      setError(null);
+
+      const emailToSend: string | null = values.email.trim() ? values.email.trim() : null;
+      const notesToSend: string | null = values.internal_notes.trim() ? values.internal_notes.trim() : null;
 
       if (!editingClient) {
-        clientData.password = values.password;
-        await createClient(clientData);
+        // ✅ create: backend wymaga klucza email + password
+        await clientsApi.create({
+          first_name: values.first_name.trim(),
+          last_name: values.last_name.trim(),
+          phone: values.phone.trim() || undefined,
+          email: emailToSend, // ✅ klucz istnieje, wartość może być null
+          internal_notes: notesToSend,
+          password: values.password || "",
+          is_active: values.is_active,
+        });
       } else {
-        if (values.password) clientData.password = values.password;
-        await updateClient(editingClient.id, clientData);
+        // ✅ update: password opcjonalne
+        const payload: any = {
+          first_name: values.first_name.trim(),
+          last_name: values.last_name.trim(),
+          phone: values.phone.trim() || undefined,
+          email: emailToSend,
+          internal_notes: notesToSend,
+          is_active: values.is_active,
+        };
+        if (values.password && values.password.trim()) payload.password = values.password.trim();
+
+        await clientsApi.update(editingClient.id, payload);
       }
 
       await loadClients();
@@ -129,29 +196,36 @@ const ClientsPage: React.FC = () => {
     } catch (err: any) {
       const backendErrors = err?.response?.data;
 
-      if (backendErrors && typeof backendErrors === 'object') {
+      // DRF zwykle zwraca obiekt { field: ["error"] } albo {detail: "..."}
+      if (backendErrors && typeof backendErrors === "object" && !Array.isArray(backendErrors)) {
         setErrors(backendErrors);
+        if (backendErrors.detail) setError(String(backendErrors.detail));
       } else {
-        setError(backendErrors?.detail || 'Nie udało się zapisać klienta.');
+        setError("Nie udało się zapisać klienta.");
       }
     }
   };
 
   const handleDelete = async () => {
     if (!clientToDelete) return;
+
     try {
-      await deleteClient(clientToDelete.id);
+      setError(null);
+      await clientsApi.delete(clientToDelete.id);
       await loadClients();
       setDeleteDialogOpen(false);
       setClientToDelete(null);
-    } catch (err: any) {
-      setError('Nie udało się usunąć klienta.');
+    } catch (err) {
+      setError(getErrorMessage(err));
     }
   };
 
-  if (loading) {
+  const canPrev = Boolean(data?.previous) && !loading;
+  const canNext = Boolean(data?.next) && !loading;
+
+  if (loading && !data) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", py: 10 }}>
         <CircularProgress />
       </Box>
     );
@@ -159,19 +233,53 @@ const ClientsPage: React.FC = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 3, gap: 2 }}>
         <Box>
-          <Typography variant="h4" fontWeight={700}>Zarządzanie klientami</Typography>
-          <Typography color="textSecondary">Razem: {filteredClients.length}</Typography>
+          <Typography variant="h4" fontWeight={700}>
+            Zarządzanie klientami
+          </Typography>
+          <Typography color="textSecondary">
+            Łącznie (backend): {data?.count ?? "—"} • Strona: {page} • ordering: {ordering}
+          </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <TextField
             size="small"
-            label="Szukaj (imię, email, tel...)"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            label="search (backend)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
+
+          <TextField
+            size="small"
+            label="client_number (backend)"
+            value={clientNumber}
+            onChange={(e) => setClientNumber(e.target.value)}
+            placeholder="np. 00000001"
+          />
+
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel id="ordering-label">ordering (backend)</InputLabel>
+            <Select
+              labelId="ordering-label"
+              value={ordering}
+              label="ordering (backend)"
+              onChange={(e) => setOrdering(String(e.target.value))}
+            >
+              {ORDERING_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value}>
+                  {o.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControlLabel
+            control={<Switch checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} />}
+            label="Tylko aktywni"
+          />
+
           <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
             Dodaj klienta
           </Button>
@@ -186,66 +294,102 @@ const ClientsPage: React.FC = () => {
         </Box>
       )}
 
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button disabled={!canPrev} variant="outlined" onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            Poprzednia
+          </Button>
+          <Button disabled={!canNext} variant="contained" onClick={() => setPage((p) => p + 1)}>
+            Następna
+          </Button>
+        </Stack>
+      </Paper>
+
       <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 3 }}>
         <Table>
-          <TableHead sx={{ bgcolor: 'grey.100' }}>
+          <TableHead sx={{ bgcolor: "grey.100" }}>
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>Klient</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Kontakt</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Wizyty</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Akcje</TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>
+                Wizyty
+              </TableCell>
+              <TableCell align="center" sx={{ fontWeight: 700 }}>
+                Status
+              </TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>
+                Akcje
+              </TableCell>
             </TableRow>
           </TableHead>
 
           <TableBody>
-            {filteredClients.map((client) => (
-              <TableRow key={client.id} hover>
-                <TableCell>
-                  <Typography variant="body1" fontWeight={600}>
-                    {client.first_name} {client.last_name}
-                  </Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    {client.client_number}
-                  </Typography>
-                </TableCell>
-
-                <TableCell>
-                  <Typography variant="body2">
-                    {(client as any).email ?? '—'}
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    {client.phone || '—'}
-                  </Typography>
-                </TableCell>
-
-                <TableCell align="center">
-                  <Chip label={client.appointments_count} size="small" variant="outlined" color="primary" />
-                </TableCell>
-
-                <TableCell align="center">
-                  <Chip
-                    label={client.is_active ? 'Aktywny' : 'Nieaktywny'}
-                    color={client.is_active ? 'success' : 'default'}
-                    size="small"
-                  />
-                </TableCell>
-
-                <TableCell align="right">
-                  <IconButton onClick={() => { setViewingClient(client); setViewDialogOpen(true); }}>
-                    <Visibility />
-                  </IconButton>
-                  <IconButton onClick={() => handleOpenDialog(client)} color="primary">
-                    <Edit />
-                  </IconButton>
-                  <IconButton onClick={() => { setClientToDelete(client); setDeleteDialogOpen(true); }} color="error">
-                    <Delete />
-                  </IconButton>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                    <CircularProgress />
+                  </Box>
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              clients.map((client) => (
+                <TableRow key={client.id} hover>
+                  <TableCell>
+                    <Typography variant="body1" fontWeight={600}>
+                      {client.first_name} {client.last_name}
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      {client.client_number}
+                    </Typography>
+                  </TableCell>
 
-            {filteredClients.length === 0 && (
+                  <TableCell>
+                    <Typography variant="body2">{client.email || "—"}</Typography>
+                    <Typography variant="body2" color="textSecondary">
+                      {client.phone || "—"}
+                    </Typography>
+                  </TableCell>
+
+                  <TableCell align="center">
+                    <Chip label={client.appointments_count} size="small" variant="outlined" color="primary" />
+                  </TableCell>
+
+                  <TableCell align="center">
+                    <Chip
+                      label={client.is_active ? "Aktywny" : "Nieaktywny"}
+                      color={client.is_active ? "success" : "default"}
+                      size="small"
+                    />
+                  </TableCell>
+
+                  <TableCell align="right">
+                    <IconButton
+                      onClick={() => {
+                        setViewingClient(client);
+                        setViewDialogOpen(true);
+                      }}
+                    >
+                      <Visibility />
+                    </IconButton>
+                    <IconButton onClick={() => handleOpenDialog(client)} color="primary">
+                      <Edit />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => {
+                        setClientToDelete(client);
+                        setDeleteDialogOpen(true);
+                      }}
+                      color="error"
+                    >
+                      <Delete />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+
+            {!loading && clients.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5}>
                   <Typography color="textSecondary" align="center" sx={{ py: 4 }}>
@@ -260,17 +404,17 @@ const ClientsPage: React.FC = () => {
 
       {/* Formularz */}
       <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingClient ? 'Edytuj klienta' : 'Nowy klient'}</DialogTitle>
+        <DialogTitle>{editingClient ? "Edytuj klienta" : "Nowy klient"}</DialogTitle>
 
         <Formik
           enableReinitialize
           initialValues={{
-            first_name: editingClient?.first_name || '',
-            last_name: editingClient?.last_name || '',
-            phone: editingClient?.phone || '',
-            email: (editingClient as any)?.email || '',
-            password: '',
-            internal_notes: (editingClient as any)?.internal_notes || '',
+            first_name: editingClient?.first_name || "",
+            last_name: editingClient?.last_name || "",
+            phone: editingClient?.phone || "",
+            email: editingClient?.email ?? "",
+            password: "",
+            internal_notes: editingClient?.internal_notes ?? "",
             is_active: editingClient?.is_active ?? true,
           }}
           validationSchema={ClientSchema}
@@ -279,14 +423,14 @@ const ClientsPage: React.FC = () => {
         >
           {({ errors, touched, values, setFieldValue }) => (
             <Form>
-              <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 <Field
                   as={TextField}
                   name="first_name"
                   label="Imię"
                   fullWidth
                   error={touched.first_name && !!errors.first_name}
-                  helperText={touched.first_name && errors.first_name}
+                  helperText={touched.first_name && (errors.first_name as any)}
                 />
                 <Field
                   as={TextField}
@@ -294,7 +438,7 @@ const ClientsPage: React.FC = () => {
                   label="Nazwisko"
                   fullWidth
                   error={touched.last_name && !!errors.last_name}
-                  helperText={touched.last_name && errors.last_name}
+                  helperText={touched.last_name && (errors.last_name as any)}
                 />
                 <Field
                   as={TextField}
@@ -302,15 +446,15 @@ const ClientsPage: React.FC = () => {
                   label="Telefon"
                   fullWidth
                   error={touched.phone && !!errors.phone}
-                  helperText={touched.phone && errors.phone}
+                  helperText={touched.phone && (errors.phone as any)}
                 />
                 <Field
                   as={TextField}
                   name="email"
-                  label="Email"
+                  label="Email (opcjonalnie)"
                   fullWidth
                   error={touched.email && !!errors.email}
-                  helperText={touched.email && errors.email}
+                  helperText={touched.email && (errors.email as any)}
                 />
                 <Field
                   as={TextField}
@@ -319,18 +463,29 @@ const ClientsPage: React.FC = () => {
                   type="password"
                   fullWidth
                   error={touched.password && !!errors.password}
-                  helperText={touched.password && errors.password}
+                  helperText={touched.password && (errors.password as any)}
                 />
-                <Field as={TextField} name="internal_notes" label="Notatki" multiline rows={3} fullWidth />
+                <Field
+                  as={TextField}
+                  name="internal_notes"
+                  label="Notatki"
+                  multiline
+                  rows={3}
+                  fullWidth
+                  error={touched.internal_notes && !!errors.internal_notes}
+                  helperText={touched.internal_notes && (errors.internal_notes as any)}
+                />
                 <FormControlLabel
-                  control={<Switch checked={values.is_active} onChange={(e) => setFieldValue('is_active', e.target.checked)} />}
+                  control={<Switch checked={values.is_active} onChange={(e) => setFieldValue("is_active", e.target.checked)} />}
                   label="Aktywny"
                 />
               </DialogContent>
 
               <DialogActions sx={{ p: 3 }}>
                 <Button onClick={handleCloseDialog}>Anuluj</Button>
-                <Button type="submit" variant="contained">Zapisz</Button>
+                <Button type="submit" variant="contained">
+                  Zapisz
+                </Button>
               </DialogActions>
             </Form>
           )}
@@ -347,7 +502,9 @@ const ClientsPage: React.FC = () => {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setDeleteDialogOpen(false)}>Anuluj</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Usuń</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">
+            Usuń
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -356,15 +513,27 @@ const ClientsPage: React.FC = () => {
         <DialogTitle>Karta Klienta</DialogTitle>
         <DialogContent>
           {viewingClient && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, py: 1 }}>
-              <Typography variant="h6">{viewingClient.first_name} {viewingClient.last_name}</Typography>
-              <Typography variant="body2"><strong>Nr klienta:</strong> {viewingClient.client_number}</Typography>
-              <Typography variant="body2"><strong>Email:</strong> {(viewingClient as any).email ?? '—'}</Typography>
-              <Typography variant="body2"><strong>Telefon:</strong> {viewingClient.phone || '—'}</Typography>
-              <Typography variant="body2"><strong>Wizyty:</strong> {viewingClient.appointments_count}</Typography>
-              <Typography variant="body2"><strong>Notatki:</strong> {(viewingClient as any).internal_notes || 'Brak'}</Typography>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, py: 1 }}>
+              <Typography variant="h6">
+                {viewingClient.first_name} {viewingClient.last_name}
+              </Typography>
               <Typography variant="body2">
-                <strong>Dołączył:</strong> {new Date(viewingClient.created_at).toLocaleDateString('pl-PL')}
+                <strong>Nr klienta:</strong> {viewingClient.client_number}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Email:</strong> {viewingClient.email || "—"}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Telefon:</strong> {viewingClient.phone || "—"}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Wizyty:</strong> {viewingClient.appointments_count}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Notatki:</strong> {viewingClient.internal_notes || "Brak"}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Dołączył:</strong> {new Date(viewingClient.created_at).toLocaleDateString("pl-PL")}
               </Typography>
             </Box>
           )}

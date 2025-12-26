@@ -20,13 +20,12 @@ import {
   Chip,
 } from "@mui/material";
 
-import {
-  getMyAppointments,
-  confirmAppointment,
-  cancelAppointment,
-  completeAppointment,
-} from "../../api/appointments";
-import type { Appointment, AppointmentStatus } from "../../types";
+import { appointmentsApi } from "@/api/appointments";
+import type { Appointment, AppointmentStatus } from "@/types";
+
+/* =========================
+   HELPERS
+   ========================= */
 
 function statusChipColor(
   status: AppointmentStatus
@@ -60,7 +59,11 @@ function eventBg(status: AppointmentStatus) {
   }
 }
 
-export default function EmployeeCalendarPage() {
+/* =========================
+   COMPONENT
+   ========================= */
+
+export default function EmployeeCalendarPage(): JSX.Element {
   const [events, setEvents] = useState<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -69,13 +72,26 @@ export default function EmployeeCalendarPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /* =========================
+     LOAD ALL APPOINTMENTS (ALL PAGES)
+     ========================= */
   const loadAppointments = async () => {
     setErr("");
     setLoading(true);
-    try {
-      const data = await getMyAppointments();
 
-      const calendarEvents: EventInput[] = data.map((a: Appointment) => ({
+    try {
+      let page = 1;
+      let all: Appointment[] = [];
+      let next: string | null = null;
+
+      do {
+        const res = await appointmentsApi.getMy({ page });
+        all = all.concat(res.results);
+        next = res.next;
+        page += 1;
+      } while (next);
+
+      const calendarEvents: EventInput[] = all.map((a) => ({
         id: String(a.id),
         title: a.service_name,
         start: a.start,
@@ -87,7 +103,11 @@ export default function EmployeeCalendarPage() {
 
       setEvents(calendarEvents);
     } catch (e: any) {
-      setErr(e?.response?.data?.detail || e?.message || "Błąd podczas ładowania terminarza.");
+      setErr(
+        e?.response?.data?.detail ||
+          e?.message ||
+          "Błąd podczas ładowania terminarza."
+      );
       setEvents([]);
     } finally {
       setLoading(false);
@@ -95,16 +115,21 @@ export default function EmployeeCalendarPage() {
   };
 
   useEffect(() => {
-    loadAppointments();
+    void loadAppointments();
   }, []);
+
+  /* =========================
+     EVENT HANDLERS
+     ========================= */
 
   const handleEventClick = (info: any) => {
     setSelectedAppt(info.event.extendedProps as Appointment);
     setModalOpen(true);
   };
 
-  const handleAction = async (fn: (id: number) => Promise<any>) => {
+  const handleAction = async (fn: (id: number) => Promise<Appointment>) => {
     if (!selectedAppt) return;
+
     setBusy(true);
     try {
       await fn(selectedAppt.id);
@@ -112,26 +137,36 @@ export default function EmployeeCalendarPage() {
       setSelectedAppt(null);
       await loadAppointments();
     } catch (e: any) {
-      alert(e?.response?.data?.detail || e?.message || "Błąd podczas wykonywania akcji.");
+      alert(
+        e?.response?.data?.detail ||
+          e?.message ||
+          "Błąd podczas wykonywania akcji."
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const canComplete = useMemo(() => {
-    if (!selectedAppt) return false;
-    const start = new Date(selectedAppt.start);
-    const now = new Date(); // zawsze aktualne
-    return (
-      start <= now &&
-      (selectedAppt.status === "CONFIRMED" || selectedAppt.status === "PENDING")
-    );
-  }, [selectedAppt]);
+  /* =========================
+     BACKEND FLAGS
+     ========================= */
 
-  const canCancel = useMemo(() => {
-    if (!selectedAppt) return false;
-    return selectedAppt.status === "CONFIRMED" || selectedAppt.status === "PENDING";
-  }, [selectedAppt]);
+  const canConfirm = useMemo(
+    () => Boolean(selectedAppt?.can_confirm),
+    [selectedAppt]
+  );
+  const canComplete = useMemo(
+    () => Boolean(selectedAppt?.can_complete),
+    [selectedAppt]
+  );
+  const canCancel = useMemo(
+    () => Boolean(selectedAppt?.can_cancel),
+    [selectedAppt]
+  );
+
+  /* =========================
+     RENDER
+     ========================= */
 
   if (loading) {
     return (
@@ -168,8 +203,8 @@ export default function EmployeeCalendarPage() {
           slotMaxTime="22:00:00"
           allDaySlot={false}
           height="75vh"
-          nowIndicator={true}
-          stickyHeaderDates={true}
+          nowIndicator
+          stickyHeaderDates
           eventClick={handleEventClick}
           eventTimeFormat={{
             hour: "2-digit",
@@ -179,6 +214,9 @@ export default function EmployeeCalendarPage() {
         />
       </Paper>
 
+      {/* =========================
+         MODAL
+         ========================= */}
       <Dialog
         open={modalOpen}
         onClose={() => (!busy ? setModalOpen(false) : null)}
@@ -187,7 +225,9 @@ export default function EmployeeCalendarPage() {
       >
         {selectedAppt && (
           <>
-            <DialogTitle sx={{ bgcolor: "#f5f5f5" }}>Szczegóły wizyty</DialogTitle>
+            <DialogTitle sx={{ bgcolor: "#f5f5f5" }}>
+              Szczegóły wizyty
+            </DialogTitle>
 
             <DialogContent dividers>
               <Stack spacing={2} sx={{ mt: 1 }}>
@@ -195,7 +235,9 @@ export default function EmployeeCalendarPage() {
                   <Typography variant="caption" color="text.secondary">
                     Usługa
                   </Typography>
-                  <Typography variant="h6">{selectedAppt.service_name}</Typography>
+                  <Typography variant="h6">
+                    {selectedAppt.service_name}
+                  </Typography>
                 </Box>
 
                 <Box>
@@ -222,7 +264,9 @@ export default function EmployeeCalendarPage() {
                   </Typography>
                   <Box sx={{ mt: 0.5 }}>
                     <Chip
-                      label={selectedAppt.status_display || selectedAppt.status}
+                      label={
+                        selectedAppt.status_display || selectedAppt.status
+                      }
                       size="small"
                       color={statusChipColor(selectedAppt.status)}
                       variant="outlined"
@@ -233,15 +277,21 @@ export default function EmployeeCalendarPage() {
             </DialogContent>
 
             <DialogActions sx={{ p: 2, justifyContent: "space-between" }}>
-              <Button onClick={() => setModalOpen(false)} color="inherit" disabled={busy}>
+              <Button
+                onClick={() => setModalOpen(false)}
+                color="inherit"
+                disabled={busy}
+              >
                 Zamknij
               </Button>
 
               <Stack direction="row" spacing={1}>
-                {selectedAppt.status === "PENDING" && (
+                {canConfirm && (
                   <Button
                     variant="contained"
-                    onClick={() => handleAction(confirmAppointment)}
+                    onClick={() =>
+                      handleAction(appointmentsApi.confirm)
+                    }
                     disabled={busy}
                   >
                     Potwierdź
@@ -252,7 +302,9 @@ export default function EmployeeCalendarPage() {
                   <Button
                     variant="contained"
                     color="success"
-                    onClick={() => handleAction(completeAppointment)}
+                    onClick={() =>
+                      handleAction(appointmentsApi.complete)
+                    }
                     disabled={busy}
                   >
                     Zakończ
@@ -262,7 +314,9 @@ export default function EmployeeCalendarPage() {
                 {canCancel && (
                   <Button
                     color="error"
-                    onClick={() => handleAction(cancelAppointment)}
+                    onClick={() =>
+                      handleAction(appointmentsApi.cancel)
+                    }
                     disabled={busy}
                   >
                     Anuluj

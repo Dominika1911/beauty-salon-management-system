@@ -15,7 +15,6 @@ from .serializers import UserDetailSerializer
 @ensure_csrf_cookie
 @api_view(["GET"])
 @permission_classes([AllowAny])
-@authentication_classes([])
 def csrf(request):
     return Response({"detail": "CSRF cookie set"})
 
@@ -71,7 +70,6 @@ class SessionLoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Zaloguj użytkownika
         # Zaloguj użytkownika
         login(request, user)
 
@@ -142,7 +140,15 @@ class AuthStatusView(APIView):
 
     def get(self, request):
         if request.user.is_authenticated:
-            return Response({
-                "isAuthenticated": True,
-                "user": UserDetailSerializer(request.user, context={"request": request}).data
-            })
+            return Response(
+                {
+                    "isAuthenticated": True,
+                    "user": UserDetailSerializer(request.user, context={"request": request}).data,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {"isAuthenticated": False, "user": None},
+            status=status.HTTP_200_OK,
+        )

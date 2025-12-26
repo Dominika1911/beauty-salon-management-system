@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Box,
   Container,
@@ -9,59 +9,53 @@ import {
   Button,
   Alert,
   CircularProgress,
-} from '@mui/material';
-import { Brush, Login } from '@mui/icons-material';
-import { useAuth } from '../context/AuthContext';
+} from "@mui/material";
+import { Brush, Login } from "@mui/icons-material";
+
+import { useAuth } from "@/context/AuthContext";
 
 const LoginPage: React.FC = () => {
-  const { login, isAuthenticated } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
-  // Jeśli już zalogowany, przekieruj
-  React.useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
-    }
-  }, [isAuthenticated, navigate]);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!user) return;
+    navigate("/dashboard", { replace: true });
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
-  setLoading(true);
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  try {
-    const loggedInUser = await login({ username, password });
-
-    // Przekierowanie tutaj, zamiast w AuthContext
-    if (loggedInUser.role === 'ADMIN') navigate('/admin/dashboard');
-    else if (loggedInUser.role === 'EMPLOYEE') navigate('/employee/dashboard');
-    else if (loggedInUser.role === 'CLIENT') navigate('/client/dashboard');
-    else navigate('/');
-
-  } catch (err: any) {
-    setError(err.response?.data?.detail || 'Nieprawidłowe dane logowania');
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      await login({ username, password });
+      // nie robimy navigate tutaj — zrobi to useEffect po ustawieniu user
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || "Nieprawidłowe dane logowania");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Box
       sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       }}
     >
       <Container maxWidth="sm">
         <Paper elevation={24} sx={{ p: 4, borderRadius: 3 }}>
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <Brush sx={{ fontSize: 56, color: 'primary.main', mb: 2 }} />
+          <Box sx={{ textAlign: "center", mb: 3 }}>
+            <Brush sx={{ fontSize: 56, color: "primary.main", mb: 2 }} />
             <Typography variant="h4" fontWeight="bold" gutterBottom>
               Beauty Salon
             </Typography>
@@ -108,7 +102,7 @@ const LoginPage: React.FC = () => {
               startIcon={loading ? <CircularProgress size={20} /> : <Login />}
               sx={{ mt: 3, py: 1.5 }}
             >
-              {loading ? 'Logowanie...' : 'Zaloguj się'}
+              {loading ? "Logowanie..." : "Zaloguj się"}
             </Button>
           </form>
         </Paper>

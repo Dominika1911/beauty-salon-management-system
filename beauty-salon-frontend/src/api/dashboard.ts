@@ -1,12 +1,12 @@
-import axiosInstance from "./axios";
-import type { DashboardResponse } from "../types";
+import axiosInstance from "@/api/axios";
+import type { DashboardResponse } from "@/types";
 
-/**
- * Dashboard zależny od roli:
- * - ADMIN / EMPLOYEE / CLIENT
- * Backend: GET /dashboard/
- */
-export const getDashboard = async (): Promise<DashboardResponse> => {
-  const res = await axiosInstance.get<DashboardResponse>("/dashboard/");
-  return res.data;
+export const dashboardApi = {
+  /**
+   * GET /api/dashboard/
+   */
+  get: async (): Promise<DashboardResponse> => {
+    const response = await axiosInstance.get<DashboardResponse>("/dashboard/");
+    return response.data;
+  },
 };

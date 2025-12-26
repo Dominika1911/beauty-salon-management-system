@@ -4,18 +4,20 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  ReactNode,
-} from 'react';
-import { login as apiLogin, logout as apiLogout, checkAuthStatus } from '../api/auth';
-import type { User, LoginRequest } from '../types';
+  type ReactNode,
+} from "react";
+
+import { authApi } from "@/api/auth";
+import type { LoginRequest, User } from "@/types";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (credentials: LoginRequest) => Promise<User>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
   isAuthenticated: boolean;
   isAdmin: boolean;
   isEmployee: boolean;
@@ -28,42 +30,54 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshUser = useCallback(async () => {
+  // Guard na podwójne odpalenie efektu w React 18 StrictMode (DEV)
+  const didInit = useRef(false);
+
+  const refreshUser = useCallback(async (): Promise<User | null> => {
     try {
-      const response = await checkAuthStatus();
-      setUser(response.isAuthenticated && response.user ? response.user : null);
+      const data = await authApi.getStatus(); // { isAuthenticated, user }
+      const nextUser = data.isAuthenticated && data.user ? data.user : null;
+      setUser(nextUser);
+      return nextUser;
     } catch {
       setUser(null);
+      return null;
     }
   }, []);
 
   useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+
     const initAuth = async () => {
       try {
         await refreshUser();
-      } catch (error) {
-        console.error('Inicjalizacja auth nieudana:', error);
       } finally {
         setLoading(false);
       }
     };
+
     void initAuth();
   }, [refreshUser]);
 
-  const login = useCallback(async (credentials: LoginRequest) => {
-    try {
-      const response = await apiLogin(credentials);
-      setUser(response.user);
-      return response.user;
-    } catch (error: any) {
-      console.error('Błąd logowania:', error);
-      throw error;
-    }
-  }, []);
+  const login = useCallback(
+    async (credentials: LoginRequest): Promise<User> => {
+      // POST /auth/login/ (CSRF ogarnia axios interceptor)
+      await authApi.login(credentials.username, credentials.password);
+
+      // po loginie: jedyne źródło prawdy to /auth/status/
+      const nextUser = await refreshUser();
+      if (!nextUser) {
+        throw new Error("Nie udało się pobrać danych użytkownika po zalogowaniu.");
+      }
+      return nextUser;
+    },
+    [refreshUser]
+  );
 
   const logout = useCallback(async () => {
     try {
-      await apiLogout();
+      await authApi.logout();
     } finally {
       setUser(null);
     }
@@ -77,9 +91,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       logout,
       refreshUser,
       isAuthenticated: Boolean(user),
-      isAdmin: user?.role === 'ADMIN',
-      isEmployee: user?.role === 'EMPLOYEE',
-      isClient: user?.role === 'CLIENT',
+      isAdmin: user?.role === "ADMIN",
+      isEmployee: user?.role === "EMPLOYEE",
+      isClient: user?.role === "CLIENT",
     }),
     [user, loading, login, logout, refreshUser]
   );
@@ -89,6 +103,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) throw new Error('useAuth musi być używany wewnątrz AuthProvider');
+  if (context === undefined) {
+    throw new Error("useAuth musi być używany wewnątrz AuthProvider");
+  }
   return context;
 };

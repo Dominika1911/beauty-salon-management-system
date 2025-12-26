@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+// src/components/Layout/Sidebar.tsx
+import React, { useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Drawer,
   List,
@@ -18,7 +19,8 @@ import {
   DialogContentText,
   DialogActions,
   Chip,
-} from '@mui/material';
+} from "@mui/material";
+import type { ChipProps } from "@mui/material/Chip";
 import {
   Dashboard,
   Event,
@@ -31,44 +33,65 @@ import {
   Schedule,
   ExitToApp,
   History,
-} from '@mui/icons-material';
-import { useAuth } from '../../context/AuthContext';
+} from "@mui/icons-material";
+
+import { useAuth } from "@/context/AuthContext";
+import type { UserRole } from "@/types";
 
 const drawerWidth = 240;
 
-interface MenuItem {
+interface MenuItemDef {
   text: string;
   icon: React.ReactElement;
   path: string;
-  roles: ('ADMIN' | 'EMPLOYEE' | 'CLIENT')[];
+  roles: UserRole[];
 }
 
-const menuItems: MenuItem[] = [
-  // Admin
-  { text: 'Dashboard', icon: <Dashboard />, path: '/admin/dashboard', roles: ['ADMIN'] },
-  { text: 'Wizyty', icon: <Event />, path: '/admin/appointments', roles: ['ADMIN'] },
-  { text: 'Pracownicy', icon: <People />, path: '/admin/employees', roles: ['ADMIN'] },
-  { text: 'Grafiki', icon: <Schedule />, path: '/admin/employees-schedule', roles: ['ADMIN'] },
-  { text: 'Klienci', icon: <Person />, path: '/admin/clients', roles: ['ADMIN'] },
-  { text: 'Usługi', icon: <ContentCut />, path: '/admin/services', roles: ['ADMIN'] },
-  { text: 'Raporty', icon: <Assessment />, path: '/admin/reports', roles: ['ADMIN'] },
-  { text: 'Ustawienia', icon: <Settings />, path: '/admin/settings', roles: ['ADMIN'] },
-    { text: 'Logi', icon: <History />, path: '/admin/logs', roles: ['ADMIN'] },
-{ text: 'Urlopy', icon: <Event />, path: '/admin/time-offs', roles: ['ADMIN'] },
+const menuItems: MenuItemDef[] = [
+  // DASHBOARD per rola (zgodnie z routerem)
+  { text: "Dashboard", icon: <Dashboard />, path: "/admin/dashboard", roles: ["ADMIN"] },
+  { text: "Dashboard", icon: <Dashboard />, path: "/employee/dashboard", roles: ["EMPLOYEE"] },
+  { text: "Dashboard", icon: <Dashboard />, path: "/client/dashboard", roles: ["CLIENT"] },
 
+  // ADMIN (zgodnie z routerem)
+  { text: "Wizyty", icon: <Event />, path: "/admin/appointments", roles: ["ADMIN"] },
+  { text: "Pracownicy", icon: <People />, path: "/admin/employees", roles: ["ADMIN"] },
+  { text: "Grafiki", icon: <Schedule />, path: "/admin/employees-schedule", roles: ["ADMIN"] },
+  { text: "Klienci", icon: <Person />, path: "/admin/clients", roles: ["ADMIN"] },
+  { text: "Usługi", icon: <ContentCut />, path: "/admin/services", roles: ["ADMIN"] },
+  { text: "Raporty", icon: <Assessment />, path: "/admin/reports", roles: ["ADMIN"] },
+  { text: "Ustawienia", icon: <Settings />, path: "/admin/settings", roles: ["ADMIN"] },
+  { text: "Logi", icon: <History />, path: "/admin/logs", roles: ["ADMIN"] },
+  { text: "Urlopy", icon: <Event />, path: "/admin/time-offs", roles: ["ADMIN"] },
 
-  // Employee
-  { text: 'Dashboard', icon: <Dashboard />, path: '/employee/dashboard', roles: ['EMPLOYEE'] },
-  { text: 'Terminarz', icon: <CalendarMonth />, path: '/employee/calendar', roles: ['EMPLOYEE'] },
-  { text: 'Moje wizyty', icon: <Event />, path: '/employee/appointments', roles: ['EMPLOYEE'] },
-  { text: 'Grafik', icon: <Schedule />, path: '/employee/schedule', roles: ['EMPLOYEE'] },
-{ text: 'Urlopy', icon: <Event />, path: '/employee/time-offs', roles: ['EMPLOYEE'] },
+  // EMPLOYEE (zgodnie z routerem)
+  { text: "Terminarz", icon: <CalendarMonth />, path: "/employee/calendar", roles: ["EMPLOYEE"] },
+  { text: "Moje wizyty", icon: <Event />, path: "/employee/appointments", roles: ["EMPLOYEE"] },
+  { text: "Grafik", icon: <Schedule />, path: "/employee/schedule", roles: ["EMPLOYEE"] },
+  { text: "Urlopy", icon: <Event />, path: "/employee/time-offs", roles: ["EMPLOYEE"] },
 
-  // Client
-  { text: 'Dashboard', icon: <Dashboard />, path: '/client/dashboard', roles: ['CLIENT'] },
-  { text: 'Rezerwacja', icon: <CalendarMonth />, path: '/client/booking', roles: ['CLIENT'] },
-  { text: 'Moje wizyty', icon: <Event />, path: '/client/appointments', roles: ['CLIENT'] },
+  // CLIENT (zgodnie z routerem)
+  { text: "Rezerwacja", icon: <CalendarMonth />, path: "/client/booking", roles: ["CLIENT"] },
+  { text: "Moje wizyty", icon: <Event />, path: "/client/appointments", roles: ["CLIENT"] },
 ];
+
+function getRoleChipColor(role: UserRole): ChipProps["color"] {
+  switch (role) {
+    case "ADMIN":
+      return "error";
+    case "EMPLOYEE":
+      return "primary";
+    case "CLIENT":
+      return "success";
+    default:
+      return "default";
+  }
+}
+
+function isPathActive(currentPath: string, itemPath: string) {
+  if (currentPath === itemPath) return true;
+  return itemPath !== "/" && currentPath.startsWith(itemPath + "/");
+}
 
 const Sidebar: React.FC = () => {
   const { user, logout } = useAuth();
@@ -77,29 +100,19 @@ const Sidebar: React.FC = () => {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  const filteredItems = useMemo(() => {
+    if (!user) return [];
+    return menuItems.filter((item) => item.roles.includes(user.role));
+  }, [user]);
+
   if (!user) return null;
-
-  const filteredItems = menuItems.filter((item) => item.roles.includes(user.role));
-
-  const roleColor = () => {
-    switch (user.role) {
-      case 'ADMIN':
-        return 'error';
-      case 'EMPLOYEE':
-        return 'primary';
-      case 'CLIENT':
-        return 'success';
-      default:
-        return 'default';
-    }
-  };
 
   const handleLogout = async () => {
     try {
       await logout();
     } finally {
       setConfirmOpen(false);
-      navigate('/login', { replace: true });
+      navigate("/login", { replace: true });
     }
   };
 
@@ -109,16 +122,16 @@ const Sidebar: React.FC = () => {
       sx={{
         width: drawerWidth,
         flexShrink: 0,
-        '& .MuiDrawer-paper': {
+        "& .MuiDrawer-paper": {
           width: drawerWidth,
-          boxSizing: 'border-box',
-          display: 'flex',
-          flexDirection: 'column',
+          boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
         },
       }}
     >
       <Toolbar>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ContentCut color="primary" />
           <Typography variant="h6" noWrap component="div">
             Beauty Salon
@@ -129,14 +142,14 @@ const Sidebar: React.FC = () => {
       <Divider />
 
       {/* Menu */}
-      <Box sx={{ flex: 1, overflowY: 'auto' }}>
+      <Box sx={{ flex: 1, overflowY: "auto" }}>
         <List>
           {filteredItems.map((item) => (
             <ListItem key={item.path} disablePadding>
               <ListItemButton
                 component={Link}
                 to={item.path}
-                selected={location.pathname === item.path}
+                selected={isPathActive(location.pathname, item.path)}
               >
                 <ListItemIcon>{item.icon}</ListItemIcon>
                 <ListItemText primary={item.text} />
@@ -148,15 +161,16 @@ const Sidebar: React.FC = () => {
 
       <Divider />
 
-      {/* Dolny pasek z userem i wylogowaniem */}
+      {/* Dolny pasek */}
       <Box sx={{ p: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
           {user.first_name} {user.last_name}
         </Typography>
+
         <Chip
           label={user.role_display}
           size="small"
-          color={roleColor() as any}
+          color={getRoleChipColor(user.role)}
           sx={{ mb: 1 }}
         />
 

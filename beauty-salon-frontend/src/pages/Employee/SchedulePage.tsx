@@ -11,7 +11,7 @@ import {
   Chip,
 } from "@mui/material";
 import { useAuth } from "../../context/AuthContext";
-import { getEmployeeSchedule } from "../../api/employees";
+import { employeesApi } from "@/api/employees";
 import { AccessTime, EventBusy } from "@mui/icons-material";
 
 type Period = { start: string; end: string };
@@ -27,14 +27,41 @@ const DAYS: Array<{ key: keyof WeeklyHours; label: string }> = [
   { key: "sun", label: "Niedziela" },
 ];
 
-function normalizeWeeklyHours(input: any): Partial<WeeklyHours> {
-  // backend: weekly_hours może być null/{}; okresy: [{start,end}]
-  if (!input || typeof input !== "object") return {};
-  return input;
+function getErrorMessage(err: unknown): string {
+  const e = err as any;
+  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
 }
 
-export default function EmployeeSchedulePage() {
+function normalizeWeeklyHours(input: unknown): Partial<WeeklyHours> {
+  // backend: weekly_hours to Record<string, Array<{start,end}>>
+  // UI: chcemy tylko mon..sun, zawsze jako tablice
+  const out: Partial<WeeklyHours> = {};
+  if (!input || typeof input !== "object") return out;
+
+  const obj = input as Record<string, any>;
+
+  for (const day of DAYS.map((d) => d.key)) {
+    const raw = obj[day];
+    if (!Array.isArray(raw)) {
+      out[day] = [];
+      continue;
+    }
+
+    out[day] = raw
+      .filter((p: any) => p && typeof p === "object")
+      .map((p: any) => ({
+        start: String(p.start ?? ""),
+        end: String(p.end ?? ""),
+      }))
+      .filter((p: Period) => Boolean(p.start) && Boolean(p.end));
+  }
+
+  return out;
+}
+
+export default function EmployeeSchedulePage(): JSX.Element {
   const { user } = useAuth();
+  // ✅ employee_profile.id z /api/users/me/ to EmployeeProfile.id (pk do /employees/{id}/schedule/)
   const employeeId = user?.employee_profile?.id ?? null;
 
   const [schedule, setSchedule] = useState<Partial<WeeklyHours>>({});
@@ -48,7 +75,6 @@ export default function EmployeeSchedulePage() {
       setErr("");
       setLoading(true);
 
-      // jeśli nie ma employeeId, kończymy loading i pokazujemy błąd
       if (!employeeId) {
         if (mounted) {
           setErr("Brak profilu pracownika (employee_profile).");
@@ -59,12 +85,12 @@ export default function EmployeeSchedulePage() {
       }
 
       try {
-        const data = await getEmployeeSchedule(employeeId);
+        const data = await employeesApi.getSchedule(employeeId);
         if (!mounted) return;
-        setSchedule(normalizeWeeklyHours(data?.weekly_hours));
+        setSchedule(normalizeWeeklyHours((data as any)?.weekly_hours));
       } catch (e) {
         if (!mounted) return;
-        setErr("Nie udało się pobrać grafiku pracy.");
+        setErr(getErrorMessage(e) || "Nie udało się pobrać grafiku pracy.");
         setSchedule({});
       } finally {
         if (!mounted) return;
@@ -72,7 +98,7 @@ export default function EmployeeSchedulePage() {
       }
     }
 
-    load();
+    void load();
     return () => {
       mounted = false;
     };
@@ -100,8 +126,7 @@ export default function EmployeeSchedulePage() {
       </Box>
 
       <Alert severity="info" variant="outlined">
-        Poniżej znajdują się Twoje standardowe godziny pracy. Jeśli potrzebujesz zmian,
-        skontaktuj się z administratorem.
+        Poniżej znajdują się Twoje standardowe godziny pracy. Jeśli potrzebujesz zmian, skontaktuj się z administratorem.
       </Alert>
 
       {err && <Alert severity="error">{err}</Alert>}

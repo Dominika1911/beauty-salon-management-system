@@ -1,5 +1,5 @@
 // src/pages/Admin/EmployeesPage.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -25,21 +25,22 @@ import {
   OutlinedInput,
   Checkbox,
   ListItemText,
+  Paper,
 } from "@mui/material";
-import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import { DataGrid, GridColDef, GridSortModel } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
 
-import type { Employee, Service } from "../../types";
-import {
-  getEmployees,
-  createEmployee,
-  updateEmployee,
-  deleteEmployee,
-} from "../../api/employees";
-import { getActiveServices } from "../../api/services";
+import type { DRFPaginated, Employee, Service } from "@/types";
+import { employeesApi, type EmployeeListItem } from "@/api/employees";
+import { servicesApi } from "@/api/services";
+
+/** ✅ type-guard: ADMIN ma pełny EmployeeSerializer */
+function isEmployee(row: EmployeeListItem): row is Employee {
+  return (row as Employee).employee_number !== undefined;
+}
 
 type EmployeeFormState = {
   id?: number;
@@ -48,8 +49,6 @@ type EmployeeFormState = {
   phone: string;
   is_active: boolean;
   skill_ids: number[];
-
-  // create-only (backend wymaga przy tworzeniu)
   email?: string;
   password?: string;
 };
@@ -66,15 +65,42 @@ const emptyForm: EmployeeFormState = {
 
 function formatPLN(value: string | number) {
   const n = typeof value === "string" ? Number(value) : value;
-  if (Number.isNaN(n)) return "0.00 zł";
+  if (Number.isNaN(n)) return "0,00 zł";
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
 }
 
-export default function EmployeesPage() {
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<Employee[]>([]);
+function getErrorMessage(err: unknown): string {
+  const e = err as any;
+  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
+}
+
+function sortModelToOrdering(sortModel: GridSortModel): string | undefined {
+  if (!sortModel || sortModel.length === 0) return undefined;
+
+  const first = sortModel[0];
+  const field = first.field;
+  const direction = first.sort;
+
+  const allowed = new Set(["id", "employee_number", "last_name", "created_at"]);
+  if (!allowed.has(field)) return undefined;
+  if (!direction) return undefined;
+
+  return direction === "desc" ? `-${field}` : field;
+}
+
+export default function EmployeesPage(): JSX.Element {
+  const [employeesData, setEmployeesData] = useState<DRFPaginated<Employee> | null>(null);
   const [services, setServices] = useState<Service[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [publicDataWarning, setPublicDataWarning] = useState(false);
+
   const [search, setSearch] = useState("");
+  const [isActiveFilter, setIsActiveFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [serviceIdFilter, setServiceIdFilter] = useState<number | "">("");
+
+  const [page, setPage] = useState(1);
+  const [sortModel, setSortModel] = useState<GridSortModel>([{ field: "created_at", sort: "desc" }]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -82,11 +108,11 @@ export default function EmployeesPage() {
 
   const [confirmDelete, setConfirmDelete] = useState<Employee | null>(null);
 
-  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: "success" | "error" | "info" }>({
-    open: false,
-    msg: "",
-    severity: "info",
-  });
+  const [snack, setSnack] = useState<{
+    open: boolean;
+    msg: string;
+    severity: "success" | "error" | "info";
+  }>({ open: false, msg: "", severity: "info" });
 
   const serviceMap = useMemo(() => {
     const map = new Map<number, Service>();
@@ -94,35 +120,88 @@ export default function EmployeesPage() {
     return map;
   }, [services]);
 
-  const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((e) => {
-      const full = `${e.first_name} ${e.last_name}`.toLowerCase();
-      const num = (e.employee_number || "").toLowerCase();
-      const username = (e.user_username || "").toLowerCase();
-      const email = (e.user_email || "").toLowerCase();
-      return full.includes(q) || num.includes(q) || username.includes(q) || email.includes(q);
-    });
-  }, [rows, search]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, isActiveFilter, serviceIdFilter]);
 
-  const loadAll = async () => {
+  const loadAllServices = useCallback(async () => {
+    const all: Service[] = [];
+    let currentPage = 1;
+
+    while (true) {
+      const res = await servicesApi.list({ is_active: true, page: currentPage, ordering: "name" });
+      all.push(...res.results);
+      if (!res.next) break;
+      currentPage += 1;
+    }
+
+    setServices(all);
+  }, []);
+
+  const loadEmployees = useCallback(async () => {
     setLoading(true);
+
     try {
-      const [emp, srv] = await Promise.all([getEmployees(), getActiveServices()]);
-      setRows(emp as Employee[]);
-      setServices(srv as Service[]);
-    } catch (e: any) {
-      setSnack({ open: true, msg: e?.response?.data?.detail || "Nie udało się pobrać danych.", severity: "error" });
+      const ordering = sortModelToOrdering(sortModel) || "-created_at";
+
+      const res = await employeesApi.list({
+        page,
+        ordering,
+        search: search.trim() || undefined,
+        is_active: isActiveFilter === "ALL" ? undefined : isActiveFilter === "ACTIVE",
+        service_id: serviceIdFilter === "" ? undefined : serviceIdFilter,
+      });
+
+      const fullEmployees = res.results.filter(isEmployee);
+      const hadPublic = fullEmployees.length !== res.results.length;
+
+      setPublicDataWarning(hadPublic);
+
+      if (hadPublic) {
+        setSnack({
+          open: true,
+          msg: "Backend zwrócił niepełne dane pracowników (EmployeePublic). Sprawdź czy jesteś zalogowany jako ADMIN.",
+          severity: "error",
+        });
+      }
+
+      setEmployeesData({
+        count: res.count,
+        next: res.next,
+        previous: res.previous,
+        results: fullEmployees,
+      });
+    } catch (e) {
+      setEmployeesData({ count: 0, next: null, previous: null, results: [] });
+      setPublicDataWarning(false);
+      setSnack({
+        open: true,
+        msg: getErrorMessage(e) || "Nie udało się pobrać pracowników.",
+        severity: "error",
+      });
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, sortModel, search, isActiveFilter, serviceIdFilter]);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      await Promise.all([loadAllServices(), loadEmployees()]);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadAllServices, loadEmployees]);
 
   useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void loadAll();
+  }, [loadAll]);
+
+  useEffect(() => {
+    void loadEmployees();
+  }, [loadEmployees]);
+
+  const rows = useMemo(() => employeesData?.results ?? [], [employeesData]);
 
   const openCreate = () => {
     setIsEdit(false);
@@ -139,7 +218,7 @@ export default function EmployeesPage() {
       phone: emp.phone || "",
       is_active: !!emp.is_active,
       skill_ids: (emp.skills || []).map((s) => s.id),
-      email: "", // nie wysyłamy przy edit jeśli nie zmieniasz
+      email: "",
       password: "",
     });
     setDialogOpen(true);
@@ -152,7 +231,6 @@ export default function EmployeesPage() {
 
   const handleSave = async () => {
     try {
-      // minimalna walidacja UI
       if (!form.first_name.trim() || !form.last_name.trim()) {
         setSnack({ open: true, msg: "Imię i nazwisko są wymagane.", severity: "error" });
         return;
@@ -165,7 +243,15 @@ export default function EmployeesPage() {
         }
       }
 
-      const payload: any = {
+      const payload: {
+        first_name: string;
+        last_name: string;
+        phone: string;
+        is_active: boolean;
+        skill_ids: number[];
+        email?: string;
+        password?: string;
+      } = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         phone: form.phone.trim(),
@@ -173,26 +259,22 @@ export default function EmployeesPage() {
         skill_ids: form.skill_ids,
       };
 
-      // create-only
       if (!isEdit) {
         payload.email = form.email?.trim();
-        payload.password = form.password;
+        payload.password = form.password || "";
+        await employeesApi.create(payload as any);
+        setSnack({ open: true, msg: "Utworzono pracownika.", severity: "success" });
       } else {
-        // opcjonalnie przy edit: jeśli wpiszesz email/hasło, backend to przyjmie
         if (form.email?.trim()) payload.email = form.email.trim();
         if (form.password?.trim()) payload.password = form.password;
-      }
-
-      if (isEdit && form.id) {
-        await updateEmployee(form.id, payload);
-        setSnack({ open: true, msg: "Zaktualizowano pracownika.", severity: "success" });
-      } else {
-        await createEmployee(payload);
-        setSnack({ open: true, msg: "Utworzono pracownika.", severity: "success" });
+        if (form.id) {
+          await employeesApi.update(form.id, payload as any);
+          setSnack({ open: true, msg: "Zaktualizowano pracownika.", severity: "success" });
+        }
       }
 
       closeDialog();
-      await loadAll();
+      await loadEmployees();
     } catch (e: any) {
       const msg =
         e?.response?.data?.detail ||
@@ -205,37 +287,54 @@ export default function EmployeesPage() {
   const handleDelete = async () => {
     if (!confirmDelete) return;
     try {
-      await deleteEmployee(confirmDelete.id);
+      await employeesApi.delete(confirmDelete.id);
       setSnack({ open: true, msg: "Usunięto pracownika.", severity: "success" });
       setConfirmDelete(null);
-      await loadAll();
+      await loadEmployees();
     } catch (e: any) {
-      setSnack({ open: true, msg: e?.response?.data?.detail || "Nie udało się usunąć.", severity: "error" });
+      setSnack({
+        open: true,
+        msg: e?.response?.data?.detail || "Nie udało się usunąć.",
+        severity: "error",
+      });
     }
   };
 
+  /**
+   * ✅ KLUCZ: valueGetter ma sygnaturę (value, row) w Twojej wersji DataGrid
+   * Dzięki temu nie ma "params.row is undefined" i wartości się wyświetlają poprawnie.
+   */
   const columns: GridColDef<Employee>[] = [
-    { field: "employee_number", headerName: "Nr", width: 110 },
+    {
+      field: "employee_number",
+      headerName: "Nr",
+      width: 110,
+      valueGetter: (_value, row) => row.employee_number || "—",
+      sortable: true,
+    },
     {
       field: "full_name",
       headerName: "Pracownik",
       flex: 1,
       minWidth: 220,
-      valueGetter: (_, row) => `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+      valueGetter: (_value, row) => `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+      sortable: false,
     },
     {
       field: "user_username",
       headerName: "Login",
       minWidth: 160,
       flex: 0.8,
-      valueGetter: (_, row) => row.user_username || "—",
+      valueGetter: (_value, row) => row.user_username || "—",
+      sortable: false,
     },
     {
       field: "user_email",
       headerName: "Email",
       minWidth: 200,
       flex: 1,
-      valueGetter: (_, row) => row.user_email || "—",
+      valueGetter: (_value, row) => row.user_email || "—",
+      sortable: false,
     },
     {
       field: "is_active",
@@ -243,25 +342,28 @@ export default function EmployeesPage() {
       width: 120,
       renderCell: (params) =>
         params.row.is_active ? <Chip label="Aktywny" color="success" size="small" /> : <Chip label="Nieaktywny" size="small" />,
-      sortable: true,
+      sortable: false,
     },
     {
       field: "appointments_count",
       headerName: "Wizyty",
       width: 110,
-      valueGetter: (_, row) => row.appointments_count ?? 0,
+      valueGetter: (_value, row) => row.appointments_count ?? 0,
+      sortable: false,
     },
     {
       field: "completed_appointments_count",
       headerName: "Zakończone",
       width: 130,
-      valueGetter: (_, row) => row.completed_appointments_count ?? 0,
+      valueGetter: (_value, row) => row.completed_appointments_count ?? 0,
+      sortable: false,
     },
     {
       field: "revenue_completed_total",
       headerName: "Przychód",
-      width: 140,
-      valueGetter: (_, row) => formatPLN(row.revenue_completed_total ?? "0"),
+      width: 160,
+      valueGetter: (_value, row) => formatPLN(row.revenue_completed_total ?? "0"),
+      sortable: false,
     },
     {
       field: "skills",
@@ -301,21 +403,29 @@ export default function EmployeesPage() {
     },
   ];
 
+  const canPrev = Boolean(employeesData?.previous) && !loading;
+  const canNext = Boolean(employeesData?.next) && !loading;
+
   return (
     <Box sx={{ p: 3 }}>
       <Stack spacing={2}>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }} justifyContent="space-between">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          spacing={2}
+          alignItems={{ sm: "center" }}
+          justifyContent="space-between"
+        >
           <Box>
             <Typography variant="h4" fontWeight={700}>
               Pracownicy
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Zarządzanie pracownikami oraz ich usługami.
+              Backend: paginacja PageNumberPagination (PAGE_SIZE=20) • Łącznie: {employeesData?.count ?? "—"} • Strona: {page}
             </Typography>
           </Box>
 
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadAll}>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => loadAll()}>
               Odśwież
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
@@ -328,33 +438,94 @@ export default function EmployeesPage() {
           <CardContent>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }} sx={{ mb: 2 }}>
               <TextField
-                label="Szukaj"
+                label="search (backend)"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="np. Kowalska, pracownik-00000001, email..."
+                placeholder="np. 00000001, Kowalska..."
                 fullWidth
               />
+
+              <FormControl sx={{ minWidth: 220 }}>
+                <InputLabel id="is-active-label">Status (backend)</InputLabel>
+                <Select
+                  labelId="is-active-label"
+                  value={isActiveFilter}
+                  label="Status (backend)"
+                  onChange={(e) => setIsActiveFilter(e.target.value as any)}
+                >
+                  <MenuItem value="ALL">Wszystkie</MenuItem>
+                  <MenuItem value="ACTIVE">Tylko aktywni</MenuItem>
+                  <MenuItem value="INACTIVE">Tylko nieaktywni</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControl sx={{ minWidth: 260 }}>
+                <InputLabel id="service-filter-label">service_id (backend)</InputLabel>
+                <Select
+                  labelId="service-filter-label"
+                  value={serviceIdFilter}
+                  label="service_id (backend)"
+                  onChange={(e) => setServiceIdFilter(e.target.value === "" ? "" : Number(e.target.value))}
+                >
+                  <MenuItem value="">Wszystkie usługi</MenuItem>
+                  {services.map((s) => (
+                    <MenuItem key={s.id} value={s.id}>
+                      {s.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Stack>
 
             <Divider sx={{ mb: 2 }} />
+
+            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">
+                  ordering (backend): {sortModelToOrdering(sortModel) || "-created_at"}
+                </Typography>
+
+                <Stack direction="row" spacing={1}>
+                  <Button disabled={!canPrev} variant="outlined" onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                    Poprzednia
+                  </Button>
+                  <Button disabled={!canNext} variant="contained" onClick={() => setPage((p) => p + 1)}>
+                    Następna
+                  </Button>
+                </Stack>
+              </Stack>
+            </Paper>
 
             {loading ? (
               <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
                 <CircularProgress />
               </Box>
             ) : (
-              <Box sx={{ height: 560, width: "100%" }}>
-                <DataGrid
-                  rows={filteredRows}
-                  columns={columns}
-                  getRowId={(r) => r.id}
-                  pageSizeOptions={[10, 25, 50]}
-                  initialState={{
-                    pagination: { paginationModel: { pageSize: 10, page: 0 } },
-                  }}
-                  disableRowSelectionOnClick
-                />
-              </Box>
+              <>
+                {publicDataWarning && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    Backend zwrócił część rekordów w trybie publicznym (EmployeePublic). To zwykle oznacza problem z
+                    autoryzacją/rolą — sprawdź czy jesteś zalogowany jako <b>ADMIN</b>.
+                  </Alert>
+                )}
+
+                <Box sx={{ height: 560, width: "100%" }}>
+                  <DataGrid
+                    rows={rows}
+                    columns={columns}
+                    getRowId={(r) => r.id}
+                    disableRowSelectionOnClick
+                    sortingMode="server"
+                    sortModel={sortModel}
+                    onSortModelChange={(model) => setSortModel(model)}
+                    pageSizeOptions={[20]}
+                    paginationMode="server"
+                    rowCount={employeesData?.count ?? 0}
+                    paginationModel={{ page: page - 1, pageSize: 20 }}
+                    onPaginationModelChange={(model) => setPage(model.page + 1)}
+                  />
+                </Box>
+              </>
             )}
           </CardContent>
         </Card>
@@ -388,7 +559,6 @@ export default function EmployeesPage() {
               placeholder="+48123123123"
             />
 
-            {/* create required: email+password, edit optional */}
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
                 label="Email (dla konta)"
@@ -416,9 +586,7 @@ export default function EmployeesPage() {
                 onChange={(e) => setForm((p) => ({ ...p, skill_ids: e.target.value as number[] }))}
                 input={<OutlinedInput label="Usługi (skills)" />}
                 renderValue={(selected) =>
-                  (selected as number[])
-                    .map((id) => serviceMap.get(id)?.name || `#${id}`)
-                    .join(", ")
+                  (selected as number[]).map((id) => serviceMap.get(id)?.name || `#${id}`).join(", ")
                 }
               >
                 {services.map((s) => (
@@ -471,7 +639,7 @@ export default function EmployeesPage() {
             ?
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Uwaga: jeśli są powiązane wizyty, backend może zablokować usunięcie (PROTECT).
+            Uwaga: jeśli są powiązane wizyty, backend może zablokować usunięcie (np. przez constraints).
           </Typography>
         </DialogContent>
         <DialogActions>

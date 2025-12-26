@@ -18,13 +18,8 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 
-import type { Employee } from "../../types";
-import { getEmployees } from "../../api/employees";
-import {
-  getEmployeeSchedule,
-  updateEmployeeSchedule,
-  WeeklyHours,
-} from "../../api/employees";
+import type { Employee } from "@/types";
+import { employeesApi, type WeeklyHours, type EmployeeListItem } from "@/api/employees";
 
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 
@@ -38,19 +33,28 @@ const dayLabels: Record<DayKey, string> = {
   sun: "Niedziela",
 };
 
-function normalizeWeeklyHours(input: any): Partial<WeeklyHours> {
-  if (!input || typeof input !== "object") return {};
-  return input;
+/** ✅ type-guard: Admin/Employee widzi pełny EmployeeSerializer */
+function isEmployee(row: EmployeeListItem): row is Employee {
+  return (row as Employee).employee_number !== undefined;
 }
 
-// POPRAWKA: walidacja realnych godzin
+function normalizeWeeklyHours(input: unknown): Partial<WeeklyHours> {
+  if (!input || typeof input !== "object") return {};
+  return input as Partial<WeeklyHours>;
+}
+
 function isValidHHMM(s: string) {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 }
 
-export default function EmployeesSchedulePage() {
+function getErrorMessage(err: unknown): string {
+  const e = err as any;
+  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
+}
+
+export default function EmployeesSchedulePage(): JSX.Element {
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeId, setEmployeeId] = useState<number | "">("");
+  const [employeeId, setEmployeeId] = useState<string>("");
 
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -60,27 +64,45 @@ export default function EmployeesSchedulePage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const selectedEmployee = useMemo(
-    () => employees.find((e) => e.id === employeeId) || null,
-    [employees, employeeId]
-  );
+  const selectedEmployee = useMemo(() => {
+    const idNum = employeeId ? Number(employeeId) : null;
+    if (!idNum) return null;
+    return employees.find((e) => e.id === idNum) || null;
+  }, [employees, employeeId]);
 
+  // 1) load employees (DRF paginated) - pobierz WSZYSTKIE strony
   useEffect(() => {
     (async () => {
       setLoadingEmployees(true);
       setErr("");
       try {
-        const data = await getEmployees();
-        setEmployees(data);
-        if (data.length > 0) setEmployeeId(data[0].id);
-      } catch (e: any) {
-        setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania pracowników.");
+        const all: Employee[] = [];
+        let currentPage = 1;
+
+        while (true) {
+          const res = await employeesApi.list({ ordering: "last_name", page: currentPage });
+          const list = (res.results ?? []).filter(isEmployee);
+          all.push(...list);
+
+          if (!res.next) break;
+          currentPage += 1;
+        }
+
+        setEmployees(all);
+
+        if (all.length > 0) setEmployeeId(String(all[0].id));
+        else setEmployeeId("");
+      } catch (e) {
+        setErr(getErrorMessage(e));
+        setEmployees([]);
+        setEmployeeId("");
       } finally {
         setLoadingEmployees(false);
       }
     })();
   }, []);
 
+  // 2) load schedule for selected employee
   useEffect(() => {
     if (!employeeId) return;
 
@@ -89,11 +111,11 @@ export default function EmployeesSchedulePage() {
       setErr("");
       setMsg("");
       try {
-        const sch = await getEmployeeSchedule(Number(employeeId));
+        const sch = await employeesApi.getSchedule(Number(employeeId));
         setWeekly(normalizeWeeklyHours(sch.weekly_hours));
-      } catch (e: any) {
+      } catch (e) {
         setWeekly({});
-        setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania grafiku.");
+        setErr(getErrorMessage(e));
       } finally {
         setLoadingSchedule(false);
       }
@@ -102,39 +124,39 @@ export default function EmployeesSchedulePage() {
 
   const setPeriod = (day: DayKey, idx: number, field: "start" | "end", value: string) => {
     setWeekly((prev) => {
-      const copy = { ...(prev || {}) };
-      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
+      const copy: Record<string, Array<{ start: string; end: string }>> = { ...(prev as any) };
+      const arr = Array.isArray(copy[day]) ? [...copy[day]] : [];
       const row = { ...(arr[idx] || { start: "09:00", end: "17:00" }) };
       row[field] = value;
       arr[idx] = row;
-      (copy as any)[day] = arr;
-      return copy;
+      copy[day] = arr;
+      return copy as any;
     });
   };
 
   const addPeriod = (day: DayKey) => {
     setWeekly((prev) => {
-      const copy = { ...(prev || {}) };
-      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
+      const copy: Record<string, Array<{ start: string; end: string }>> = { ...(prev as any) };
+      const arr = Array.isArray(copy[day]) ? [...copy[day]] : [];
       arr.push({ start: "09:00", end: "17:00" });
-      (copy as any)[day] = arr;
-      return copy;
+      copy[day] = arr;
+      return copy as any;
     });
   };
 
   const removePeriod = (day: DayKey, idx: number) => {
     setWeekly((prev) => {
-      const copy = { ...(prev || {}) };
-      const arr = Array.isArray((copy as any)[day]) ? [...((copy as any)[day] as any[])] : [];
+      const copy: Record<string, Array<{ start: string; end: string }>> = { ...(prev as any) };
+      const arr = Array.isArray(copy[day]) ? [...copy[day]] : [];
       arr.splice(idx, 1);
-      (copy as any)[day] = arr;
-      return copy;
+      copy[day] = arr;
+      return copy as any;
     });
   };
 
   const validateAll = (): string | null => {
     for (const day of Object.keys(dayLabels) as DayKey[]) {
-      const periods = (weekly as any)?.[day];
+      const periods: any = (weekly as any)?.[day];
       if (!periods) continue;
       if (!Array.isArray(periods)) return `Błędny format dla dnia ${dayLabels[day]}.`;
 
@@ -145,8 +167,6 @@ export default function EmployeesSchedulePage() {
         if (!isValidHHMM(start) || !isValidHHMM(end)) {
           return `Nieprawidłowy format godziny w ${dayLabels[day]} (użyj HH:MM).`;
         }
-
-        // Porównanie stringów działa dla HH:MM
         if (start >= end) {
           return `Godzina start musi być < koniec w ${dayLabels[day]}.`;
         }
@@ -157,6 +177,7 @@ export default function EmployeesSchedulePage() {
 
   const handleSave = async () => {
     if (!employeeId) return;
+
     setErr("");
     setMsg("");
 
@@ -168,10 +189,12 @@ export default function EmployeesSchedulePage() {
 
     setSaving(true);
     try {
-      await updateEmployeeSchedule(Number(employeeId), weekly);
+      // API oczekuje Record<string, Array<{start,end}>>
+      const payload = (weekly || {}) as Record<string, Array<{ start: string; end: string }>>;
+      await employeesApi.updateSchedule(Number(employeeId), payload);
       setMsg("Zapisano grafik.");
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail || e?.message || "Błąd zapisu grafiku.");
+    } catch (e) {
+      setErr(getErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -181,8 +204,16 @@ export default function EmployeesSchedulePage() {
     <Stack spacing={2}>
       <Typography variant="h5">Grafiki pracowników</Typography>
 
-      {msg && <Alert severity="success">{msg}</Alert>}
-      {err && <Alert severity="error">{err}</Alert>}
+      {msg && (
+        <Alert severity="success" onClose={() => setMsg("")}>
+          {msg}
+        </Alert>
+      )}
+      {err && (
+        <Alert severity="error" onClose={() => setErr("")}>
+          {err}
+        </Alert>
+      )}
 
       <Paper sx={{ p: 2 }}>
         {loadingEmployees ? (
@@ -191,15 +222,11 @@ export default function EmployeesSchedulePage() {
             <Typography>Ładowanie pracowników...</Typography>
           </Stack>
         ) : (
-          <FormControl fullWidth>
+          <FormControl fullWidth size="small">
             <InputLabel>Pracownik</InputLabel>
-            <Select
-              value={employeeId}
-              label="Pracownik"
-              onChange={(e) => setEmployeeId(Number(e.target.value))}
-            >
+            <Select value={employeeId} label="Pracownik" onChange={(e) => setEmployeeId(String(e.target.value))}>
               {employees.map((e) => (
-                <MenuItem key={e.id} value={e.id}>
+                <MenuItem key={e.id} value={String(e.id)}>
                   {e.first_name} {e.last_name} ({e.employee_number})
                 </MenuItem>
               ))}
@@ -244,7 +271,6 @@ export default function EmployeesSchedulePage() {
                     <Stack spacing={1} sx={{ mt: 1 }}>
                       {periods.map((p, idx) => (
                         <Stack key={idx} direction="row" spacing={1} alignItems="center">
-                          {/* POPRAWKA: type="time" => bez literówek, zawsze HH:MM */}
                           <TextField
                             label="Start"
                             type="time"
@@ -266,11 +292,7 @@ export default function EmployeesSchedulePage() {
                             sx={{ width: 160 }}
                           />
 
-                          <IconButton
-                            color="error"
-                            onClick={() => removePeriod(day, idx)}
-                            aria-label="usuń"
-                          >
+                          <IconButton color="error" onClick={() => removePeriod(day, idx)} aria-label="usuń">
                             <DeleteIcon />
                           </IconButton>
                         </Stack>

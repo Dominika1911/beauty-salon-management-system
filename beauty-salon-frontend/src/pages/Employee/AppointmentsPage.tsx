@@ -1,24 +1,27 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Box,
   Button,
   Chip,
   CircularProgress,
   Paper,
   Stack,
   Typography,
-  Box,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Divider,
 } from "@mui/material";
 
-import type { Appointment, AppointmentStatus } from "../../types";
-import {
-  getMyAppointments,
-  confirmAppointment,
-  cancelAppointment,
-  completeAppointment,
-} from "../../api/appointments";
+import type { Appointment, AppointmentStatus, DRFPaginated } from "@/types";
+import { appointmentsApi } from "@/api/appointments";
 
-function statusColor(status: AppointmentStatus): "default" | "success" | "warning" | "error" {
+type StatusColor = "warning" | "success" | "default" | "error";
+type Ordering = "start" | "-start" | "status" | "-status" | "created_at" | "-created_at";
+
+function statusColor(status: AppointmentStatus): StatusColor {
   switch (status) {
     case "CONFIRMED":
       return "success";
@@ -33,253 +36,221 @@ function statusColor(status: AppointmentStatus): "default" | "success" | "warnin
   }
 }
 
-const toDate = (value: string | Date) => (value instanceof Date ? value : new Date(value));
+function formatPL(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("pl-PL");
+}
 
-const formatDateTimePL = (d: Date) => d.toLocaleString("pl-PL");
-const formatTimePL = (d: Date) =>
-  d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+function formatPrice(price?: string | number): string {
+  if (price == null) return "—";
+  return new Intl.NumberFormat("pl-PL", {
+    style: "currency",
+    currency: "PLN",
+  }).format(Number(price));
+}
 
-export default function EmployeeAppointmentsPage() {
-  const [items, setItems] = useState<Appointment[] | null>(null);
+function getErrorMessage(err: unknown): string {
+  const e = err as any;
+  return (
+    e?.response?.data?.detail ||
+    e?.response?.data?.message ||
+    e?.message ||
+    "Wystąpił błąd."
+  );
+}
+
+export default function EmployeeAppointmentsPage(): JSX.Element {
+  const [page, setPage] = useState(1);
+  const [ordering, setOrdering] = useState<Ordering>("-start");
+
+  const [data, setData] = useState<DRFPaginated<Appointment> | null>(null);
   const [loading, setLoading] = useState(true);
+
   const [busyId, setBusyId] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const formatPrice = (price: string | number) => {
-    return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(
-      Number(price)
-    );
-  };
+  // reset page when backend params change
+  useEffect(() => {
+    setPage(1);
+  }, [ordering]);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setErr("");
+
     try {
-      const data = await getMyAppointments();
-      setItems(data);
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail || e?.message || "Błąd pobierania danych");
-      setItems([]);
+      const res = await appointmentsApi.getMy({ page, ordering });
+      setData(res);
+    } catch (e) {
+      setErr(getErrorMessage(e));
+      setData({ count: 0, next: null, previous: null, results: [] });
     } finally {
       setLoading(false);
     }
-  }
+  }, [page, ordering]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
-  async function action(fn: (id: number) => Promise<any>, id: number, successMsg: string) {
+  const runAction = async (
+    fn: (id: number) => Promise<Appointment>,
+    id: number,
+    successMsg: string
+  ) => {
+    setBusyId(id);
     setErr("");
     setMsg("");
-    setBusyId(id);
+
     try {
       await fn(id);
       setMsg(successMsg);
       await load();
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail || e?.message || "Błąd akcji");
+    } catch (e) {
+      setErr(getErrorMessage(e));
     } finally {
       setBusyId(null);
     }
-  }
+  };
 
-  const now = useMemo(() => new Date(), [items]); // odśwież "teraz" po reloadzie danych
+  const canPrev = Boolean(data?.previous) && !loading;
+  const canNext = Boolean(data?.next) && !loading;
 
-  const { upcoming, history } = useMemo(() => {
-    const list = items ?? [];
+  const results = useMemo(() => data?.results ?? [], [data]);
 
-    const upcomingRaw = list.filter((a) => {
-      const start = toDate(a.start);
-      return (a.status === "PENDING" || a.status === "CONFIRMED") && start > now;
-    });
-
-    const historyRaw = list.filter((a) => {
-      const start = toDate(a.start);
-      return (
-        a.status === "COMPLETED" ||
-        a.status === "CANCELLED" ||
-        ((a.status === "PENDING" || a.status === "CONFIRMED") && start <= now)
-      );
-    });
-
-    // sortowanie: upcoming od najbliższych, history od najnowszych
-    upcomingRaw.sort((a, b) => +toDate(a.start) - +toDate(b.start));
-    historyRaw.sort((a, b) => +toDate(b.start) - +toDate(a.start));
-
-    return { upcoming: upcomingRaw, history: historyRaw };
-  }, [items, now]);
-
-  if (loading && !items) {
+  if (loading && !data) {
     return (
-      <Stack alignItems="center" sx={{ py: 4 }}>
+      <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
         <CircularProgress />
-      </Stack>
+      </Box>
     );
   }
 
   return (
     <Stack spacing={3}>
       <Typography variant="h5" fontWeight={600}>
-        Moje wizyty
+        Moje wizyty (EMPLOYEE)
       </Typography>
 
-      {msg && (
-        <Alert severity="success" onClose={() => setMsg("")}>
-          {msg}
-        </Alert>
-      )}
-      {err && (
-        <Alert severity="error" onClose={() => setErr("")}>
-          {err}
-        </Alert>
-      )}
+      {msg && <Alert severity="success" onClose={() => setMsg("")}>{msg}</Alert>}
+      {err && <Alert severity="error" onClose={() => setErr("")}>{err}</Alert>}
 
+      {/* FILTERS (backend) */}
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom color="primary">
-          Nadchodzące wizyty
-        </Typography>
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={2}
+          justifyContent="space-between"
+          alignItems={{ md: "center" }}
+        >
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <InputLabel>ordering (backend)</InputLabel>
+            <Select
+              value={ordering}
+              label="ordering (backend)"
+              onChange={(e) => setOrdering(e.target.value as Ordering)}
+            >
+              <MenuItem value="-start">-start</MenuItem>
+              <MenuItem value="start">start</MenuItem>
+              <MenuItem value="-created_at">-created_at</MenuItem>
+              <MenuItem value="created_at">created_at</MenuItem>
+              <MenuItem value="-status">-status</MenuItem>
+              <MenuItem value="status">status</MenuItem>
+            </Select>
+          </FormControl>
 
-        <Stack spacing={2} sx={{ mt: 2 }}>
-          {upcoming.length === 0 ? (
-            <Alert severity="info">Brak zaplanowanych wizyt w przyszłości.</Alert>
-          ) : (
-            upcoming.map((a) => {
-              const start = toDate(a.start);
-              const end = toDate(a.end);
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body2" color="text.secondary">
+              Łącznie: {data?.count ?? "—"} • Strona: {page}
+            </Typography>
 
-              return (
-                <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
-                  <Stack spacing={2}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight={700}>
-                          {a.service_name}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Klient: {a.client_name ?? "Brak danych"}
-                        </Typography>
-                      </Box>
+            <Button variant="outlined" disabled={!canPrev} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Poprzednia
+            </Button>
+            <Button variant="contained" disabled={!canNext} onClick={() => setPage((p) => p + 1)}>
+              Następna
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
 
-                      <Stack alignItems="flex-end" spacing={1}>
-                        <Chip
-                          label={a.status_display || a.status}
-                          size="small"
-                          color={statusColor(a.status)}
-                        />
-                        <Typography variant="subtitle2" fontWeight={700}>
-                          {a.service_price ? formatPrice(a.service_price) : "—"}
-                        </Typography>
-                      </Stack>
-                    </Stack>
-
-                    <Typography variant="body2">
-                      Termin: {formatDateTimePL(start)} – {formatTimePL(end)}
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
+          <CircularProgress />
+        </Box>
+      ) : results.length === 0 ? (
+        <Alert severity="info">Brak wizyt.</Alert>
+      ) : (
+        <Stack spacing={1.5}>
+          {results.map((a) => (
+            <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
+              <Stack spacing={1}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+                  <Box>
+                    <Typography fontWeight={800}>{a.service_name}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Klient: {a.client_name ?? "—"}
                     </Typography>
+                  </Box>
 
-                    <Stack direction="row" spacing={1}>
-                      {a.status === "PENDING" && (
-                        <Button
-                          variant="contained"
-                          size="small"
-                          disabled={busyId === a.id}
-                          onClick={() => action(confirmAppointment, a.id, "Potwierdzono.")}
-                        >
-                          Potwierdź
-                        </Button>
-                      )}
-                      <Button
-                        variant="text"
-                        color="error"
-                        size="small"
-                        disabled={busyId === a.id}
-                        onClick={() => action(cancelAppointment, a.id, "Anulowano.")}
-                      >
-                        Anuluj
-                      </Button>
-                    </Stack>
+                  <Stack alignItems="flex-end" spacing={0.5}>
+                    <Chip
+                      label={a.status_display || a.status}
+                      size="small"
+                      color={statusColor(a.status)}
+                    />
+                    <Typography fontWeight={700}>{formatPrice(a.service_price)}</Typography>
                   </Stack>
-                </Paper>
-              );
-            })
-          )}
+                </Stack>
+
+                <Divider />
+
+                <Typography variant="body2">
+                  Termin: {formatPL(a.start)} – {formatPL(a.end)}
+                </Typography>
+
+                <Stack direction="row" spacing={1}>
+                  {a.can_confirm && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      disabled={busyId === a.id}
+                      onClick={() => runAction(appointmentsApi.confirm, a.id, "Wizyta potwierdzona.")}
+                    >
+                      Potwierdź
+                    </Button>
+                  )}
+
+                  {a.can_cancel && (
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      disabled={busyId === a.id}
+                      onClick={() => runAction(appointmentsApi.cancel, a.id, "Wizyta anulowana.")}
+                    >
+                      Anuluj
+                    </Button>
+                  )}
+
+                  {a.can_complete && (
+                    <Button
+                      size="small"
+                      color="success"
+                      variant="contained"
+                      disabled={busyId === a.id}
+                      onClick={() => runAction(appointmentsApi.complete, a.id, "Wizyta zakończona.")}
+                    >
+                      Zakończ
+                    </Button>
+                  )}
+                </Stack>
+              </Stack>
+            </Paper>
+          ))}
         </Stack>
-      </Paper>
-
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom color="text.secondary">
-          Historia i do rozliczenia
-        </Typography>
-
-        <Stack spacing={1} sx={{ mt: 2 }}>
-          {history.length === 0 ? (
-            <Alert severity="info">Historia jest pusta.</Alert>
-          ) : (
-            history.map((a) => {
-              const start = toDate(a.start);
-              const isToComplete = a.status === "PENDING" || a.status === "CONFIRMED";
-
-              return (
-                <Paper
-                  key={a.id}
-                  variant="outlined"
-                  sx={{
-                    p: 2,
-                    bgcolor: isToComplete ? "#fff9c4" : "transparent",
-                    border: isToComplete ? "1px solid #fbc02d" : "1px solid #e0e0e0",
-                  }}
-                >
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Box>
-                      <Typography variant="body2" fontWeight={600}>
-                        {a.service_name} • {a.client_name ?? "—"}
-                      </Typography>
-
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        display="block"
-                        sx={{ mt: 0.25 }}
-                      >
-                        {formatDateTimePL(start)}{" "}
-                        {a.service_price ? `| ${formatPrice(a.service_price)}` : ""}
-                      </Typography>
-
-                      {isToComplete && (
-                        <Typography variant="caption" color="error" fontWeight={700}>
-                          OCZEKUJE NA ZAKOŃCZENIE
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Chip
-                        label={a.status_display || a.status}
-                        size="small"
-                        variant="outlined"
-                        color={statusColor(a.status)}
-                      />
-
-                      {isToComplete && (
-                        <Button
-                          variant="contained"
-                          color="success"
-                          size="small"
-                          disabled={busyId === a.id}
-                          onClick={() => action(completeAppointment, a.id, "Zakończono.")}
-                        >
-                          Zakończ
-                        </Button>
-                      )}
-                    </Stack>
-                  </Stack>
-                </Paper>
-              );
-            })
-          )}
-        </Stack>
-      </Paper>
+      )}
     </Stack>
   );
 }

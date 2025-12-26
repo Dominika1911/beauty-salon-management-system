@@ -7,8 +7,6 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.auth import authenticate, login, logout
-from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db import transaction
 from django.db.models import Count, Sum, Q
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth
@@ -17,8 +15,8 @@ from django.utils import timezone
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, permissions, serializers, filters
-from rest_framework.decorators import action, api_view, permission_classes, authentication_classes
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, APIException
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -48,6 +46,7 @@ from .serializers import (
     UserUpdateSerializer,
     ServiceSerializer,
     EmployeeSerializer,
+    EmployeePublicSerializer,
     ClientSerializer,
     AppointmentSerializer,
     SystemSettingsSerializer,
@@ -134,17 +133,17 @@ class ServiceViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ["create", "update", "partial_update", "destroy", "disable", "enable"]:
             return [IsAdminOrEmployee()]
-        return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        obj = serializer.save()
+        serializer.save()
         SystemLog.log(
             action=SystemLog.Action.SERVICE_CREATED,
             performed_by=self.request.user,
         )
 
     def perform_update(self, serializer):
-        obj = serializer.save()
+        serializer.save()
         SystemLog.log(
             action=SystemLog.Action.SERVICE_UPDATED,
             performed_by=self.request.user,
@@ -179,6 +178,15 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     search_fields = ["employee_number", "first_name", "last_name"]
     ordering_fields = ["id", "employee_number", "last_name", "created_at"]
 
+    def get_serializer_class(self):
+        user = getattr(self.request, "user", None)
+        role = getattr(user, "role", None) if (user and user.is_authenticated) else None
+
+        if role == User.Role.CLIENT and self.action in ["list", "retrieve"]:
+            return EmployeePublicSerializer
+
+        return EmployeeSerializer
+
     def get_queryset(self):
         qs = super().get_queryset()
 
@@ -198,13 +206,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             ),
         )
 
+        service_id = self.request.query_params.get("service_id")
+        if service_id:
+            try:
+                sid = int(service_id)
+                qs = qs.filter(skills__id=sid).distinct()
+            except Exception:
+                pass
+
         user = self.request.user
-        if not (user and user.is_authenticated) or getattr(user, "role", None) == User.Role.CLIENT:
+
+        if user and user.is_authenticated and getattr(user, "role", None) == User.Role.CLIENT:
             return qs.filter(is_active=True)
+
         return qs
 
     def get_permissions(self):
-        # schedule: GET -> admin/employee, PATCH/PUT -> tylko admin
         if self.action == "schedule":
             if self.request.method in ["PATCH", "PUT"]:
                 return [IsAdmin()]
@@ -213,7 +230,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if self.action in ["create", "update", "partial_update", "destroy"]:
             return [IsAdminOrEmployee()]
 
-        return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -248,7 +265,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         ser.is_valid(raise_exception=True)
         ser.save()
 
-        # Bonus: log zmiany grafiku jako EMPLOYEE_UPDATED
         SystemLog.log(
             action=SystemLog.Action.EMPLOYEE_UPDATED,
             performed_by=request.user,
@@ -257,15 +273,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         return Response(ser.data)
 
+
 # =============================================================================
 # TIME OFF (SPÓJNY ENDPOINT)
 # =============================================================================
 
 class TimeOffViewSet(viewsets.ModelViewSet):
-    """
-    - EMPLOYEE: list/retrieve swoich + create dla siebie (PENDING)
-    - ADMIN: list/retrieve wszystkich + create dla dowolnego + approve/reject
-    """
     serializer_class = TimeOffSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
     filterset_fields = ["status", "employee"]
@@ -427,6 +440,7 @@ class ClientViewSet(viewsets.ModelViewSet):
         obj = self.get_queryset().filter(pk=profile.pk).first()
         return Response(ClientSerializer(obj, context={"request": request}).data)
 
+
 # =============================================================================
 # APPOINTMENTS
 # =============================================================================
@@ -439,14 +453,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "status", "created_at"]
 
     def get_permissions(self):
-        """
-        Minimalnie i jasno:
-        - confirm/complete: ADMIN/EMPLOYEE
-        - cancel: specyficzna logika (np. klient może anulować swoje)
-        - my: EMPLOYEE
-        - list/retrieve: zalogowany (bo i tak filtrujemy queryset do "swoich")
-        - reszta (create/update/destroy): ADMIN/EMPLOYEE
-        """
         if self.action in ["confirm", "complete"]:
             return [IsAdminOrEmployee()]
 
@@ -462,12 +468,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        """
-        Kluczowe zabezpieczenie:
-        - CLIENT: tylko swoje wizyty
-        - EMPLOYEE: tylko swoje wizyty
-        - ADMIN: wszystko
-        """
         qs = super().get_queryset()
         user = self.request.user
 
@@ -484,7 +484,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             employee = getattr(user, "employee_profile", None)
             return qs.filter(employee=employee) if employee else qs.none()
 
-        return qs  # ADMIN
+        return qs
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -496,7 +496,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         obj = serializer.save()
-        # nie dubluj logów w confirm/cancel/complete
         if self.action in ["update", "partial_update"]:
             SystemLog.log(
                 action=SystemLog.Action.APPOINTMENT_UPDATED,
@@ -506,10 +505,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="my")
     def my(self, request):
-        """
-        Endpoint dla EMPLOYEE: lista jego wizyt.
-        Paginacja: używa globalnej PageNumberPagination + PAGE_SIZE.
-        """
         employee = getattr(request.user, "employee_profile", None)
         if not employee:
             return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
@@ -522,22 +517,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         page = self.paginate_queryset(qs)
-        if page is not None:
-            ser = AppointmentSerializer(page, many=True, context={"request": request})
-            return self.get_paginated_response(ser.data)
+        if page is None:
+            raise APIException("Pagination is required for this endpoint.")
 
-        return Response(AppointmentSerializer(qs, many=True, context={"request": request}).data)
+        ser = AppointmentSerializer(page, many=True, context={"request": request})
+        return self.get_paginated_response(ser.data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
     @transaction.atomic
     def confirm(self, request, pk=None):
-        # row-lock: brak lost update
-        appt = (
-            Appointment.objects
-            .select_for_update()
-            .select_related("client", "client__user", "employee", "service")
-            .get(pk=pk)
-        )
+        appt = Appointment.objects.select_for_update().get(pk=pk)
         self.check_object_permissions(request, appt)
 
         if appt.status != Appointment.Status.PENDING:
@@ -555,17 +544,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(AppointmentSerializer(appt, context={"request": request}).data)
+        return Response(
+            AppointmentSerializer(appt, context={"request": request}).data
+        )
 
     @action(detail=True, methods=["post"], url_path="cancel")
     @transaction.atomic
     def cancel(self, request, pk=None):
-        appt = (
-            Appointment.objects
-            .select_for_update()
-            .select_related("client", "client__user", "employee", "service")
-            .get(pk=pk)
-        )
+        appt = Appointment.objects.select_for_update().get(pk=pk)
         self.check_object_permissions(request, appt)
 
         if appt.status == Appointment.Status.CANCELLED:
@@ -589,17 +575,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(AppointmentSerializer(appt, context={"request": request}).data)
+        return Response(
+            AppointmentSerializer(appt, context={"request": request}).data
+        )
 
     @action(detail=True, methods=["post"], url_path="complete")
     @transaction.atomic
     def complete(self, request, pk=None):
-        appt = (
-            Appointment.objects
-            .select_for_update()
-            .select_related("client", "client__user", "employee", "service")
-            .get(pk=pk)
-        )
+        appt = Appointment.objects.select_for_update().get(pk=pk)
         self.check_object_permissions(request, appt)
 
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
@@ -617,7 +600,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(AppointmentSerializer(appt, context={"request": request}).data)
+        return Response(
+            AppointmentSerializer(appt, context={"request": request}).data
+        )
 
 
 # =============================================================================
@@ -731,7 +716,7 @@ def _weekday_key(d) -> str:
 
 
 class AvailabilitySlotsAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         employee_id = request.query_params.get("employee_id")
@@ -834,7 +819,7 @@ class BookingCreateAPIView(APIView):
 
 
 class CheckAvailabilityView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         employee_id = request.data.get("employee_id")
@@ -1225,76 +1210,3 @@ class ReportView(APIView):
             ])
 
         return self._build_pdf_response(f"Grafik na dzień {today}", data, "grafik_dzis.pdf")
-
-# =============================================================================
-# AUTH (SESSION LOGIN / LOGOUT)
-# =============================================================================
-@ensure_csrf_cookie
-@api_view(["GET"])
-@permission_classes([permissions.AllowAny])
-@authentication_classes([])
-def csrf(request):
-    return Response({"detail": "CSRF cookie set"})
-
-
-class SessionLoginSerializer(serializers.Serializer):
-    username = serializers.CharField()
-    password = serializers.CharField(write_only=True)
-
-
-class SessionLoginAPIView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        ser = SessionLoginSerializer(data=request.data)
-        ser.is_valid(raise_exception=True)
-
-        user = authenticate(
-            request,
-            username=ser.validated_data["username"],
-            password=ser.validated_data["password"],
-        )
-
-        if user is None:
-            return Response(
-                {"detail": "Nieprawidłowy login lub hasło."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not user.is_active:
-            return Response(
-                {"detail": "Konto jest nieaktywne."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        login(request, user)
-
-        SystemLog.log(
-            action=SystemLog.Action.AUTH_LOGIN,
-            performed_by=user,
-            target_user=user,
-        )
-
-        return Response(
-            {
-                "detail": "Zalogowano.",
-                "user": UserDetailSerializer(user, context={"request": request}).data,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-class SessionLogoutAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        user = request.user
-        logout(request)
-
-        SystemLog.log(
-            action=SystemLog.Action.AUTH_LOGOUT,
-            performed_by=user,
-            target_user=user,
-        )
-
-        return Response({"detail": "Wylogowano."}, status=status.HTTP_200_OK)

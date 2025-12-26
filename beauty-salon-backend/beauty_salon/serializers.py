@@ -82,7 +82,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
     def validate_password(self, value):
-        # Jeśli ktoś podaje hasło jawnie -> sprawdź AUTH_PASSWORD_VALIDATORS
         if value:
             validate_password(value)
         return value
@@ -94,7 +93,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
         if password:
             user.set_password(password)
         else:
-            # hasło losowe też może być, ale walidatory tu nie mają sensu (bo i tak użytkownik nie zna hasła)
             user.set_password(secrets.token_urlsafe(8))
 
         user.full_clean()
@@ -128,7 +126,6 @@ class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True)
 
     def validate_new_password(self, value):
-        # Zwykle reset hasła odbywa się bez zalogowania -> walidacja ogólna
         validate_password(value)
         return value
 
@@ -167,6 +164,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source="user.username", read_only=True)
     user_email = serializers.CharField(source="user.email", read_only=True)
 
+    full_name = serializers.SerializerMethodField(read_only=True)
+
     appointments_count = serializers.IntegerField(read_only=True)
     completed_appointments_count = serializers.IntegerField(read_only=True)
     revenue_completed_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
@@ -187,7 +186,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = EmployeeProfile
         fields = [
             "id", "user", "user_username", "user_email",
-            "employee_number", "first_name", "last_name", "phone",
+            "employee_number", "first_name", "last_name", "full_name", "phone",
             "skills", "skill_ids",
             "email", "password",
             "is_active",
@@ -198,25 +197,24 @@ class EmployeeSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "employee_number", "created_at", "updated_at"]
         extra_kwargs = {"user": {"required": False}}
 
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
     def validate(self, data):
-        # CREATE: wymagaj email + password
         if not self.instance:
             if not data.get("email") or not data.get("password"):
                 raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu pracownika.")
             validate_password(data["password"])
 
-        # UPDATE: jeśli podano password — waliduj względem usera
         password = data.get("password")
         if self.instance and password:
             validate_password(password, user=self.instance.user)
 
-        # Spójność roli usera jeśli przekazano user ręcznie
         user = data.get("user")
         if user and getattr(user, "role", None) != "EMPLOYEE":
             raise serializers.ValidationError("Użytkownik musi mieć rolę EMPLOYEE.")
 
         return data
-
 
     def create(self, validated_data):
         email = validated_data.pop("email", None)
@@ -248,7 +246,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
                 else:
                     user.set_password(secrets.token_urlsafe(10))
 
-                # Commit 2: walidacje modelowe usera
                 user.full_clean()
                 user.save()
 
@@ -307,6 +304,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return instance
 
 
+class EmployeePublicSerializer(serializers.ModelSerializer):
+    full_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = EmployeeProfile
+        fields = ["id", "first_name", "last_name", "full_name"]
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        return obj.get_full_name()
+
+
 class EmployeeScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeSchedule
@@ -319,42 +328,79 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class TimeOffSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
-
-    employee = serializers.PrimaryKeyRelatedField(
-        queryset=EmployeeProfile.objects.all(),
-        required=False
+    employee_name = serializers.CharField(
+        source="employee.get_full_name", read_only=True
     )
+    status_display = serializers.CharField(
+        source="get_status_display", read_only=True
+    )
+
+    # 🔥 FLAGS
+    can_cancel = serializers.SerializerMethodField()
+    can_approve = serializers.SerializerMethodField()
+    can_reject = serializers.SerializerMethodField()
 
     class Meta:
         model = TimeOff
         fields = [
             "id",
-            "employee", "employee_name",
-            "date_from", "date_to",
+            "employee",
+            "employee_name",
+            "date_from",
+            "date_to",
             "reason",
-            "status", "status_display",
-            "requested_by", "decided_by", "decided_at",
+            "status",
+            "status_display",
+            "can_cancel",
+            "can_approve",
+            "can_reject",
+            "requested_by",
+            "decided_by",
+            "decided_at",
             "created_at",
         ]
         read_only_fields = [
             "id",
-            "created_at",
             "requested_by",
             "decided_by",
             "decided_at",
+            "created_at",
         ]
 
-    def validate(self, attrs):
-        date_from = attrs.get("date_from") or (self.instance.date_from if self.instance else None)
-        date_to = attrs.get("date_to") or (self.instance.date_to if self.instance else None)
+    # =========================
+    # FLAGS LOGIC
+    # =========================
 
-        if date_from and date_to and date_to < date_from:
-            raise serializers.ValidationError({"date_to": "date_to nie może być wcześniejsze niż date_from."})
+    def get_can_cancel(self, obj) -> bool:
+        request = self.context.get("request")
+        if not request:
+            return False
 
-        return attrs
+        return (
+            request.user.role == "EMPLOYEE"
+            and obj.status == TimeOff.Status.PENDING
+            and obj.employee.user_id == request.user.id
+        )
 
+    def get_can_approve(self, obj) -> bool:
+        request = self.context.get("request")
+        if not request:
+            return False
+
+        return (
+            request.user.role == "ADMIN"
+            and obj.status == TimeOff.Status.PENDING
+        )
+
+    def get_can_reject(self, obj) -> bool:
+        request = self.context.get("request")
+        if not request:
+            return False
+
+        return (
+            request.user.role == "ADMIN"
+            and obj.status == TimeOff.Status.PENDING
+        )
 
 # =============================================================================
 # CLIENT SERIALIZERS
@@ -388,7 +434,6 @@ class ClientSerializer(serializers.ModelSerializer):
         if not self.instance:
             if "email" not in data or "password" not in data:
                 raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu klienta.")
-
             validate_password(data["password"])
 
         password = data.get("password")
@@ -488,24 +533,94 @@ class ClientPublicSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class AppointmentSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source="client.get_full_name", read_only=True, allow_null=True)
-    employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
-    service_name = serializers.CharField(source="service.name", read_only=True)
-    service_price = serializers.DecimalField(source="service.price", max_digits=10, decimal_places=2, read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    client_name = serializers.CharField(
+        source="client.get_full_name",
+        read_only=True,
+        allow_null=True,
+    )
+    employee_name = serializers.CharField(
+        source="employee.get_full_name",
+        read_only=True,
+    )
+    service_name = serializers.CharField(
+        source="service.name",
+        read_only=True,
+    )
+    service_price = serializers.DecimalField(
+        source="service.price",
+        max_digits=10,
+        decimal_places=2,
+        read_only=True,
+    )
+    status_display = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+
+    # 🔥 UI permissions (single source of truth)
+    can_confirm = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
+    can_complete = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
         fields = [
-            "id", "client", "client_name",
-            "employee", "employee_name",
-            "service", "service_name",
+            "id",
+
+            "client",
+            "client_name",
+
+            "employee",
+            "employee_name",
+
+            "service",
+            "service_name",
             "service_price",
-            "start", "end", "status", "status_display",
+
+            "start",
+            "end",
+
+            "status",
+            "status_display",
+
+            # 🔥 UI flags
+            "can_confirm",
+            "can_cancel",
+            "can_complete",
+
             "internal_notes",
-            "created_at", "updated_at"
+
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+        ]
+
+    # ---------------------------------------------------------------------
+    # UI permission helpers
+    # ---------------------------------------------------------------------
+
+    def get_can_confirm(self, obj) -> bool:
+        return obj.status == Appointment.Status.PENDING
+
+    def get_can_cancel(self, obj) -> bool:
+        return obj.status in (
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+        )
+
+    def get_can_complete(self, obj) -> bool:
+        return obj.status in (
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+        )
+
+    # ---------------------------------------------------------------------
+    # Validation (bez zmian)
+    # ---------------------------------------------------------------------
 
     def validate(self, data):
         start = data.get("start")
@@ -518,36 +633,58 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 end = self.instance.end
 
         if start and end and end <= start:
-            raise serializers.ValidationError({"end": "Czas zakończenia musi być po czasie rozpoczęcia."})
+            raise serializers.ValidationError(
+                {"end": "Czas zakończenia musi być po czasie rozpoczęcia."}
+            )
 
-        employee = data.get("employee") or (self.instance.employee if self.instance else None)
-        client = data.get("client") or (self.instance.client if self.instance else None)
+        employee = data.get("employee") or (
+            self.instance.employee if self.instance else None
+        )
+        client = data.get("client") or (
+            self.instance.client if self.instance else None
+        )
 
         if employee and start and end:
             conflicts = (
                 Appointment.objects
-                .filter(employee=employee, start__lt=end, end__gt=start,
-                        status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
+                .filter(
+                    employee=employee,
+                    start__lt=end,
+                    end__gt=start,
+                    status__in=[
+                        Appointment.Status.PENDING,
+                        Appointment.Status.CONFIRMED,
+                    ],
+                )
             )
             if self.instance:
                 conflicts = conflicts.exclude(id=self.instance.id)
             if conflicts.exists():
-                raise serializers.ValidationError({"employee": "Pracownik ma już zajęty termin w tym czasie."})
+                raise serializers.ValidationError(
+                    {"employee": "Pracownik ma już zajęty termin w tym czasie."}
+                )
 
         if client and start and end:
-
             client_conflicts = (
                 Appointment.objects
-                .filter(client=client, start__lt=end, end__gt=start,
-                        status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
+                .filter(
+                    client=client,
+                    start__lt=end,
+                    end__gt=start,
+                    status__in=[
+                        Appointment.Status.PENDING,
+                        Appointment.Status.CONFIRMED,
+                    ],
+                )
             )
             if self.instance:
                 client_conflicts = client_conflicts.exclude(id=self.instance.id)
             if client_conflicts.exists():
-                raise serializers.ValidationError({"client": "Klient ma już zarezerwowaną wizytę w tym czasie."})
+                raise serializers.ValidationError(
+                    {"client": "Klient ma już zarezerwowaną wizytę w tym czasie."}
+                )
 
         return data
-
 
 # =============================================================================
 # SYSTEM SETTINGS SERIALIZERS
@@ -603,7 +740,6 @@ class BookingCreateSerializer(serializers.Serializer):
         user = request.user
         role = getattr(user, "role", None)
 
-        # klient zależnie od roli
         if role == "CLIENT":
             client = getattr(user, "client_profile", None)
             if not client:
@@ -618,7 +754,6 @@ class BookingCreateSerializer(serializers.Serializer):
         else:
             raise serializers.ValidationError("Brak uprawnień do rezerwacji.")
 
-        # service/employee
         try:
             service = Service.objects.get(id=data["service_id"], is_active=True)
         except Service.DoesNotExist:
@@ -629,7 +764,6 @@ class BookingCreateSerializer(serializers.Serializer):
         except EmployeeProfile.DoesNotExist:
             raise serializers.ValidationError({"employee_id": "Nie znaleziono pracownika."})
 
-        # start aware + w przyszłości
         start = data.get("start")
         if timezone.is_naive(start):
             start = timezone.make_aware(start)
@@ -638,17 +772,14 @@ class BookingCreateSerializer(serializers.Serializer):
         if start < timezone.now():
             raise serializers.ValidationError({"start": "Nie można rezerwować wizyt w przeszłości."})
 
-        # kompetencje pracownika
         if not employee.skills.filter(id=service.id).exists():
             raise serializers.ValidationError({"employee_id": "Ten pracownik nie wykonuje wybranej usługi."})
 
-        # end
         settings = SystemSettings.get_settings()
         buffer_minutes = int(settings.buffer_minutes or 0)
         duration = timedelta(minutes=int(service.duration_minutes) + buffer_minutes)
         end = start + duration
 
-        # TimeOff
         if TimeOff.objects.filter(
             employee=employee,
             status=TimeOff.Status.APPROVED,
@@ -657,7 +788,6 @@ class BookingCreateSerializer(serializers.Serializer):
         ).exists():
             raise serializers.ValidationError({"start": "Pracownik jest nieobecny w tym dniu."})
 
-        # konflikty (UX) — i tak powtórzymy po locku w create()
         if Appointment.objects.filter(
                 employee=employee, start__lt=end, end__gt=start,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
@@ -682,11 +812,9 @@ class BookingCreateSerializer(serializers.Serializer):
         start = validated_data["start"]
         end = validated_data["end"]
 
-        # re-lock + re-fetch z is_active
         employee = EmployeeProfile.objects.select_for_update().get(pk=validated_data["employee"].pk, is_active=True)
         client = ClientProfile.objects.select_for_update().get(pk=validated_data["client"].pk, is_active=True)
 
-        # re-check TimeOff po locku (minimalnie)
         if TimeOff.objects.select_for_update().filter(
                 employee=employee,
                 status=TimeOff.Status.APPROVED,
@@ -694,7 +822,8 @@ class BookingCreateSerializer(serializers.Serializer):
                 date_to__gte=start.date(),
         ).exists():
             raise serializers.ValidationError(
-                {"start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."})
+                {"start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."}
+            )
 
         emp_conflicts = (
             Appointment.objects
@@ -730,4 +859,3 @@ class BookingCreateSerializer(serializers.Serializer):
             end=end,
             status=Appointment.Status.PENDING,
         )
-
