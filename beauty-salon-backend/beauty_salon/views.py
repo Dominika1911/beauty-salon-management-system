@@ -132,7 +132,7 @@ class UserViewSet(viewsets.ModelViewSet):
         target_user.save(update_fields=["password"])
 
         SystemLog.log(
-            action=SystemLog.Action.AUTH_LOGOUT,
+            action=SystemLog.Action.AUTH_PASSWORD_CHANGE,  # ✅ było AUTH_LOGOUT
             performed_by=request.user,
             target_user=target_user,
         )
@@ -159,7 +159,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if not (user and user.is_authenticated) or getattr(user, "role", None) == User.Role.CLIENT:
+        if not (user and user.is_authenticated) or getattr(user, "role", None) == "CLIENT":
             return qs.filter(is_active=True)
         return qs
 
@@ -215,7 +215,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         user = getattr(self.request, "user", None)
         role = getattr(user, "role", None) if (user and user.is_authenticated) else None
 
-        if role == User.Role.CLIENT and self.action in ["list", "retrieve"]:
+        if role == "CLIENT" and self.action in ["list", "retrieve"]:
             return EmployeePublicSerializer
 
         return EmployeeSerializer
@@ -249,7 +249,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
 
-        if user and user.is_authenticated and getattr(user, "role", None) == User.Role.CLIENT:
+        if user and user.is_authenticated and getattr(user, "role", None) == "CLIENT":
             return qs.filter(is_active=True)
 
         return qs
@@ -310,7 +310,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 # =============================================================================
 # TIME OFF (SPÓJNY ENDPOINT)
 # =============================================================================
-
 class TimeOffViewSet(viewsets.ModelViewSet):
     serializer_class = TimeOffSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
@@ -319,8 +318,14 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     search_fields = ["reason", "employee__first_name", "employee__last_name"]
 
     def get_permissions(self):
+        # ADMIN-only: akceptacja/odrzucenie i edycja/usunięcie
         if self.action in ["approve", "reject", "update", "partial_update", "destroy"]:
             return [IsAdmin()]
+
+        # cancel: zalogowany; szczegółowa weryfikacja w metodzie cancel()
+        if self.action == "cancel":
+            return [permissions.IsAuthenticated()]
+
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
@@ -333,10 +338,10 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if not user.is_authenticated or role == User.Role.CLIENT:
+        if not user.is_authenticated or role == "CLIENT":
             return qs.none()
 
-        if role == User.Role.EMPLOYEE:
+        if role == "EMPLOYEE":
             emp = getattr(user, "employee_profile", None)
             if not emp:
                 return qs.none()
@@ -365,13 +370,13 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if role == User.Role.EMPLOYEE:
+        if role == "EMPLOYEE":
             emp = getattr(user, "employee_profile", None)
             if not emp:
                 raise PermissionDenied("Brak profilu pracownika.")
             obj = serializer.save(employee=emp, status=TimeOff.Status.PENDING, requested_by=user)
 
-        elif role == User.Role.ADMIN or user.is_staff:
+        elif role == "ADMIN" or user.is_staff:
             employee = serializer.validated_data.get("employee")
             if not employee:
                 raise serializers.ValidationError({"employee": "Pole employee jest wymagane dla ADMIN."})
@@ -422,6 +427,42 @@ class TimeOffViewSet(viewsets.ModelViewSet):
             performed_by=request.user,
             target_user=getattr(obj.employee, "user", None),
         )
+        return Response(TimeOffSerializer(obj, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="cancel")
+    def cancel(self, request, pk=None):
+        """
+        EMPLOYEE: może anulować tylko własny wniosek w statusie PENDING.
+        ADMIN/is_staff: może anulować dowolny wniosek w statusie PENDING.
+        """
+        obj: TimeOff = self.get_object()
+
+        if obj.status != TimeOff.Status.PENDING:
+            return Response(
+                {"detail": "Można anulować tylko wnioski w statusie PENDING."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        role = getattr(user, "role", None)
+
+        is_admin = (role == "ADMIN") or getattr(user, "is_staff", False)
+        is_owner_employee = (role == "EMPLOYEE") and (obj.employee.user_id == user.id)
+
+        if not (is_admin or is_owner_employee):
+            raise PermissionDenied("Brak uprawnień do anulowania tego wniosku.")
+
+        obj.status = TimeOff.Status.CANCELLED
+        obj.decided_by = user
+        obj.decided_at = timezone.now()
+        obj.save(update_fields=["status", "decided_by", "decided_at"])
+
+        SystemLog.log(
+            action=SystemLog.Action.TIMEOFF_CANCELLED,
+            performed_by=user,
+            target_user=getattr(obj.employee, "user", None),
+        )
+
         return Response(TimeOffSerializer(obj, context={"request": request}).data)
 
 
@@ -509,11 +550,11 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         role = getattr(user, "role", None)
 
-        if role == User.Role.CLIENT:
+        if role == "CLIENT":
             profile = getattr(user, "client_profile", None)
             return qs.filter(client=profile) if profile else qs.none()
 
-        if role == User.Role.EMPLOYEE:
+        if role == "EMPLOYEE":
             employee = getattr(user, "employee_profile", None)
             return qs.filter(employee=employee) if employee else qs.none()
 

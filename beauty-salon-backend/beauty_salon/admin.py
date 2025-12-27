@@ -158,6 +158,6 @@ class SystemSettingsAdmin(admin.ModelAdmin):
 class SystemLogAdmin(admin.ModelAdmin):
     list_display = ("action", "performed_by", "target_user", "timestamp")
     list_filter = ("action", "timestamp")
-    search_fields = ("performed_by__username", "target_user__username", "action")
+    search_fields = ("action", "performed_by__username", "target_user__username")
     readonly_fields = ("action", "performed_by", "target_user", "timestamp")
     ordering = ("-timestamp",)

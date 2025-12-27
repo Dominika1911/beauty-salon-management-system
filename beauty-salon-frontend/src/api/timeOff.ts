@@ -101,4 +101,14 @@ export const timeOffApi = {
     const response = await axiosInstance.post<TimeOff>(`/time-offs/${id}/reject/`);
     return response.data;
   },
+
+  /**
+   * POST /api/time-offs/{id}/cancel/
+   * Backend: EMPLOYEE może anulować tylko swoje PENDING,
+   * ADMIN/is_staff może anulować dowolne PENDING
+   */
+  cancel: async (id: number): Promise<TimeOff> => {
+    const response = await axiosInstance.post<TimeOff>(`/time-offs/${id}/cancel/`);
+    return response.data;
+  },
 };

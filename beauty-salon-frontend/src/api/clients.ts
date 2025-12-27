@@ -18,21 +18,25 @@ type ClientListParams = {
 
 /**
  * Backend ClientSerializer:
- * - create validate: wymaga kluczy "email" i "password" (nawet jeśli email może być null/blank)
+ * - create validate: wymaga kluczy "email" i "password"
  */
 type ClientCreatePayload = {
   first_name: string;
   last_name: string;
 
   /**
-   * Musi być wysłane przy tworzeniu (backend sprawdza obecność klucza),
-   * może być null/"" jeśli chcesz, ale klucz ma istnieć.
+   * Klucz musi istnieć (backend tego wymaga),
+   * wartość może być null lub "".
    */
   email: string | null;
 
   phone?: string;
 
-  internal_notes?: string | null;
+  /**
+   * Backend: TextField(blank=True) -> string
+   * Nigdy nie wysyłamy null.
+   */
+  internal_notes?: string;
 
   password: string;
   is_active?: boolean;
@@ -45,10 +49,11 @@ type ClientUpdatePayload = Partial<Omit<ClientCreatePayload, "password">> & {
 export const clientsApi = {
   /**
    * GET /api/clients/
-   * DRF PageNumberPagination -> DRFPaginated<Client>
    */
   list: async (params?: ClientListParams): Promise<DRFPaginated<Client>> => {
-    const response = await axiosInstance.get<DRFPaginated<Client>>("/clients/", { params });
+    const response = await axiosInstance.get<DRFPaginated<Client>>("/clients/", {
+      params,
+    });
     return response.data;
   },
 
@@ -64,7 +69,12 @@ export const clientsApi = {
    * POST /api/clients/
    */
   create: async (data: ClientCreatePayload): Promise<Client> => {
-    const response = await axiosInstance.post<Client>("/clients/", data);
+    const payload: ClientCreatePayload = {
+      ...data,
+      internal_notes: data.internal_notes ?? "",
+    };
+
+    const response = await axiosInstance.post<Client>("/clients/", payload);
     return response.data;
   },
 
@@ -72,7 +82,17 @@ export const clientsApi = {
    * PATCH /api/clients/{id}/
    */
   update: async (id: number, data: ClientUpdatePayload): Promise<Client> => {
-    const response = await axiosInstance.patch<Client>(`/clients/${id}/`, data);
+    const payload: ClientUpdatePayload = {
+      ...data,
+      ...(data.internal_notes !== undefined
+        ? { internal_notes: data.internal_notes ?? "" }
+        : {}),
+    };
+
+    const response = await axiosInstance.patch<Client>(
+      `/clients/${id}/`,
+      payload
+    );
     return response.data;
   },
 

@@ -230,6 +230,8 @@ class TimeOff(models.Model):
         PENDING = "PENDING", "Oczekuje"
         APPROVED = "APPROVED", "Zaakceptowany"
         REJECTED = "REJECTED", "Odrzucony"
+        CANCELLED = "CANCELLED", "Anulowany"
+
 
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs")
     date_from = models.DateField()
@@ -437,6 +439,7 @@ class SystemLog(models.Model):
         TIMEOFF_CREATED = "TIMEOFF_CREATED", "Time off created"
         TIMEOFF_APPROVED = "TIMEOFF_APPROVED", "Time off approved"
         TIMEOFF_REJECTED = "TIMEOFF_REJECTED", "Time off rejected"
+        TIMEOFF_CANCELLED = "TIMEOFF_CANCELLED", "Time off cancelled"
 
         # AUTH
         AUTH_LOGIN = "AUTH_LOGIN", "User login"

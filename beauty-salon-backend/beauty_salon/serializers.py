@@ -353,12 +353,8 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class TimeOffSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(
-        source="employee.get_full_name", read_only=True
-    )
-    status_display = serializers.CharField(
-        source="get_status_display", read_only=True
-    )
+    employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     # 🔥 FLAGS
     can_cancel = serializers.SerializerMethodField()
@@ -398,34 +394,48 @@ class TimeOffSerializer(serializers.ModelSerializer):
 
     def get_can_cancel(self, obj) -> bool:
         request = self.context.get("request")
-        if not request:
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        return (
-            request.user.role == "EMPLOYEE"
-            and obj.status == TimeOff.Status.PENDING
-            and obj.employee.user_id == request.user.id
-        )
+        if obj.status != TimeOff.Status.PENDING:
+            return False
+
+        user = request.user
+        role = getattr(user, "role", None)
+
+        # ADMIN/staff: może anulować każdy PENDING
+        if role == "ADMIN" or getattr(user, "is_staff", False):
+            return True
+
+        # EMPLOYEE: tylko własny PENDING
+        return role == "EMPLOYEE" and obj.employee.user_id == user.id
 
     def get_can_approve(self, obj) -> bool:
         request = self.context.get("request")
-        if not request:
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        return (
-            request.user.role == "ADMIN"
-            and obj.status == TimeOff.Status.PENDING
-        )
+        if obj.status != TimeOff.Status.PENDING:
+            return False
+
+        user = request.user
+        role = getattr(user, "role", None)
+
+        return role == "ADMIN" or getattr(user, "is_staff", False)
 
     def get_can_reject(self, obj) -> bool:
         request = self.context.get("request")
-        if not request:
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        return (
-            request.user.role == "ADMIN"
-            and obj.status == TimeOff.Status.PENDING
-        )
+        if obj.status != TimeOff.Status.PENDING:
+            return False
+
+        user = request.user
+        role = getattr(user, "role", None)
+
+        return role == "ADMIN" or getattr(user, "is_staff", False)
+
 
 # =============================================================================
 # CLIENT SERIALIZERS
@@ -655,23 +665,55 @@ class AppointmentSerializer(serializers.ModelSerializer):
         ]
 
     # ---------------------------------------------------------------------
-    # UI permission helpers
+    # UI permission helpers (POPRAWIONE)
     # ---------------------------------------------------------------------
 
     def get_can_confirm(self, obj) -> bool:
+        request = self.context.get("request")
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+            return False
+
+        role = getattr(request.user, "role", None)
+
+        # 1:1 jak IsAdminOrEmployee
+        if role not in ["ADMIN", "EMPLOYEE"]:
+            return False
+
         return obj.status == Appointment.Status.PENDING
 
     def get_can_cancel(self, obj) -> bool:
-        return obj.status in (
-            Appointment.Status.PENDING,
-            Appointment.Status.CONFIRMED,
-        )
+        request = self.context.get("request")
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+            return False
+
+        if obj.status not in (Appointment.Status.PENDING, Appointment.Status.CONFIRMED):
+            return False
+
+        user = request.user
+        role = getattr(user, "role", None)
+
+        # 1:1 jak CanCancelAppointment
+        if role in ["ADMIN", "EMPLOYEE"]:
+            return True
+
+        if role == "CLIENT":
+            client = getattr(user, "client_profile", None)
+            return client is not None and obj.client_id == client.id
+
+        return False
 
     def get_can_complete(self, obj) -> bool:
-        return obj.status in (
-            Appointment.Status.PENDING,
-            Appointment.Status.CONFIRMED,
-        )
+        request = self.context.get("request")
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+            return False
+
+        role = getattr(request.user, "role", None)
+
+        # 1:1 jak IsAdminOrEmployee
+        if role not in ["ADMIN", "EMPLOYEE"]:
+            return False
+
+        return obj.status in (Appointment.Status.PENDING, Appointment.Status.CONFIRMED)
 
     # ---------------------------------------------------------------------
     # Validation (bez zmian)

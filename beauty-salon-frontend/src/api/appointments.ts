@@ -1,3 +1,4 @@
+// src/api/appointments.ts
 import axiosInstance from "@/api/axios";
 import type {
   Appointment,
@@ -23,13 +24,48 @@ type AppointmentListParams = {
   page?: number;
 };
 
+type AppointmentCreatePayload = {
+  client: number | null;
+  employee: number;
+  service: number;
+  start: string;
+  end: string;
+  status?: AppointmentStatus;
+
+  /**
+   * Backend: TextField(blank=True) -> string
+   * Nigdy nie wysyłamy null.
+   */
+  internal_notes?: string;
+};
+
+type AppointmentUpdatePayload = Partial<{
+  client: number | null;
+  employee: number;
+  service: number;
+  start: string;
+  end: string;
+  status: AppointmentStatus;
+
+  /**
+   * Backend: TextField(blank=True) -> string
+   * Nigdy nie wysyłamy null.
+   */
+  internal_notes: string;
+}>;
+
 export const appointmentsApi = {
   /**
    * GET /api/appointments/
    * DRF PageNumberPagination -> DRFPaginated<Appointment>
    */
-  list: async (params?: AppointmentListParams): Promise<DRFPaginated<Appointment>> => {
-    const response = await axiosInstance.get<DRFPaginated<Appointment>>("/appointments/", { params });
+  list: async (
+    params?: AppointmentListParams
+  ): Promise<DRFPaginated<Appointment>> => {
+    const response = await axiosInstance.get<DRFPaginated<Appointment>>(
+      "/appointments/",
+      { params }
+    );
     return response.data;
   },
 
@@ -40,38 +76,41 @@ export const appointmentsApi = {
    *
    * Backend ordering_fields: ["start", "status", "created_at"]
    */
-  getMy: async (params?: { page?: number; ordering?: string }): Promise<DRFPaginated<Appointment>> => {
-    const response = await axiosInstance.get<DRFPaginated<Appointment>>("/appointments/my/", { params });
+  getMy: async (params?: {
+    page?: number;
+    ordering?: string;
+  }): Promise<DRFPaginated<Appointment>> => {
+    const response = await axiosInstance.get<DRFPaginated<Appointment>>(
+      "/appointments/my/",
+      { params }
+    );
     return response.data;
   },
-
 
   /**
    * GET /api/appointments/{id}/
    */
   get: async (id: number): Promise<Appointment> => {
-    const response = await axiosInstance.get<Appointment>(`/appointments/${id}/`);
+    const response = await axiosInstance.get<Appointment>(
+      `/appointments/${id}/`
+    );
     return response.data;
   },
 
   /**
    * POST /api/appointments/
    * (W panelu admin/employee możesz tworzyć Appointment bez booking flow)
-   *
-   * Uwaga:
-   * Backend AppointmentSerializer oczekuje pól: client, employee, service, start, end, status? (opcjonalnie)
-   * i waliduje konflikty. Jeśli nie używasz tego endpointu w UI, możesz go pominąć.
    */
-  create: async (data: {
-    client: number | null;
-    employee: number;
-    service: number;
-    start: string;
-    end: string;
-    status?: AppointmentStatus;
-    internal_notes?: string | null;
-  }): Promise<Appointment> => {
-    const response = await axiosInstance.post<Appointment>("/appointments/", data);
+  create: async (data: AppointmentCreatePayload): Promise<Appointment> => {
+    const payload: AppointmentCreatePayload = {
+      ...data,
+      internal_notes: data.internal_notes ?? "",
+    };
+
+    const response = await axiosInstance.post<Appointment>(
+      "/appointments/",
+      payload
+    );
     return response.data;
   },
 
@@ -80,17 +119,19 @@ export const appointmentsApi = {
    */
   update: async (
     id: number,
-    data: Partial<{
-      client: number | null;
-      employee: number;
-      service: number;
-      start: string;
-      end: string;
-      status: AppointmentStatus;
-      internal_notes: string | null;
-    }>
+    data: AppointmentUpdatePayload
   ): Promise<Appointment> => {
-    const response = await axiosInstance.patch<Appointment>(`/appointments/${id}/`, data);
+    const payload: AppointmentUpdatePayload = {
+      ...data,
+      ...(data.internal_notes !== undefined
+        ? { internal_notes: data.internal_notes ?? "" }
+        : {}),
+    };
+
+    const response = await axiosInstance.patch<Appointment>(
+      `/appointments/${id}/`,
+      payload
+    );
     return response.data;
   },
 
@@ -99,7 +140,10 @@ export const appointmentsApi = {
    * POST /api/appointments/book/
    */
   book: async (payload: BookingCreate): Promise<Appointment> => {
-    const response = await axiosInstance.post<Appointment>("/appointments/book/", payload);
+    const response = await axiosInstance.post<Appointment>(
+      "/appointments/book/",
+      payload
+    );
     return response.data;
   },
 
@@ -107,7 +151,9 @@ export const appointmentsApi = {
    * POST /api/appointments/{id}/confirm/
    */
   confirm: async (id: number): Promise<Appointment> => {
-    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/confirm/`);
+    const response = await axiosInstance.post<Appointment>(
+      `/appointments/${id}/confirm/`
+    );
     return response.data;
   },
 
@@ -115,7 +161,9 @@ export const appointmentsApi = {
    * POST /api/appointments/{id}/cancel/
    */
   cancel: async (id: number): Promise<Appointment> => {
-    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/cancel/`);
+    const response = await axiosInstance.post<Appointment>(
+      `/appointments/${id}/cancel/`
+    );
     return response.data;
   },
 
@@ -123,7 +171,9 @@ export const appointmentsApi = {
    * POST /api/appointments/{id}/complete/
    */
   complete: async (id: number): Promise<Appointment> => {
-    const response = await axiosInstance.post<Appointment>(`/appointments/${id}/complete/`);
+    const response = await axiosInstance.post<Appointment>(
+      `/appointments/${id}/complete/`
+    );
     return response.data;
   },
 

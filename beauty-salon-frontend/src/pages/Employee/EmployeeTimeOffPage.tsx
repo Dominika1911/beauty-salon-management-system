@@ -1,3 +1,4 @@
+// EmployeeTimeOffPage.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -14,36 +15,16 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { DatePicker, LocalizationProvider } from "@mui/x-date-pickers";
-import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
-import { pl } from "date-fns/locale";
+import Pagination from "@mui/material/Pagination";
 
 import { timeOffApi } from "@/api/timeOff";
 import type { DRFPaginated, TimeOff, TimeOffStatus } from "@/types";
 
-/* =========================
-   TYPES
-   ========================= */
 type StatusFilter = TimeOffStatus | "ALL";
 
-/* =========================
-   STATUS CHIP (backend-driven)
-   ========================= */
-function StatusChip({ status, label }: { status: TimeOffStatus; label: string }) {
-  switch (status) {
-    case "PENDING":
-      return <Chip label={label} color="warning" size="small" />;
-    case "APPROVED":
-      return <Chip label={label} color="success" size="small" />;
-    case "REJECTED":
-      return <Chip label={label} color="error" size="small" />;
-    default:
-      return <Chip label={label} size="small" />;
-  }
-}
-
 function toYmd(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function getErrorMessage(err: unknown): string {
@@ -56,10 +37,22 @@ function getErrorMessage(err: unknown): string {
   );
 }
 
+function StatusChip({ status, label }: { status: TimeOffStatus; label: string }) {
+  switch (status) {
+    case "PENDING":
+      return <Chip label={label} color="warning" size="small" />;
+    case "APPROVED":
+      return <Chip label={label} color="success" size="small" />;
+    case "REJECTED":
+      return <Chip label={label} color="error" size="small" />;
+    case "CANCELLED":
+      return <Chip label={label} color="default" size="small" />;
+    default:
+      return <Chip label={label} size="small" />;
+  }
+}
+
 export default function EmployeeTimeOffPage(): JSX.Element {
-  /* =========================
-     STATE
-     ========================= */
   const [data, setData] = useState<DRFPaginated<TimeOff> | null>(null);
   const [page, setPage] = useState(1);
 
@@ -78,9 +71,6 @@ export default function EmployeeTimeOffPage(): JSX.Element {
   const [to, setTo] = useState<Date | null>(new Date());
   const [reason, setReason] = useState("");
 
-  /* =========================
-     DERIVED
-     ========================= */
   const items = useMemo(() => data?.results ?? [], [data]);
 
   const isValidRange = useMemo(() => {
@@ -88,17 +78,14 @@ export default function EmployeeTimeOffPage(): JSX.Element {
     return from.getTime() <= to.getTime();
   }, [from, to]);
 
-  /* =========================
-     EFFECTS
-     ========================= */
-  useEffect(() => {
-    setPage(1);
-  }, [statusFilter, search]);
+  const totalPages = useMemo(() => {
+    const count = data?.count ?? 0;
+    return Math.max(1, Math.ceil(count / 10));
+  }, [data]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
-
     try {
       const res = await timeOffApi.list({
         page,
@@ -113,15 +100,12 @@ export default function EmployeeTimeOffPage(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, search]);
+  }, [page, ordering, statusFilter, search]);
 
   useEffect(() => {
-    void load();
+    load();
   }, [load]);
 
-  /* =========================
-     ACTIONS
-     ========================= */
   const submit = useCallback(async () => {
     setErr("");
     setMsg("");
@@ -150,77 +134,163 @@ export default function EmployeeTimeOffPage(): JSX.Element {
     }
   }, [from, to, isValidRange, reason, load]);
 
-  const canPrev = Boolean(data?.previous) && !loading;
-  const canNext = Boolean(data?.next) && !loading;
-
-  /* =========================
-     RENDER
-     ========================= */
-  if (loading && !data) {
-    return (
-      <Stack alignItems="center" sx={{ py: 4 }}>
-        <CircularProgress />
-      </Stack>
-    );
-  }
-
   return (
-    <Stack spacing={2} sx={{ maxWidth: 800 }}>
+    <Stack spacing={2}>
       <Typography variant="h5" fontWeight={700}>
-        Urlopy
+        Moje wnioski urlopowe
       </Typography>
 
       {msg && <Alert severity="success">{msg}</Alert>}
       {err && <Alert severity="error">{err}</Alert>}
 
-      {/* CREATE */}
       <Paper sx={{ p: 2 }}>
-        <Typography variant="h6">Zgłoś urlop</Typography>
+        <Stack spacing={2}>
+          <Typography fontWeight={700}>Nowy wniosek</Typography>
 
-        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mt: 2 }}>
-            <DatePicker label="Od" value={from} onChange={setFrom} />
-            <DatePicker label="Do" value={to} onChange={setTo} />
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
+            <TextField
+              size="small"
+              label="Data od (YYYY-MM-DD)"
+              value={from ? toYmd(from) : ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                const parts = v.split("-");
+                if (parts.length === 3) {
+                  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                  if (!Number.isNaN(d.getTime())) setFrom(d);
+                }
+              }}
+            />
+
+            <TextField
+              size="small"
+              label="Data do (YYYY-MM-DD)"
+              value={to ? toYmd(to) : ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                const parts = v.split("-");
+                if (parts.length === 3) {
+                  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                  if (!Number.isNaN(d.getTime())) setTo(d);
+                }
+              }}
+            />
+
+            <TextField
+              size="small"
+              label="Powód (opcjonalnie)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              sx={{ minWidth: 260 }}
+            />
+
+            <Button variant="contained" onClick={submit} disabled={submitting || !isValidRange}>
+              Wyślij
+            </Button>
           </Stack>
-        </LocalizationProvider>
 
-        <TextField
-          label="Powód (opcjonalnie)"
-          fullWidth
-          sx={{ mt: 2 }}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-
-        <Box sx={{ mt: 2 }}>
-          <Button variant="contained" onClick={submit} disabled={!isValidRange || submitting}>
-            Wyślij wniosek
-          </Button>
-        </Box>
+          {!isValidRange && <Alert severity="warning">Zakres dat jest niepoprawny.</Alert>}
+        </Stack>
       </Paper>
 
-      {/* LIST */}
       <Paper sx={{ p: 2 }}>
-        <Stack spacing={1}>
-          {loading ? (
-            <CircularProgress size={24} />
-          ) : items.length === 0 ? (
-            <Alert severity="info">Brak wniosków.</Alert>
-          ) : (
-            items.map((x) => (
-              <Paper key={x.id} variant="outlined" sx={{ p: 1.5 }}>
-                <Stack direction="row" justifyContent="space-between">
-                  <Box>
-                    <Typography fontWeight={600}>
-                      {x.date_from} → {x.date_to}
-                    </Typography>
-                    {x.reason && <Typography variant="body2">{x.reason}</Typography>}
-                  </Box>
-                  <StatusChip status={x.status} label={x.status_display} />
-                </Stack>
-              </Paper>
-            ))
-          )}
+        <Stack spacing={2}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                label="Status"
+                value={statusFilter}
+                onChange={(e) => {
+                  setPage(1);
+                  setStatusFilter(e.target.value as StatusFilter);
+                }}
+              >
+                <MenuItem value="ALL">ALL</MenuItem>
+                <MenuItem value="PENDING">PENDING</MenuItem>
+                <MenuItem value="APPROVED">APPROVED</MenuItem>
+                <MenuItem value="REJECTED">REJECTED</MenuItem>
+                <MenuItem value="CANCELLED">CANCELLED</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              size="small"
+              label="Szukaj"
+              value={search}
+              onChange={(e) => {
+                setPage(1);
+                setSearch(e.target.value);
+              }}
+            />
+
+            <Box sx={{ flex: 1 }} />
+
+            <Button variant="outlined" onClick={load} disabled={loading || submitting}>
+              Odśwież
+            </Button>
+          </Stack>
+
+          <Paper sx={{ p: 2 }}>
+            <Stack spacing={1}>
+              {loading ? (
+                <CircularProgress size={24} />
+              ) : items.length === 0 ? (
+                <Alert severity="info">Brak wniosków.</Alert>
+              ) : (
+                items.map((x) => (
+                  <Paper key={x.id} variant="outlined" sx={{ p: 1.5 }}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Box>
+                        <Typography fontWeight={600}>
+                          {x.date_from} → {x.date_to}
+                        </Typography>
+                        {x.reason && <Typography variant="body2">{x.reason}</Typography>}
+                      </Box>
+                      <StatusChip status={x.status} label={x.status_display} />
+                    </Stack>
+
+                    {x.can_cancel && (
+                      <Box sx={{ mt: 1 }}>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={submitting}
+                          onClick={async () => {
+                            if (!confirm("Anulować ten wniosek?")) return;
+                            setErr("");
+                            setMsg("");
+                            setSubmitting(true);
+                            try {
+                              await timeOffApi.cancel(x.id);
+                              setMsg("Wniosek anulowany.");
+                              await load();
+                            } catch (e) {
+                              setErr(getErrorMessage(e));
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                        >
+                          Anuluj
+                        </Button>
+                      </Box>
+                    )}
+                  </Paper>
+                ))
+              )}
+            </Stack>
+          </Paper>
+
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="body2">Łącznie: {data?.count ?? 0}</Typography>
+            <Pagination
+              count={totalPages}
+              page={page}
+              onChange={(_, p) => setPage(p)}
+              disabled={loading || submitting}
+            />
+          </Stack>
         </Stack>
       </Paper>
     </Stack>

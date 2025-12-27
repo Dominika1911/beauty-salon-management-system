@@ -103,7 +103,11 @@ export interface Client {
   email: string | null;
   phone: string;
 
-  internal_notes: string | null;
+  /**
+   * Backend: TextField(blank=True) -> zwracane jako "" (nie null)
+   * Frontend powinien traktować jako string.
+   */
+  internal_notes: string;
 
   // write-only
   password?: string;
@@ -126,7 +130,7 @@ export type AppointmentStatus =
   | "CANCELLED";
 
 /**
- * Jedno źródło prawdy dla flag statusów wizyt
+ * Jedno źródło prawdy dla listy statusów wizyt
  * (do selectów, filtrów, mapowań)
  */
 export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
@@ -136,12 +140,7 @@ export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
   "CANCELLED",
 ];
 
-/**
- * Zgodny z AppointmentSerializer:
- * - pola relacyjne: client, employee, service (id)
- * - pola "display": client_name, employee_name, service_name, service_price, status_display
- * - UI flags: can_confirm, can_cancel, can_complete
- */
+
 export interface Appointment {
   id: number;
 
@@ -166,7 +165,10 @@ export interface Appointment {
   can_cancel: boolean;
   can_complete: boolean;
 
-  internal_notes: string | null;
+  /**
+   * Backend: TextField(blank=True) -> zwracane jako "" (nie null)
+   */
+  internal_notes: string;
 
   created_at: string;
   updated_at: string;
@@ -340,16 +342,15 @@ export interface AuthStatusResponse {
 // TIME OFF
 // ============================================================================
 
-export type TimeOffStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type TimeOffStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
 
-/**
- * Jedno źródło prawdy dla flag urlopów
- */
 export const TIME_OFF_STATUSES: TimeOffStatus[] = [
   "PENDING",
   "APPROVED",
   "REJECTED",
+  "CANCELLED",
 ];
+
 
 /**
  * Zgodny z TimeOffSerializer:

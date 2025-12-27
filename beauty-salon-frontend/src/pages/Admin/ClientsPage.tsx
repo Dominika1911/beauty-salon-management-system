@@ -61,16 +61,25 @@ const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
  * - password: wymagane tylko przy CREATE (tu: tylko dla nowego klienta)
  */
 const ClientSchema = Yup.object().shape({
-  first_name: Yup.string().min(2, "Imię musi mieć co najmniej 2 znaki").required("Imię jest wymagane"),
-  last_name: Yup.string().min(2, "Nazwisko musi mieć co najmniej 2 znaki").required("Nazwisko jest wymagane"),
-  phone: Yup.string().matches(/^[0-9+\s-()]*$/, "Nieprawidłowy format telefonu").notRequired(),
+  first_name: Yup.string()
+    .min(2, "Imię musi mieć co najmniej 2 znaki")
+    .required("Imię jest wymagane"),
+  last_name: Yup.string()
+    .min(2, "Nazwisko musi mieć co najmniej 2 znaki")
+    .required("Nazwisko jest wymagane"),
+  phone: Yup.string()
+    .matches(/^[0-9+\s-()]*$/, "Nieprawidłowy format telefonu")
+    .notRequired(),
   email: Yup.string().email("Nieprawidłowy adres email").notRequired(),
   password: Yup.string().when("$isNew", {
     is: true,
-    then: (schema) => schema.min(8, "Hasło musi mieć co najmniej 8 znaków").required("Hasło jest wymagane"),
+    then: (schema) =>
+      schema.min(8, "Hasło musi mieć co najmniej 8 znaków").required("Hasło jest wymagane"),
     otherwise: (schema) => schema.notRequired(),
   }),
-  internal_notes: Yup.string().max(1000, "Notatki mogą mieć maksymalnie 1000 znaków").notRequired(),
+  internal_notes: Yup.string()
+    .max(1000, "Notatki mogą mieć maksymalnie 1000 znaków")
+    .notRequired(),
   is_active: Yup.boolean(),
 });
 
@@ -80,7 +89,7 @@ interface ClientFormData {
   phone: string;
   email: string; // UI string; do API mapujemy "" -> null
   password?: string; // używane tylko przy CREATE
-  internal_notes: string; // UI string; do API mapujemy "" -> null
+  internal_notes: string; // UI string; do API wysyłamy string ("" jest OK)
   is_active: boolean;
 }
 
@@ -172,7 +181,7 @@ const ClientsPage: React.FC = () => {
       setError(null);
 
       const emailToSend: string | null = values.email.trim() ? values.email.trim() : null;
-      const notesToSend: string | null = values.internal_notes.trim() ? values.internal_notes.trim() : null;
+      const notesToSend: string = values.internal_notes.trim(); // ✅ wysyłamy string ("" jest OK)
 
       if (!editingClient) {
         // ✅ create: backend wymaga klucza email + password
@@ -251,12 +260,7 @@ const ClientsPage: React.FC = () => {
         </Box>
 
         <Box sx={{ display: "flex", gap: 2, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <TextField
-            size="small"
-            label="search (backend)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <TextField size="small" label="search (backend)" value={search} onChange={(e) => setSearch(e.target.value)} />
 
           <TextField
             size="small"
