@@ -441,6 +441,7 @@ class SystemLog(models.Model):
         # AUTH
         AUTH_LOGIN = "AUTH_LOGIN", "User login"
         AUTH_LOGOUT = "AUTH_LOGOUT", "User logout"
+        AUTH_PASSWORD_CHANGE = "AUTH_PASSWORD_CHANGE", "User password change"
 
         # SETTINGS
         SETTINGS_UPDATED = "SETTINGS_UPDATED", "Settings updated"

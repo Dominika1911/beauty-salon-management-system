@@ -6,6 +6,8 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny
+from .serializers import PasswordChangeSerializer
+
 
 
 from .models import SystemLog
@@ -150,5 +152,43 @@ class AuthStatusView(APIView):
 
         return Response(
             {"isAuthenticated": False, "user": None},
+            status=status.HTTP_200_OK,
+        )
+
+class ChangePasswordView(APIView):
+    """
+    Endpoint do zmiany hasła aktualnie zalogowanego użytkownika.
+
+    POST /api/auth/change-password/
+
+    Body:
+    {
+        "old_password": "starehaslo",
+        "new_password": "NoweHaslo123!",
+        "new_password2": "NoweHaslo123!"
+    }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+
+        # 🔐 audit log (ważne do pracy inż.)
+        SystemLog.log(
+            action=SystemLog.Action.AUTH_PASSWORD_CHANGE,
+            performed_by=user,
+            target_user=user,
+        )
+
+        return Response(
+            {"detail": "Hasło zostało zmienione."},
             status=status.HTTP_200_OK,
         )

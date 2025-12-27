@@ -32,10 +32,12 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import KeyIcon from "@mui/icons-material/Key";
 
 import type { DRFPaginated, Employee, Service } from "@/types";
 import { employeesApi, type EmployeeListItem } from "@/api/employees";
 import { servicesApi } from "@/api/services";
+import { usersApi } from "@/api/users";
 
 /** ✅ type-guard: ADMIN ma pełny EmployeeSerializer */
 function isEmployee(row: EmployeeListItem): row is Employee {
@@ -49,8 +51,7 @@ type EmployeeFormState = {
   phone: string;
   is_active: boolean;
   skill_ids: number[];
-  email?: string;
-  password?: string;
+  email?: string; // ✅ zostaje
 };
 
 const emptyForm: EmployeeFormState = {
@@ -60,7 +61,6 @@ const emptyForm: EmployeeFormState = {
   is_active: true,
   skill_ids: [],
   email: "",
-  password: "",
 };
 
 function formatPLN(value: string | number) {
@@ -108,6 +108,61 @@ export default function EmployeesPage(): JSX.Element {
 
   const [confirmDelete, setConfirmDelete] = useState<Employee | null>(null);
 
+  // ===================== RESET PASSWORD DIALOG =====================
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Employee | null>(null);
+  const [resetPass1, setResetPass1] = useState("");
+  const [resetPass2, setResetPass2] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const openResetDialog = (emp: Employee) => {
+    setResetTarget(emp);
+    setResetPass1("");
+    setResetPass2("");
+    setResetDialogOpen(true);
+  };
+
+  const closeResetDialog = () => {
+    setResetDialogOpen(false);
+    setResetTarget(null);
+    setResetPass1("");
+    setResetPass2("");
+    setResetLoading(false);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+
+    if (resetPass1.trim().length < 8) {
+      setSnack({ open: true, msg: "Hasło musi mieć minimum 8 znaków.", severity: "error" });
+      return;
+    }
+    if (resetPass1 !== resetPass2) {
+      setSnack({ open: true, msg: "Hasła nie są identyczne.", severity: "error" });
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      await usersApi.resetPassword(resetTarget.user, {
+        new_password: resetPass1,
+        new_password2: resetPass2,
+      });
+      setSnack({ open: true, msg: `Zresetowano hasło dla: ${resetTarget.full_name}`, severity: "success" });
+      closeResetDialog();
+    } catch (e: any) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.new_password?.[0] ||
+        e?.response?.data?.new_password2?.[0] ||
+        "Nie udało się zresetować hasła.";
+      setSnack({ open: true, msg, severity: "error" });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // ===================== SNACK =====================
   const [snack, setSnack] = useState<{
     open: boolean;
     msg: string;
@@ -219,7 +274,6 @@ export default function EmployeesPage(): JSX.Element {
       is_active: !!emp.is_active,
       skill_ids: (emp.skills || []).map((s) => s.id),
       email: "",
-      password: "",
     });
     setDialogOpen(true);
   };
@@ -236,9 +290,10 @@ export default function EmployeesPage(): JSX.Element {
         return;
       }
 
+      // ✅ jeśli backend wymaga email przy CREATE – zostawiamy walidację email
       if (!isEdit) {
-        if (!form.email?.trim() || !form.password?.trim()) {
-          setSnack({ open: true, msg: "Email i hasło są wymagane przy tworzeniu.", severity: "error" });
+        if (!form.email?.trim()) {
+          setSnack({ open: true, msg: "Email jest wymagany przy tworzeniu.", severity: "error" });
           return;
         }
       }
@@ -250,7 +305,6 @@ export default function EmployeesPage(): JSX.Element {
         is_active: boolean;
         skill_ids: number[];
         email?: string;
-        password?: string;
       } = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
@@ -261,12 +315,10 @@ export default function EmployeesPage(): JSX.Element {
 
       if (!isEdit) {
         payload.email = form.email?.trim();
-        payload.password = form.password || "";
         await employeesApi.create(payload as any);
         setSnack({ open: true, msg: "Utworzono pracownika.", severity: "success" });
       } else {
         if (form.email?.trim()) payload.email = form.email.trim();
-        if (form.password?.trim()) payload.password = form.password;
         if (form.id) {
           await employeesApi.update(form.id, payload as any);
           setSnack({ open: true, msg: "Zaktualizowano pracownika.", severity: "success" });
@@ -300,10 +352,6 @@ export default function EmployeesPage(): JSX.Element {
     }
   };
 
-  /**
-   * ✅ KLUCZ: valueGetter ma sygnaturę (value, row) w Twojej wersji DataGrid
-   * Dzięki temu nie ma "params.row is undefined" i wartości się wyświetlają poprawnie.
-   */
   const columns: GridColDef<Employee>[] = [
     {
       field: "employee_number",
@@ -387,14 +435,20 @@ export default function EmployeesPage(): JSX.Element {
     {
       field: "actions",
       headerName: "",
-      width: 120,
+      width: 150,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
         <Stack direction="row" spacing={1}>
+          {/* 🔐 reset hasła */}
+          <IconButton size="small" onClick={() => openResetDialog(params.row)} aria-label="reset-password">
+            <KeyIcon fontSize="small" />
+          </IconButton>
+
           <IconButton size="small" onClick={() => openEdit(params.row)} aria-label="edit">
             <EditIcon fontSize="small" />
           </IconButton>
+
           <IconButton size="small" onClick={() => setConfirmDelete(params.row)} aria-label="delete">
             <DeleteIcon fontSize="small" />
           </IconButton>
@@ -559,23 +613,14 @@ export default function EmployeesPage(): JSX.Element {
               placeholder="+48123123123"
             />
 
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
-                label="Email (dla konta)"
-                value={form.email ?? ""}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                fullWidth
-                required={!isEdit}
-              />
-              <TextField
-                label="Hasło"
-                value={form.password ?? ""}
-                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                fullWidth
-                required={!isEdit}
-                type="password"
-              />
-            </Stack>
+            {/* ✅ Email zostaje, hasła NIE ma */}
+            <TextField
+              label="Email (dla konta)"
+              value={form.email ?? ""}
+              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+              fullWidth
+              required={!isEdit}
+            />
 
             <FormControl fullWidth>
               <InputLabel id="skills-label">Usługi (skills)</InputLabel>
@@ -617,12 +662,53 @@ export default function EmployeesPage(): JSX.Element {
                 <b>pracownik-XXXXXXXX</b>.
               </Alert>
             )}
+
+            <Alert severity="info">
+              Zmiana hasła pracownika odbywa się <b>tylko</b> przez akcję <b>Reset hasła</b> (ikona klucza w tabeli).
+            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDialog}>Anuluj</Button>
           <Button onClick={handleSave} variant="contained">
             Zapisz
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* RESET PASSWORD DIALOG */}
+      <Dialog open={resetDialogOpen} onClose={closeResetDialog} fullWidth maxWidth="sm">
+        <DialogTitle>Reset hasła pracownika</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography variant="body2">
+              Pracownik: <b>{resetTarget?.full_name}</b>
+            </Typography>
+
+            <TextField
+              label="Nowe hasło"
+              type="password"
+              value={resetPass1}
+              onChange={(e) => setResetPass1(e.target.value)}
+              fullWidth
+              helperText="Minimum 8 znaków"
+            />
+
+            <TextField
+              label="Powtórz nowe hasło"
+              type="password"
+              value={resetPass2}
+              onChange={(e) => setResetPass2(e.target.value)}
+              fullWidth
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeResetDialog} disabled={resetLoading}>
+            Anuluj
+          </Button>
+          <Button onClick={handleResetPassword} variant="contained" disabled={resetLoading}>
+            {resetLoading ? "Resetuję..." : "Resetuj"}
           </Button>
         </DialogActions>
       </Dialog>

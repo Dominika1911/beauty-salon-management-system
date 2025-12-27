@@ -1,7 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .auth_views import csrf, SessionLoginView, SessionLogoutView, AuthStatusView
+from .auth_views import (
+    csrf,
+    SessionLoginView,
+    SessionLogoutView,
+    AuthStatusView,
+    ChangePasswordView,
+)
+
 from .views import (
     UserViewSet,
     ServiceViewSet,
@@ -34,6 +41,7 @@ urlpatterns = [
     path("auth/login/", SessionLoginView.as_view(), name="login"),
     path("auth/logout/", SessionLogoutView.as_view(), name="logout"),
     path("auth/status/", AuthStatusView.as_view(), name="auth-status"),
+    path("auth/change-password/", ChangePasswordView.as_view(), name="change-password"),
 
     # Dostępność + rezerwacje
     path("availability/slots/", AvailabilitySlotsAPIView.as_view(), name="availability-slots"),

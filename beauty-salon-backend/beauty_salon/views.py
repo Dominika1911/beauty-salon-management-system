@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import io
 import os
 from datetime import datetime, timedelta, time
@@ -12,6 +11,7 @@ from django.db.models import Count, Sum, Q
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
+from django.contrib.auth import logout
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, permissions, serializers, filters
@@ -54,6 +54,8 @@ from .serializers import (
     BookingCreateSerializer,
     EmployeeScheduleSerializer,
     TimeOffSerializer,
+    PasswordChangeSerializer,
+    PasswordResetSerializer
 )
 from .permissions import IsAdmin, IsAdminOrEmployee, IsEmployee, CanCancelAppointment
 
@@ -109,6 +111,37 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
         return Response(UserDetailSerializer(request.user, context={"request": request}).data)
+
+    # =========================================================================
+    # PASSWORD: ADMIN RESET USER PASSWORD
+    # POST /api/users/{id}/reset-password/
+    # =========================================================================
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="reset-password",
+        permission_classes=[IsAdmin],
+    )
+    def reset_password(self, request, pk=None):
+        target_user = self.get_object()
+
+        serializer = PasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_user.set_password(serializer.validated_data["new_password"])
+        target_user.save(update_fields=["password"])
+
+        SystemLog.log(
+            action=SystemLog.Action.AUTH_LOGOUT,
+            performed_by=request.user,
+            target_user=target_user,
+        )
+
+        return Response(
+            {"detail": f"Hasło użytkownika {target_user.username} zostało zresetowane."},
+            status=status.HTTP_200_OK,
+        )
+
 
 
 # =============================================================================

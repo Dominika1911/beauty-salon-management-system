@@ -51,6 +51,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const initAuth = async () => {
       try {
+        // 🔐 CSRF – inicjalizacja cookie (ważne dla Django)
+        await authApi.getCsrf();
+
+        // 🔑 sprawdzenie sesji
         await refreshUser();
       } finally {
         setLoading(false);
@@ -60,20 +64,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     void initAuth();
   }, [refreshUser]);
 
-  const login = useCallback(
-    async (credentials: LoginRequest): Promise<User> => {
-      // POST /auth/login/ (CSRF ogarnia axios interceptor)
-      await authApi.login(credentials.username, credentials.password);
+  const login = useCallback(async (credentials: LoginRequest): Promise<User> => {
+  // 1. WYMUŚ pobranie nowego tokena CSRF przed logowaniem
+  await authApi.getCsrf();
 
-      // po loginie: jedyne źródło prawdy to /auth/status/
-      const nextUser = await refreshUser();
-      if (!nextUser) {
-        throw new Error("Nie udało się pobrać danych użytkownika po zalogowaniu.");
-      }
-      return nextUser;
-    },
-    [refreshUser]
-  );
+  // 2. Spróbuj się zalogować
+  await authApi.login(credentials.username, credentials.password);
+
+  // 3. Sprawdź, czy sesja została utworzona
+  const nextUser = await refreshUser();
+  if (!nextUser) throw new Error("Logowanie nieudane - brak sesji.");
+  return nextUser;
+}, [refreshUser]);
 
   const logout = useCallback(async () => {
     try {

@@ -1,6 +1,5 @@
-// src/components/Layout/Layout.tsx
 import React from "react";
-import { Box, Toolbar } from "@mui/material";
+import { Box, Toolbar, Container } from "@mui/material";
 import { Outlet } from "react-router-dom";
 
 import Sidebar from "@/components/Layout/Sidebar";
@@ -14,7 +13,7 @@ const Layout: React.FC = () => {
   const hasSidebar = Boolean(user);
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
       <Navbar />
       <Sidebar />
 
@@ -22,13 +21,15 @@ const Layout: React.FC = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          bgcolor: "background.default",
-          p: 3,
           width: hasSidebar ? `calc(100% - ${drawerWidth}px)` : "100%",
+          p: { xs: 2, sm: 3 },
         }}
       >
         {hasSidebar ? <Toolbar /> : null}
-        <Outlet />
+
+        <Container maxWidth="xl" disableGutters sx={{ px: { xs: 0, sm: 0 } }}>
+          <Outlet />
+        </Container>
       </Box>
     </Box>
   );

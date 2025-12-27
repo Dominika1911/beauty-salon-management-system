@@ -28,10 +28,12 @@ import {
   MenuItem,
 } from "@mui/material";
 import { Add, Edit, Delete, Visibility } from "@mui/icons-material";
+import KeyIcon from "@mui/icons-material/Key";
 import { Formik, Form, Field } from "formik";
 import * as Yup from "yup";
 
 import { clientsApi } from "@/api/clients";
+import { usersApi } from "@/api/users";
 import type { Client, DRFPaginated } from "@/types";
 
 /**
@@ -56,7 +58,7 @@ const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
  * ✅ Dopasowanie do backendu:
  * - email: w serializerze może być null/blank, ale przy CREATE klucz "email" musi istnieć (api/clients.ts)
  * - phone: backend dopuszcza blank
- * - password: wymagane tylko przy CREATE
+ * - password: wymagane tylko przy CREATE (tu: tylko dla nowego klienta)
  */
 const ClientSchema = Yup.object().shape({
   first_name: Yup.string().min(2, "Imię musi mieć co najmniej 2 znaki").required("Imię jest wymagane"),
@@ -77,7 +79,7 @@ interface ClientFormData {
   last_name: string;
   phone: string;
   email: string; // UI string; do API mapujemy "" -> null
-  password?: string;
+  password?: string; // używane tylko przy CREATE
   internal_notes: string; // UI string; do API mapujemy "" -> null
   is_active: boolean;
 }
@@ -109,6 +111,14 @@ const ClientsPage: React.FC = () => {
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
 
+  // ✅ Reset hasła (u Ciebie w typach: user_id)
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<Client | null>(null);
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [resetErr, setResetErr] = useState<string | null>(null);
+  const [resetSaving, setResetSaving] = useState(false);
+
   // reset page when backend params change
   useEffect(() => {
     setPage(1);
@@ -123,7 +133,6 @@ const ClientsPage: React.FC = () => {
         page,
         ordering,
         search: search.trim() || undefined,
-        // backend DjangoFilterBackend:
         is_active: onlyActive ? true : undefined,
         client_number: clientNumber.trim() || undefined,
       });
@@ -171,13 +180,13 @@ const ClientsPage: React.FC = () => {
           first_name: values.first_name.trim(),
           last_name: values.last_name.trim(),
           phone: values.phone.trim() || undefined,
-          email: emailToSend, // ✅ klucz istnieje, wartość może być null
+          email: emailToSend,
           internal_notes: notesToSend,
           password: values.password || "",
           is_active: values.is_active,
         });
       } else {
-        // ✅ update: password opcjonalne
+        // ✅ update: BEZ zmiany hasła (hasło tylko przez kluczyk)
         const payload: any = {
           first_name: values.first_name.trim(),
           last_name: values.last_name.trim(),
@@ -186,7 +195,6 @@ const ClientsPage: React.FC = () => {
           internal_notes: notesToSend,
           is_active: values.is_active,
         };
-        if (values.password && values.password.trim()) payload.password = values.password.trim();
 
         await clientsApi.update(editingClient.id, payload);
       }
@@ -196,7 +204,6 @@ const ClientsPage: React.FC = () => {
     } catch (err: any) {
       const backendErrors = err?.response?.data;
 
-      // DRF zwykle zwraca obiekt { field: ["error"] } albo {detail: "..."}
       if (backendErrors && typeof backendErrors === "object" && !Array.isArray(backendErrors)) {
         setErrors(backendErrors);
         if (backendErrors.detail) setError(String(backendErrors.detail));
@@ -372,9 +379,25 @@ const ClientsPage: React.FC = () => {
                     >
                       <Visibility />
                     </IconButton>
+
                     <IconButton onClick={() => handleOpenDialog(client)} color="primary">
                       <Edit />
                     </IconButton>
+
+                    <IconButton
+                      onClick={() => {
+                        setResetErr(null);
+                        setP1("");
+                        setP2("");
+                        setResetTarget(client);
+                        setResetOpen(true);
+                      }}
+                      disabled={client.user_id == null}
+                      title={client.user_id != null ? "Reset hasła" : "Klient nie ma konta"}
+                    >
+                      <KeyIcon />
+                    </IconButton>
+
                     <IconButton
                       onClick={() => {
                         setClientToDelete(client);
@@ -413,7 +436,7 @@ const ClientsPage: React.FC = () => {
             last_name: editingClient?.last_name || "",
             phone: editingClient?.phone || "",
             email: editingClient?.email ?? "",
-            password: "",
+            password: "", // tylko przy CREATE
             internal_notes: editingClient?.internal_notes ?? "",
             is_active: editingClient?.is_active ?? true,
           }}
@@ -456,15 +479,20 @@ const ClientsPage: React.FC = () => {
                   error={touched.email && !!errors.email}
                   helperText={touched.email && (errors.email as any)}
                 />
-                <Field
-                  as={TextField}
-                  name="password"
-                  label={editingClient ? "Zmień hasło (opcjonalnie)" : "Hasło"}
-                  type="password"
-                  fullWidth
-                  error={touched.password && !!errors.password}
-                  helperText={touched.password && (errors.password as any)}
-                />
+
+                {/* Hasło TYLKO przy tworzeniu klienta */}
+                {!editingClient && (
+                  <Field
+                    as={TextField}
+                    name="password"
+                    label="Hasło"
+                    type="password"
+                    fullWidth
+                    error={touched.password && !!errors.password}
+                    helperText={touched.password && (errors.password as any)}
+                  />
+                )}
+
                 <Field
                   as={TextField}
                   name="internal_notes"
@@ -476,7 +504,9 @@ const ClientsPage: React.FC = () => {
                   helperText={touched.internal_notes && (errors.internal_notes as any)}
                 />
                 <FormControlLabel
-                  control={<Switch checked={values.is_active} onChange={(e) => setFieldValue("is_active", e.target.checked)} />}
+                  control={
+                    <Switch checked={values.is_active} onChange={(e) => setFieldValue("is_active", e.target.checked)} />
+                  }
                   label="Aktywny"
                 />
               </DialogContent>
@@ -540,6 +570,90 @@ const ClientsPage: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewDialogOpen(false)}>Zamknij</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog Resetu Hasła */}
+      <Dialog open={resetOpen} onClose={() => setResetOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Reset hasła klienta</DialogTitle>
+        <DialogContent>
+          {resetErr && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {resetErr}
+            </Alert>
+          )}
+
+          {resetTarget?.user_id == null && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Ten klient nie ma konta użytkownika — nie da się zresetować hasła.
+            </Alert>
+          )}
+
+          <TextField
+            label="Nowe hasło"
+            type="password"
+            fullWidth
+            margin="dense"
+            value={p1}
+            onChange={(e) => setP1(e.target.value)}
+            disabled={resetTarget?.user_id == null || resetSaving}
+          />
+          <TextField
+            label="Powtórz nowe hasło"
+            type="password"
+            fullWidth
+            margin="dense"
+            value={p2}
+            onChange={(e) => setP2(e.target.value)}
+            disabled={resetTarget?.user_id == null || resetSaving}
+          />
+        </DialogContent>
+
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setResetOpen(false)} disabled={resetSaving}>
+            Anuluj
+          </Button>
+
+          <Button
+            variant="contained"
+            disabled={resetTarget?.user_id == null || resetSaving}
+            onClick={async () => {
+              if (resetTarget?.user_id == null) return;
+
+              setResetErr(null);
+
+              if (p1.length < 8) {
+                setResetErr("Hasło musi mieć co najmniej 8 znaków.");
+                return;
+              }
+              if (p1 !== p2) {
+                setResetErr("Hasła nie są identyczne.");
+                return;
+              }
+
+              try {
+                setResetSaving(true);
+                await usersApi.resetPassword(resetTarget.user_id, {
+                  new_password: p1,
+                  new_password2: p2,
+                });
+                setResetOpen(false);
+                await loadClients();
+              } catch (err: any) {
+                const d = err?.response?.data;
+                setResetErr(
+                  d?.detail ||
+                    d?.new_password?.[0] ||
+                    d?.new_password2?.[0] ||
+                    "Nie udało się zresetować hasła."
+                );
+              } finally {
+                setResetSaving(false);
+              }
+            }}
+          >
+            Resetuj
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

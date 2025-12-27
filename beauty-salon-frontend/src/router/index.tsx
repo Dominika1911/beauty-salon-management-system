@@ -2,16 +2,23 @@ import { createBrowserRouter } from "react-router-dom";
 import Layout from "@/components/Layout/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-// Public
+// =========================
+// PUBLIC
+// =========================
 import HomePage from "@/pages/HomePage";
 import LoginPage from "@/pages/LoginPage";
 import AccessDeniedPage from "@/pages/AccessDeniedPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
-// Dashboard (jedna strona – rozróżnia role po API /dashboard/)
+// =========================
+// SHARED
+// =========================
 import DashboardPage from "@/pages/DashboardPage";
+import AccountPage from "@/pages/AccountPage";
 
+// =========================
 // ADMIN
+// =========================
 import ServicesPage from "@/pages/Admin/ServicesPage";
 import EmployeesPage from "@/pages/Admin/EmployeesPage";
 import EmployeesSchedulePage from "@/pages/Admin/EmployeesSchedulePage";
@@ -22,50 +29,57 @@ import SettingsPage from "@/pages/Admin/SettingsPage";
 import LogsPage from "@/pages/Admin/LogsPage";
 import AdminTimeOffPage from "@/pages/Admin/AdminTimeOffPage";
 
+// =========================
 // EMPLOYEE
+// =========================
 import EmployeeAppointmentsPage from "@/pages/Employee/AppointmentsPage";
 import EmployeeCalendarPage from "@/pages/Employee/CalendarPage";
 import EmployeeSchedulePage from "@/pages/Employee/SchedulePage";
 import EmployeeTimeOffPage from "@/pages/Employee/EmployeeTimeOffPage";
 
+// =========================
 // CLIENT
+// =========================
 import ClientAppointmentsPage from "@/pages/Client/AppointmentsPage";
 import BookingPage from "@/pages/Client/BookingPage";
 
 export const router = createBrowserRouter([
   {
-    element: <Layout />, 
+    element: <Layout />,
     children: [
-      // =========================
+      // ======================================================
       // PUBLIC
-      // =========================
+      // ======================================================
       { path: "/", element: <HomePage /> },
       { path: "/login", element: <LoginPage /> },
 
-      // =========================
-      // UNIWERSALNY DASHBOARD (NAPRAWA 404)
-      // =========================
-      // Ta ścieżka musi istnieć, bo LoginPage robi navigate("/dashboard")
-      { 
-        path: "/dashboard", 
+      // ======================================================
+      // DASHBOARD – JEDEN DLA WSZYSTKICH RÓL
+      // ======================================================
+      {
+        path: "/dashboard",
         element: (
           <ProtectedRoute>
             <DashboardPage />
           </ProtectedRoute>
-        ) 
+        ),
       },
 
-      // =========================
-      // ADMIN
-      // =========================
+      // ======================================================
+      // ACCOUNT / PROFILE – ZMIANA HASŁA (ALL ROLES)
+      // ======================================================
       {
-        path: "/admin/dashboard",
+        path: "/account",
         element: (
-          <ProtectedRoute allowedRoles={["ADMIN"]}>
-            <DashboardPage />
+          <ProtectedRoute>
+            <AccountPage />
           </ProtectedRoute>
         ),
       },
+
+      // ======================================================
+      // ADMIN
+      // ======================================================
       {
         path: "/admin/services",
         element: (
@@ -139,17 +153,9 @@ export const router = createBrowserRouter([
         ),
       },
 
-      // =========================
+      // ======================================================
       // EMPLOYEE
-      // =========================
-      {
-        path: "/employee/dashboard",
-        element: (
-          <ProtectedRoute allowedRoles={["EMPLOYEE"]}>
-            <DashboardPage />
-          </ProtectedRoute>
-        ),
-      },
+      // ======================================================
       {
         path: "/employee/calendar",
         element: (
@@ -183,17 +189,9 @@ export const router = createBrowserRouter([
         ),
       },
 
-      // =========================
+      // ======================================================
       // CLIENT
-      // =========================
-      {
-        path: "/client/dashboard",
-        element: (
-          <ProtectedRoute allowedRoles={["CLIENT"]}>
-            <DashboardPage />
-          </ProtectedRoute>
-        ),
-      },
+      // ======================================================
       {
         path: "/client/booking",
         element: (
@@ -211,9 +209,9 @@ export const router = createBrowserRouter([
         ),
       },
 
-      // =========================
+      // ======================================================
       // ERRORS
-      // =========================
+      // ======================================================
       { path: "/access-denied", element: <AccessDeniedPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

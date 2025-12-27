@@ -22,7 +22,6 @@ from .models import (
 
 User = get_user_model()
 
-
 # =============================================================================
 # USER SERIALIZERS
 # =============================================================================
@@ -83,7 +82,12 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def validate_password(self, value):
         if value:
-            validate_password(value)
+            # lepsza walidacja (np. podobieństwo do username)
+            temp_user = User(
+                username=self.initial_data.get("username", ""),
+                email=self.initial_data.get("email", ""),
+            )
+            validate_password(value, user=temp_user)
         return value
 
     def create(self, validated_data):
@@ -106,28 +110,49 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = ["first_name", "last_name", "email", "is_active"]
 
 
+# =============================================================================
+# PASSWORDS
+# =============================================================================
+
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True)
 
     def validate_old_password(self, value):
         user = self.context["request"].user
         if not user.check_password(value):
-            raise serializers.ValidationError("Nieprawidłowe stare hasło.")
+            raise serializers.ValidationError("Nieprawidłowe aktualne hasło.")
         return value
 
-    def validate_new_password(self, value):
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["new_password2"]:
+            raise serializers.ValidationError(
+                {"new_password2": "Hasła nie są identyczne."}
+            )
+
+        if attrs["new_password"] == attrs["old_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "Nowe hasło musi różnić się od aktualnego."}
+            )
+
         user = self.context["request"].user
-        validate_password(value, user=user)
-        return value
+        validate_password(attrs["new_password"], user=user)
+        return attrs
 
 
 class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True)
 
-    def validate_new_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["new_password2"]:
+            raise serializers.ValidationError(
+                {"new_password2": "Hasła nie są identyczne."}
+            )
+
+        validate_password(attrs["new_password"])
+        return attrs
 
 
 # =============================================================================
@@ -407,8 +432,19 @@ class TimeOffSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class ClientSerializer(serializers.ModelSerializer):
-    user_username = serializers.CharField(source="user.username", read_only=True, allow_null=True)
-    user_email = serializers.CharField(source="user.email", read_only=True, allow_null=True)
+    # 🔑 KLUCZOWE DLA FRONTENDU (reset hasła po user.id)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+
+    user_username = serializers.CharField(
+        source="user.username",
+        read_only=True,
+        allow_null=True
+    )
+    user_email = serializers.CharField(
+        source="user.email",
+        read_only=True,
+        allow_null=True
+    )
 
     appointments_count = serializers.IntegerField(read_only=True)
 
@@ -418,16 +454,35 @@ class ClientSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClientProfile
         fields = [
-            "id", "user", "user_username", "user_email",
-            "client_number", "first_name", "last_name",
-            "email", "phone",
+            "id",
+
+            # relacja z User
+            "user_id",
+            "user_username",
+            "user_email",
+
+            "client_number",
+            "first_name",
+            "last_name",
+
+            "email",
+            "phone",
             "internal_notes",
+
             "password",
             "is_active",
+
             "appointments_count",
-            "created_at", "updated_at"
+            "created_at",
+            "updated_at",
         ]
-        read_only_fields = ["id", "client_number", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "client_number",
+            "created_at",
+            "updated_at",
+        ]
+
         extra_kwargs = {"user": {"required": False}}
 
     def validate(self, data):
@@ -744,6 +799,7 @@ class BookingCreateSerializer(serializers.Serializer):
             client = getattr(user, "client_profile", None)
             if not client:
                 raise serializers.ValidationError({"client_id": "Użytkownik nie ma profilu klienta."})
+            data["client"] = client
         elif role in ["ADMIN", "EMPLOYEE"]:
             if not data.get("client_id"):
                 raise serializers.ValidationError({"client_id": "Wymagane dla ADMIN/EMPLOYEE."})

@@ -90,7 +90,7 @@ export interface Employee {
 
 export interface Client {
   id: number;
-  user: number | null;
+  user_id: number | null;
 
   // ✅ serializer zwraca te pola zawsze (mogą być null)
   user_username: string | null;
