@@ -19,17 +19,17 @@ from django.utils import timezone
 
 phone_validator = RegexValidator(
     regex=r"^\+?\d{9,15}$",
-    message="Phone must be 9–15 digits, optional leading +.",
+    message=_("Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +."),
 )
 
 employee_number_validator = RegexValidator(
     regex=r"^\d{8}$",
-    message="Employee number must be exactly 8 digits (e.g. 00000001).",
+    message=_("Numer pracownika musi mieć dokładnie 8 cyfr (np. 00000001)."),
 )
 
 client_number_validator = RegexValidator(
     regex=r"^\d{8}$",
-    message="Client number must be exactly 8 digits (e.g. 00000001).",
+    message=_("Numer klienta musi mieć dokładnie 8 cyfr (np. 00000001)."),
 )
 
 USERNAME_PATTERN = re.compile(
@@ -77,15 +77,41 @@ class CustomUser(AbstractUser):
     def clean(self):
         super().clean()
         if not self.username:
-            raise ValidationError({"username": "Username is required for all users."})
+            raise ValidationError({"username": _("Nazwa użytkownika jest wymagana.")})
+
         username = self.username.strip().lower()
+
+        # 1) ogólna walidacja formatu (jak dotychczas)
         if not USERNAME_PATTERN.match(username):
             raise ValidationError({
-                "username": (
-                    "Username must match: "
-                    "'imie.nazwisko' or 'pracownik-00000001' or 'admin-00000001' or 'klient-00000001'."
+                "username": _(
+                    "Nazwa użytkownika musi mieć format: "
+                    "'imie.nazwisko' lub 'pracownik-00000001' lub 'admin-00000001' lub 'klient-00000001'."
                 )
             })
+
+        # 2) walidacja zależna od roli (żeby np. klient nie blokował loginów pracownika)
+        if self.role == self.Role.CLIENT:
+            if not username.startswith("klient-"):
+                raise ValidationError({"username": _("Login klienta musi zaczynać się od 'klient-'.")})
+
+        elif self.role == self.Role.ADMIN:
+            if not username.startswith("admin-"):
+                raise ValidationError({"username": _("Login administratora musi zaczynać się od 'admin-'.")})
+
+        elif self.role == self.Role.EMPLOYEE:
+            ok = (
+                re.match(r"^[a-z]{2,30}\.[a-z]{2,30}$", username)
+                or re.match(r"^pracownik-\d{8}$", username)
+            )
+            if not ok:
+                raise ValidationError({
+                    "username": _(
+                        "Login pracownika musi mieć format 'imie.nazwisko' "
+                        "lub 'pracownik-00000001'."
+                    )
+                })
+
         self.username = username
 
 
@@ -158,7 +184,7 @@ class EmployeeProfile(models.Model):
         if self.employee_number == "":
             self.employee_number = None
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.EMPLOYEE:
-            raise ValidationError("EmployeeProfile can only be assigned to a user with EMPLOYEE role.")
+            raise ValidationError(_("Profil pracownika może być przypisany tylko do użytkownika z rolą PRACOWNIK."))
 
 
 class ClientProfile(models.Model):
@@ -204,7 +230,7 @@ class ClientProfile(models.Model):
         if self.client_number == "":
             self.client_number = None
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.CLIENT:
-            raise ValidationError("ClientProfile can only be assigned to a user with CLIENT role.")
+            raise ValidationError(_("Profil klienta może być przypisany tylko do użytkownika z rolą KLIENT."))
 
 
 # =============================================================================
@@ -351,12 +377,12 @@ class Appointment(models.Model):
 
         # timezone sanity (minimalnie; nie rozbijam na osobny commit)
         if self.start and timezone.is_naive(self.start):
-            raise ValidationError({"start": "start must be timezone-aware"})
+            raise ValidationError({"start": _("Data rozpoczęcia musi zawierać strefę czasową (timezone-aware).")})
         if self.end and timezone.is_naive(self.end):
-            raise ValidationError({"end": "end must be timezone-aware"})
+            raise ValidationError({"end": _("Data zakończenia musi zawierać strefę czasową (timezone-aware).")})
 
         if self.end and self.start and self.end <= self.start:
-            raise ValidationError({"end": "End must be after start."})
+            raise ValidationError({"end": _("Zakończenie wizyty musi być później niż rozpoczęcie.")})
 
         if not self.employee_id or not self.start or not self.end:
             return
@@ -369,7 +395,7 @@ class Appointment(models.Model):
             .exclude(pk=self.pk)
         )
         if emp_qs.filter(start__lt=self.end, end__gt=self.start).exists():
-            raise ValidationError("Employee is not available in this time range.")
+            raise ValidationError(_("Pracownik nie jest dostępny w wybranym przedziale czasu."))
 
         if self.client_id:
             client_qs = (
@@ -378,7 +404,7 @@ class Appointment(models.Model):
                 .exclude(pk=self.pk)
             )
             if client_qs.filter(start__lt=self.end, end__gt=self.start).exists():
-                raise ValidationError("Client is not available in this time range.")
+                raise ValidationError(_("Klient ma już inną wizytę w wybranym przedziale czasu."))
 
 
 # =============================================================================
@@ -479,7 +505,7 @@ class SystemLog(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk is not None:
-            raise ValidationError("SystemLog entries are append-only and cannot be modified.")
+            raise ValidationError(_("Wpisy w logu systemowym są tylko do dopisywania i nie mogą być modyfikowane."))
         return super().save(*args, **kwargs)
 
     @classmethod

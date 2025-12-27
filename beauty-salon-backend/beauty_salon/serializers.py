@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
@@ -21,6 +22,46 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+def _humanize_password_errors(exc: DjangoValidationError) -> list[str]:
+    """
+    Minimalna humanizacja błędów Django validate_password().
+    Nie zmienia logiki walidacji — tylko tekst komunikatów.
+    Zostawia fallback do oryginału, jeśli nie rozpozna komunikatu.
+    """
+    msgs = [str(m) for m in getattr(exc, "messages", []) or []]
+    out: list[str] = []
+
+    for s in msgs:
+        s_norm = s.strip()
+
+        # typowe wbudowane walidatory Django
+        if "This password is too common" in s_norm:
+            out.append("To hasło jest zbyt powszechne — wybierz bardziej unikalne.")
+        elif "This password is too short" in s_norm:
+            out.append("Hasło jest zbyt krótkie — ustaw co najmniej 8 znaków.")
+        elif "This password is entirely numeric" in s_norm:
+            out.append("Hasło nie może składać się wyłącznie z cyfr.")
+        elif "is too similar to the" in s_norm:
+            out.append("Hasło jest zbyt podobne do danych użytkownika (np. login/e-mail).")
+        else:
+            # fallback — nic nie ukrywamy
+            out.append(s_norm)
+
+    return out or ["Hasło nie spełnia wymagań bezpieczeństwa."]
+
+
+def _validate_password_or_raise(value: str, *, user=None, field_name: str = "password"):
+    """
+    Waliduje hasło i zwraca błąd DRF przypięty do konkretnego pola,
+    żeby frontend mógł pokazać użytkownikowi 'co poprawić'.
+    """
+    try:
+        validate_password(value, user=user)
+    except DjangoValidationError as e:
+        raise serializers.ValidationError({field_name: _humanize_password_errors(e)})
+
 
 # =============================================================================
 # USER SERIALIZERS
@@ -87,7 +128,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 username=self.initial_data.get("username", ""),
                 email=self.initial_data.get("email", ""),
             )
-            validate_password(value, user=temp_user)
+            _validate_password_or_raise(value, user=temp_user, field_name="password")
         return value
 
     def create(self, validated_data):
@@ -137,7 +178,7 @@ class PasswordChangeSerializer(serializers.Serializer):
             )
 
         user = self.context["request"].user
-        validate_password(attrs["new_password"], user=user)
+        _validate_password_or_raise(attrs["new_password"], user=user, field_name="new_password")
         return attrs
 
 
@@ -151,7 +192,7 @@ class PasswordResetSerializer(serializers.Serializer):
                 {"new_password2": "Hasła nie są identyczne."}
             )
 
-        validate_password(attrs["new_password"])
+        _validate_password_or_raise(attrs["new_password"], field_name="new_password")
         return attrs
 
 
@@ -229,11 +270,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not self.instance:
             if not data.get("email") or not data.get("password"):
                 raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu pracownika.")
-            validate_password(data["password"])
+            _validate_password_or_raise(data["password"], field_name="password")
 
         password = data.get("password")
         if self.instance and password:
-            validate_password(password, user=self.instance.user)
+            _validate_password_or_raise(password, user=self.instance.user, field_name="password")
 
         user = data.get("user")
         if user and getattr(user, "role", None) != "EMPLOYEE":
@@ -282,7 +323,28 @@ class EmployeeSerializer(serializers.ModelSerializer):
             final_username = f"pracownik-{employee.employee_number}"
             if user.username != final_username:
                 if User.objects.filter(username=final_username).exclude(pk=user.pk).exists():
-                    raise serializers.ValidationError("Login pracownika już istnieje.")
+                    # Jeśli ktoś (np. błędnie skonfigurowany klient/admin) zajął login z prefiksem 'pracownik-',
+                    # dobieramy kolejny wolny numer zamiast kończyć błędem.
+                    base = int(employee.employee_number)
+                    picked = None
+                    for _ in range(1000):
+                        base += 1
+                        candidate_num = f"{base:08d}"
+                        candidate_username = f"pracownik-{candidate_num}"
+                        if (
+                            not EmployeeProfile.objects.filter(employee_number=candidate_num).exists()
+                            and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
+                        ):
+                            picked = (candidate_num, candidate_username)
+                            break
+
+                    if not picked:
+                        raise serializers.ValidationError("Nie można wygenerować unikalnego loginu pracownika.")
+
+                    employee.employee_number = picked[0]
+                    employee.save(update_fields=["employee_number"])
+                    final_username = picked[1]
+
                 user.username = final_username
                 user.full_clean()
                 user.save(update_fields=["username"])
@@ -499,11 +561,11 @@ class ClientSerializer(serializers.ModelSerializer):
         if not self.instance:
             if "email" not in data or "password" not in data:
                 raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu klienta.")
-            validate_password(data["password"])
+            _validate_password_or_raise(data["password"], field_name="password")
 
         password = data.get("password")
         if self.instance and password and self.instance.user:
-            validate_password(password, user=self.instance.user)
+            _validate_password_or_raise(password, user=self.instance.user, field_name="password")
 
         user = data.get("user")
         if user and user.role != "CLIENT":
