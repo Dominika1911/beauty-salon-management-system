@@ -20,8 +20,10 @@ import {
   Chip,
   Card,
   CardContent,
+  useMediaQuery,
 } from "@mui/material";
 import type { ChipProps } from "@mui/material/Chip";
+import { useTheme } from "@mui/material/styles";
 import {
   Dashboard,
   Event,
@@ -49,9 +51,7 @@ interface MenuItemDef {
 }
 
 const menuItems: MenuItemDef[] = [
-  // =========================
   // WSPÓLNE
-  // =========================
   {
     text: "Dashboard",
     icon: <Dashboard />,
@@ -65,9 +65,7 @@ const menuItems: MenuItemDef[] = [
     roles: ["ADMIN", "EMPLOYEE", "CLIENT"],
   },
 
-  // =========================
   // ADMIN
-  // =========================
   { text: "Wizyty", icon: <Event />, path: "/admin/appointments", roles: ["ADMIN"] },
   { text: "Pracownicy", icon: <People />, path: "/admin/employees", roles: ["ADMIN"] },
   { text: "Grafiki", icon: <Schedule />, path: "/admin/employees-schedule", roles: ["ADMIN"] },
@@ -78,21 +76,16 @@ const menuItems: MenuItemDef[] = [
   { text: "Logi", icon: <History />, path: "/admin/logs", roles: ["ADMIN"] },
   { text: "Urlopy", icon: <Event />, path: "/admin/time-offs", roles: ["ADMIN"] },
 
-  // =========================
   // EMPLOYEE
-  // =========================
   { text: "Terminarz", icon: <CalendarMonth />, path: "/employee/calendar", roles: ["EMPLOYEE"] },
   { text: "Moje wizyty", icon: <Event />, path: "/employee/appointments", roles: ["EMPLOYEE"] },
   { text: "Grafik", icon: <Schedule />, path: "/employee/schedule", roles: ["EMPLOYEE"] },
   { text: "Urlopy", icon: <Event />, path: "/employee/time-offs", roles: ["EMPLOYEE"] },
 
-  // =========================
   // CLIENT
-  // =========================
   { text: "Rezerwacja", icon: <CalendarMonth />, path: "/client/booking", roles: ["CLIENT"] },
   { text: "Moje wizyty", icon: <Event />, path: "/client/appointments", roles: ["CLIENT"] },
 ];
-
 
 function getRoleChipColor(role: UserRole): ChipProps["color"] {
   switch (role) {
@@ -112,10 +105,18 @@ function isPathActive(currentPath: string, itemPath: string) {
   return itemPath !== "/" && currentPath.startsWith(itemPath + "/");
 }
 
-const Sidebar: React.FC = () => {
+type SidebarProps = {
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+};
+
+const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -131,33 +132,32 @@ const Sidebar: React.FC = () => {
       await logout();
     } finally {
       setConfirmOpen(false);
+      if (isMobile) onMobileClose();
       navigate("/login", { replace: true });
     }
   };
 
-  return (
-    <Drawer
-      variant="permanent"
-      sx={{
-        width: drawerWidth,
-        flexShrink: 0,
-        "& .MuiDrawer-paper": {
-          width: drawerWidth,
-          boxSizing: "border-box",
-          display: "flex",
-          flexDirection: "column",
-          bgcolor: "background.paper",
-        },
-      }}
-    >
-      <Toolbar sx={{ minHeight: 64, px: 2 }}>
+  const handleNavClick = () => {
+    if (isMobile) onMobileClose();
+  };
+
+  const drawerContent = (
+    <>
+      {/* Header */}
+      <Toolbar
+        sx={{
+          minHeight: 64,
+          px: 2,
+          bgcolor: "rgba(17, 24, 39, 0.02)",
+        }}
+      >
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0 }}>
           <ContentCut color="primary" fontSize="small" />
           <Box sx={{ minWidth: 0 }}>
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 800, letterSpacing: 0.2 }}>
               Beauty Salon
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
+            <Typography variant="caption" sx={{ color: "text.secondary" }} noWrap>
               Management System
             </Typography>
           </Box>
@@ -170,8 +170,12 @@ const Sidebar: React.FC = () => {
       <Box sx={{ flex: 1, overflowY: "auto", py: 1 }}>
         <Typography
           variant="overline"
-          color="text.secondary"
-          sx={{ px: 2, py: 0.5, letterSpacing: 0.8 }}
+          sx={{
+            color: "text.secondary",
+            px: 2,
+            py: 0.5,
+            letterSpacing: 0.8,
+          }}
         >
           Nawigacja
         </Typography>
@@ -186,9 +190,11 @@ const Sidebar: React.FC = () => {
                   component={Link}
                   to={item.path}
                   selected={selected}
+                  onClick={handleNavClick}
                   sx={{
                     px: 1.25,
                     py: 1,
+                    border: "1px solid transparent",
                     "& .MuiListItemIcon-root": {
                       minWidth: 36,
                       color: selected ? "primary.main" : "text.secondary",
@@ -198,12 +204,16 @@ const Sidebar: React.FC = () => {
                       fontWeight: selected ? 700 : 600,
                       lineHeight: 1.2,
                     },
+
+                    // selected styling (bez hard-coded rgba różu)
                     "&.Mui-selected": {
-                      bgcolor: "rgba(216, 27, 96, 0.08)", // różowy akcent pod theme
+                      bgcolor: "rgba(216, 27, 96, 0.08)",
+                      borderColor: "rgba(216, 27, 96, 0.18)",
                     },
                     "&.Mui-selected:hover": {
                       bgcolor: "rgba(216, 27, 96, 0.12)",
                     },
+
                     "&:hover": {
                       bgcolor: "action.hover",
                     },
@@ -242,7 +252,6 @@ const Sidebar: React.FC = () => {
               color="error"
               startIcon={<ExitToApp fontSize="small" />}
               onClick={() => setConfirmOpen(true)}
-              sx={{ textTransform: "none" }}
             >
               Wyloguj
             </Button>
@@ -251,7 +260,7 @@ const Sidebar: React.FC = () => {
       </Box>
 
       {/* Potwierdzenie */}
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} PaperProps={{ variant: "outlined" }}>
         <DialogTitle>Wylogować się?</DialogTitle>
         <DialogContent>
           <DialogContentText>
@@ -259,20 +268,49 @@ const Sidebar: React.FC = () => {
           </DialogContentText>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setConfirmOpen(false)} sx={{ textTransform: "none" }}>
-            Anuluj
-          </Button>
-          <Button
-            color="error"
-            variant="contained"
-            onClick={() => void handleLogout()}
-            sx={{ textTransform: "none" }}
-          >
+          <Button onClick={() => setConfirmOpen(false)}>Anuluj</Button>
+          <Button color="error" variant="contained" onClick={() => void handleLogout()}>
             Wyloguj
           </Button>
         </DialogActions>
       </Dialog>
-    </Drawer>
+    </>
+  );
+
+  const drawerSx = {
+    width: drawerWidth,
+    flexShrink: 0,
+    "& .MuiDrawer-paper": {
+      width: drawerWidth,
+      boxSizing: "border-box",
+      display: "flex",
+      flexDirection: "column",
+
+      // mniej "biało" i lepsza separacja od contentu
+      bgcolor: "background.default",
+      borderRight: "1px solid rgba(17, 24, 39, 0.12)",
+    },
+  } as const;
+
+  return (
+    <>
+      {/* Mobile: temporary */}
+      <Drawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={onMobileClose}
+        ModalProps={{ keepMounted: true }}
+        sx={{ ...drawerSx, display: { xs: "block", sm: "none" } }}
+      >
+        {/* wewnątrz dajemy biały "surface" na content */}
+        <Box sx={{ height: "100%", bgcolor: "background.paper" }}>{drawerContent}</Box>
+      </Drawer>
+
+      {/* Desktop: permanent */}
+      <Drawer variant="permanent" sx={{ ...drawerSx, display: { xs: "none", sm: "block" } }} open>
+        <Box sx={{ height: "100%", bgcolor: "background.paper" }}>{drawerContent}</Box>
+      </Drawer>
+    </>
   );
 };
 

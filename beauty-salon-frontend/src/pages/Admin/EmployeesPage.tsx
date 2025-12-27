@@ -1,33 +1,37 @@
 // src/pages/Admin/EmployeesPage.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Box,
   Button,
+  ButtonGroup,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  IconButton,
-  Stack,
-  TextField,
-  Typography,
-  Alert,
-  Snackbar,
   FormControl,
+  IconButton,
   InputLabel,
-  Select,
+  LinearProgress,
+  ListItemText,
   MenuItem,
   OutlinedInput,
-  Checkbox,
-  ListItemText,
   Paper,
+  Select,
+  Snackbar,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+  useMediaQuery,
 } from "@mui/material";
-import { DataGrid, GridColDef, GridSortModel } from "@mui/x-data-grid";
+import { useTheme } from "@mui/material/styles";
+import { DataGrid, GridColDef, GridSortModel, type GridColumnVisibilityModel } from "@mui/x-data-grid";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -38,6 +42,18 @@ import type { DRFPaginated, Employee, Service } from "@/types";
 import { employeesApi, type EmployeeListItem } from "@/api/employees";
 import { servicesApi } from "@/api/services";
 import { usersApi } from "@/api/users";
+import { parseDrfError, pickFieldErrors } from "@/utils/drfErrors";
+
+const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "-created_at", label: "Najnowsi" },
+  { value: "created_at", label: "Najstarsi" },
+  { value: "last_name", label: "Nazwisko (A→Z)" },
+  { value: "-last_name", label: "Nazwisko (Z→A)" },
+  { value: "employee_number", label: "Nr pracownika (rosnąco)" },
+  { value: "-employee_number", label: "Nr pracownika (malejąco)" },
+  { value: "id", label: "ID (rosnąco)" },
+  { value: "-id", label: "ID (malejąco)" },
+];
 
 /** ✅ type-guard: ADMIN ma pełny EmployeeSerializer */
 function isEmployee(row: EmployeeListItem): row is Employee {
@@ -51,7 +67,8 @@ type EmployeeFormState = {
   phone: string;
   is_active: boolean;
   skill_ids: number[];
-  email?: string; // ✅ zostaje
+  email: string; // create: wymagany
+  password: string; // create: wymagany
 };
 
 const emptyForm: EmployeeFormState = {
@@ -61,17 +78,15 @@ const emptyForm: EmployeeFormState = {
   is_active: true,
   skill_ids: [],
   email: "",
+  password: "",
 };
+
+type FieldErrors = Partial<Record<keyof EmployeeFormState, string>>;
 
 function formatPLN(value: string | number) {
   const n = typeof value === "string" ? Number(value) : value;
   if (Number.isNaN(n)) return "0,00 zł";
   return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
-}
-
-function getErrorMessage(err: unknown): string {
-  const e = err as any;
-  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
 }
 
 function sortModelToOrdering(sortModel: GridSortModel): string | undefined {
@@ -88,7 +103,67 @@ function sortModelToOrdering(sortModel: GridSortModel): string | undefined {
   return direction === "desc" ? `-${field}` : field;
 }
 
+type AxiosLikeError = { response?: { data?: unknown } };
+function getResponseData(err: unknown): unknown {
+  if (typeof err !== "object" || err === null) return undefined;
+  if (!("response" in err)) return undefined;
+  return (err as AxiosLikeError).response?.data;
+}
+
+function extractDrfMessage(data: unknown): string | undefined {
+  if (!data) return undefined;
+  if (typeof data === "string") return data;
+
+  if (Array.isArray(data)) {
+    const first = data[0];
+    if (typeof first === "string") return first;
+    return undefined;
+  }
+
+  if (typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+
+    const candidateKeys = ["detail", "message", "error", "non_field_errors", "errors"];
+    for (const k of candidateKeys) {
+      const v = obj[k];
+      if (typeof v === "string") return v;
+      if (Array.isArray(v) && v.length && typeof v[0] === "string") return String(v[0]);
+    }
+
+    const maybe0 = obj["0"];
+    if (typeof maybe0 === "string") return maybe0;
+
+    const all = obj["__all__"];
+    if (Array.isArray(all) && all.length && typeof all[0] === "string") return String(all[0]);
+  }
+
+  return undefined;
+}
+
+function mapEmployeeCreateMessage(msg: string): string {
+  const m = msg.toLowerCase();
+
+  const isLoginGeneratorProblem =
+    m.includes("login") &&
+    (m.includes("nie można wygenerować") ||
+      m.includes("nie mozna wygenerowac") ||
+      m.includes("unikaln") ||
+      m.includes("już istnieje") ||
+      m.includes("istnieje"));
+
+  if (isLoginGeneratorProblem) {
+    return "Nie udało się utworzyć pracownika — system nie mógł wygenerować unikalnych danych konta. Spróbuj ponownie.";
+  }
+
+  return msg;
+}
+
+
 export default function EmployeesPage(): JSX.Element {
+  const theme = useTheme();
+  const isDownMd = useMediaQuery(theme.breakpoints.down("md"));
+  const isDownSm = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [employeesData, setEmployeesData] = useState<DRFPaginated<Employee> | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,72 +177,30 @@ export default function EmployeesPage(): JSX.Element {
   const [page, setPage] = useState(1);
   const [sortModel, setSortModel] = useState<GridSortModel>([{ field: "created_at", sort: "desc" }]);
 
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formFieldErrors, setFormFieldErrors] = useState<FieldErrors>({});
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [form, setForm] = useState<EmployeeFormState>(emptyForm);
 
   const [confirmDelete, setConfirmDelete] = useState<Employee | null>(null);
 
-  // ===================== RESET PASSWORD DIALOG =====================
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<Employee | null>(null);
   const [resetPass1, setResetPass1] = useState("");
   const [resetPass2, setResetPass2] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
-  const openResetDialog = (emp: Employee) => {
-    setResetTarget(emp);
-    setResetPass1("");
-    setResetPass2("");
-    setResetDialogOpen(true);
-  };
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const closeResetDialog = () => {
-    setResetDialogOpen(false);
-    setResetTarget(null);
-    setResetPass1("");
-    setResetPass2("");
-    setResetLoading(false);
-  };
-
-  const handleResetPassword = async () => {
-    if (!resetTarget) return;
-
-    if (resetPass1.trim().length < 8) {
-      setSnack({ open: true, msg: "Hasło musi mieć minimum 8 znaków.", severity: "error" });
-      return;
-    }
-    if (resetPass1 !== resetPass2) {
-      setSnack({ open: true, msg: "Hasła nie są identyczne.", severity: "error" });
-      return;
-    }
-
-    try {
-      setResetLoading(true);
-      await usersApi.resetPassword(resetTarget.user, {
-        new_password: resetPass1,
-        new_password2: resetPass2,
-      });
-      setSnack({ open: true, msg: `Zresetowano hasło dla: ${resetTarget.full_name}`, severity: "success" });
-      closeResetDialog();
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.data?.new_password?.[0] ||
-        e?.response?.data?.new_password2?.[0] ||
-        "Nie udało się zresetować hasła.";
-      setSnack({ open: true, msg, severity: "error" });
-    } finally {
-      setResetLoading(false);
-    }
-  };
-
-  // ===================== SNACK =====================
-  const [snack, setSnack] = useState<{
-    open: boolean;
-    msg: string;
-    severity: "success" | "error" | "info";
-  }>({ open: false, msg: "", severity: "info" });
+  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: "success" | "info" }>({
+    open: false,
+    msg: "",
+    severity: "info",
+  });
 
   const serviceMap = useMemo(() => {
     const map = new Map<number, Service>();
@@ -195,6 +228,7 @@ export default function EmployeesPage(): JSX.Element {
 
   const loadEmployees = useCallback(async () => {
     setLoading(true);
+    setPageError(null);
 
     try {
       const ordering = sortModelToOrdering(sortModel) || "-created_at";
@@ -213,11 +247,7 @@ export default function EmployeesPage(): JSX.Element {
       setPublicDataWarning(hadPublic);
 
       if (hadPublic) {
-        setSnack({
-          open: true,
-          msg: "Backend zwrócił niepełne dane pracowników (EmployeePublic). Sprawdź czy jesteś zalogowany jako ADMIN.",
-          severity: "error",
-        });
+        setPageError("Część danych pracowników jest ukryta. Sprawdź, czy jesteś zalogowany jako ADMIN.");
       }
 
       setEmployeesData({
@@ -226,14 +256,12 @@ export default function EmployeesPage(): JSX.Element {
         previous: res.previous,
         results: fullEmployees,
       });
-    } catch (e) {
+    } catch (e: unknown) {
       setEmployeesData({ count: 0, next: null, previous: null, results: [] });
       setPublicDataWarning(false);
-      setSnack({
-        open: true,
-        msg: getErrorMessage(e) || "Nie udało się pobrać pracowników.",
-        severity: "error",
-      });
+
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się pobrać pracowników. Spróbuj ponownie.");
     } finally {
       setLoading(false);
     }
@@ -241,6 +269,7 @@ export default function EmployeesPage(): JSX.Element {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setPageError(null);
     try {
       await Promise.all([loadAllServices(), loadEmployees()]);
     } finally {
@@ -257,10 +286,14 @@ export default function EmployeesPage(): JSX.Element {
   }, [loadEmployees]);
 
   const rows = useMemo(() => employeesData?.results ?? [], [employeesData]);
+  const canPrev = Boolean(employeesData?.previous) && !loading;
+  const canNext = Boolean(employeesData?.next) && !loading;
 
   const openCreate = () => {
     setIsEdit(false);
     setForm({ ...emptyForm });
+    setFormError(null);
+    setFormFieldErrors({});
     setDialogOpen(true);
   };
 
@@ -274,334 +307,475 @@ export default function EmployeesPage(): JSX.Element {
       is_active: !!emp.is_active,
       skill_ids: (emp.skills || []).map((s) => s.id),
       email: "",
+      password: "",
     });
+    setFormError(null);
+    setFormFieldErrors({});
     setDialogOpen(true);
   };
 
   const closeDialog = () => {
+    if (actionLoading) return;
     setDialogOpen(false);
     setForm({ ...emptyForm });
+    setFormError(null);
+    setFormFieldErrors({});
   };
 
   const handleSave = async () => {
+    setFormError(null);
+    setFormFieldErrors({});
+    setActionLoading(true);
+
     try {
       if (!form.first_name.trim() || !form.last_name.trim()) {
-        setSnack({ open: true, msg: "Imię i nazwisko są wymagane.", severity: "error" });
+        setFormError("Uzupełnij imię i nazwisko.");
         return;
       }
 
-      // ✅ jeśli backend wymaga email przy CREATE – zostawiamy walidację email
       if (!isEdit) {
-        if (!form.email?.trim()) {
-          setSnack({ open: true, msg: "Email jest wymagany przy tworzeniu.", severity: "error" });
+        if (!form.email.trim() || !form.password.trim()) {
+          setFormError("Email i hasło są wymagane przy tworzeniu pracownika.");
+          return;
+        }
+        if (form.password.trim().length < 8) {
+          setFormFieldErrors({ password: "Hasło musi mieć minimum 8 znaków." });
+          setFormError("Nie udało się zapisać — popraw zaznaczone pola i spróbuj ponownie.");
           return;
         }
       }
 
-      const payload: {
-        first_name: string;
-        last_name: string;
-        phone: string;
-        is_active: boolean;
-        skill_ids: number[];
-        email?: string;
-      } = {
+      const basePayload = {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
-        phone: form.phone.trim(),
+        phone: form.phone.trim() || undefined,
         is_active: form.is_active,
         skill_ids: form.skill_ids,
       };
 
       if (!isEdit) {
-        payload.email = form.email?.trim();
-        await employeesApi.create(payload as any);
+        // ✅ FIX TS2353: employeesApi.create nie przyjmuje `username` w payloadzie
+        await employeesApi.create({
+          ...basePayload,
+          email: form.email.trim(),
+          password: form.password,
+        });
         setSnack({ open: true, msg: "Utworzono pracownika.", severity: "success" });
-      } else {
-        if (form.email?.trim()) payload.email = form.email.trim();
-        if (form.id) {
-          await employeesApi.update(form.id, payload as any);
-          setSnack({ open: true, msg: "Zaktualizowano pracownika.", severity: "success" });
-        }
+      } else if (form.id) {
+        await employeesApi.update(form.id, basePayload);
+        setSnack({ open: true, msg: "Zapisano zmiany.", severity: "success" });
       }
 
       closeDialog();
       await loadEmployees();
-    } catch (e: any) {
-      const msg =
-        e?.response?.data?.detail ||
-        (typeof e?.response?.data === "object" ? JSON.stringify(e.response.data) : null) ||
-        "Nie udało się zapisać pracownika.";
-      setSnack({ open: true, msg, severity: "error" });
+    } catch (e: unknown) {
+      const { message, fieldErrors } = parseDrfError(e);
+      const nextFieldErrors = pickFieldErrors(fieldErrors, emptyForm);
+      setFormFieldErrors(nextFieldErrors);
+
+      const rawData = getResponseData(e);
+      const fallbackMsg = extractDrfMessage(rawData);
+      const msg = message || fallbackMsg;
+
+      if (msg) {
+        setFormError(mapEmployeeCreateMessage(msg));
+      } else if (Object.keys(nextFieldErrors).length) {
+        setFormError("Nie udało się zapisać — popraw zaznaczone pola i spróbuj ponownie.");
+      } else {
+        setFormError("Nie udało się zapisać pracownika. Spróbuj ponownie.");
+      }
+    } finally {
+      setActionLoading(false);
     }
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
+    setPageError(null);
+    setActionLoading(true);
+
     try {
       await employeesApi.delete(confirmDelete.id);
       setSnack({ open: true, msg: "Usunięto pracownika.", severity: "success" });
       setConfirmDelete(null);
       await loadEmployees();
-    } catch (e: any) {
-      setSnack({
-        open: true,
-        msg: e?.response?.data?.detail || "Nie udało się usunąć.",
-        severity: "error",
-      });
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się usunąć pracownika. Sprawdź powiązania i spróbuj ponownie.");
+    } finally {
+      setActionLoading(false);
     }
   };
+
+  const openResetDialog = (emp: Employee) => {
+    setResetTarget(emp);
+    setResetPass1("");
+    setResetPass2("");
+    setResetError(null);
+    setResetDialogOpen(true);
+  };
+
+  const closeResetDialog = () => {
+    if (resetLoading) return;
+    setResetDialogOpen(false);
+    setResetTarget(null);
+    setResetPass1("");
+    setResetPass2("");
+    setResetLoading(false);
+    setResetError(null);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+
+    setResetError(null);
+
+    if (resetPass1.trim().length < 8) {
+      setResetError("Hasło musi mieć minimum 8 znaków.");
+      return;
+    }
+    if (resetPass1 !== resetPass2) {
+      setResetError("Hasła nie są identyczne.");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      await usersApi.resetPassword(resetTarget.user, {
+        new_password: resetPass1,
+        new_password2: resetPass2,
+      });
+
+      setSnack({ open: true, msg: "Zresetowano hasło pracownika.", severity: "success" });
+      closeResetDialog();
+      await loadEmployees();
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+
+      const data = getResponseData(e);
+      const dataObj = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : undefined;
+
+      const np = dataObj?.new_password;
+      const np2 = dataObj?.new_password2;
+
+      const msg =
+        parsed.message ||
+        (Array.isArray(np) && np.length ? String(np[0]) : undefined) ||
+        (Array.isArray(np2) && np2.length ? String(np2[0]) : undefined) ||
+        "Nie udało się zresetować hasła. Spróbuj ponownie.";
+
+      setResetError(String(msg));
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const busy = loading || resetLoading || actionLoading;
+
+  const hasActiveFilters = Boolean(search.trim()) || isActiveFilter !== "ALL" || serviceIdFilter !== "";
+  const emptyInfo = useMemo(() => {
+    if (loading) return null;
+    if (rows.length) return null;
+    if (hasActiveFilters) return "Brak wyników dla podanych filtrów. Zmień filtry lub je wyczyść.";
+    return "Brak pracowników. Dodaj pierwszego pracownika, aby zarządzać grafikiem i wizytami.";
+  }, [loading, rows.length, hasActiveFilters]);
 
   const columns: GridColDef<Employee>[] = [
     {
       field: "employee_number",
       headerName: "Nr",
-      width: 110,
-      valueGetter: (_value, row) => row.employee_number || "—",
+      minWidth: 90,
+      flex: 0.45,
+      valueGetter: (_v, row) => row.employee_number || "—",
       sortable: true,
     },
     {
       field: "full_name",
       headerName: "Pracownik",
-      flex: 1,
-      minWidth: 220,
-      valueGetter: (_value, row) => `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim(),
+      minWidth: 170,
+      flex: 1.1,
       sortable: false,
+      renderCell: (params) => (
+        <Stack spacing={0.25} sx={{ py: 0.5, minWidth: 0 }}>
+          <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+            {`${params.row.first_name ?? ""} ${params.row.last_name ?? ""}`.trim()}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {params.row.phone || "—"}
+          </Typography>
+        </Stack>
+      ),
     },
     {
-      field: "user_username",
-      headerName: "Login",
-      minWidth: 160,
-      flex: 0.8,
-      valueGetter: (_value, row) => row.user_username || "—",
+      field: "contact",
+      headerName: "Kontakt",
+      minWidth: 170,
+      flex: 1.05,
       sortable: false,
-    },
-    {
-      field: "user_email",
-      headerName: "Email",
-      minWidth: 200,
-      flex: 1,
-      valueGetter: (_value, row) => row.user_email || "—",
-      sortable: false,
+      valueGetter: (_v, row) => `${row.user_username || ""} ${row.user_email || ""}`.trim(),
+      renderCell: (params) => (
+        <Stack spacing={0.25} sx={{ py: 0.5, minWidth: 0 }}>
+          <Typography variant="body2" noWrap>
+            {params.row.user_username || "—"}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {params.row.user_email || "—"}
+          </Typography>
+        </Stack>
+      ),
     },
     {
       field: "is_active",
       headerName: "Status",
-      width: 120,
+      minWidth: 110,
+      flex: 0.6,
+      sortable: false,
       renderCell: (params) =>
         params.row.is_active ? <Chip label="Aktywny" color="success" size="small" /> : <Chip label="Nieaktywny" size="small" />,
-      sortable: false,
     },
     {
       field: "appointments_count",
       headerName: "Wizyty",
-      width: 110,
-      valueGetter: (_value, row) => row.appointments_count ?? 0,
+      minWidth: 80,
+      flex: 0.5,
+      valueGetter: (_v, row) => row.appointments_count ?? 0,
       sortable: false,
     },
     {
       field: "completed_appointments_count",
       headerName: "Zakończone",
-      width: 130,
-      valueGetter: (_value, row) => row.completed_appointments_count ?? 0,
+      minWidth: 105,
+      flex: 0.7,
+      valueGetter: (_v, row) => row.completed_appointments_count ?? 0,
       sortable: false,
     },
     {
       field: "revenue_completed_total",
       headerName: "Przychód",
-      width: 160,
-      valueGetter: (_value, row) => formatPLN(row.revenue_completed_total ?? "0"),
+      minWidth: 105,
+      flex: 0.7,
+      valueGetter: (_v, row) => formatPLN(row.revenue_completed_total ?? "0"),
       sortable: false,
     },
     {
       field: "skills",
       headerName: "Usługi",
-      flex: 1,
-      minWidth: 240,
+      minWidth: 150,
+      flex: 0.95,
       sortable: false,
       renderCell: (params) => {
         const list = params.row.skills || [];
         if (!list.length) return "—";
         return (
-          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
-            {list.slice(0, 3).map((s) => (
+          <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", py: 0.5 }}>
+            {list.slice(0, 2).map((s) => (
               <Chip key={s.id} label={s.name} size="small" />
             ))}
-            {list.length > 3 && <Chip label={`+${list.length - 3}`} size="small" variant="outlined" />}
+            {list.length > 2 && <Chip label={`+${list.length - 2}`} size="small" variant="outlined" />}
           </Box>
         );
       },
     },
     {
       field: "actions",
-      headerName: "",
-      width: 150,
+      headerName: "Akcje",
+      minWidth: 280,
+      flex: 1.05,
       sortable: false,
       filterable: false,
+      align: "right",
+      headerAlign: "right",
       renderCell: (params) => (
-        <Stack direction="row" spacing={1}>
-          {/* 🔐 reset hasła */}
-          <IconButton size="small" onClick={() => openResetDialog(params.row)} aria-label="reset-password">
-            <KeyIcon fontSize="small" />
-          </IconButton>
-
-          <IconButton size="small" onClick={() => openEdit(params.row)} aria-label="edit">
-            <EditIcon fontSize="small" />
-          </IconButton>
-
-          <IconButton size="small" onClick={() => setConfirmDelete(params.row)} aria-label="delete">
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Stack>
+        <Box sx={{ display: "flex", justifyContent: "flex-end", width: "100%" }}>
+          <ButtonGroup
+            variant="text"
+            size="small"
+            aria-label="Akcje pracownika"
+            disabled={busy}
+            sx={{ "& .MuiButton-root": { whiteSpace: "nowrap", px: 1, minWidth: "auto" } }}
+          >
+            <Button onClick={() => openResetDialog(params.row)} startIcon={<KeyIcon fontSize="small" />}>
+              Hasło
+            </Button>
+            <Button onClick={() => openEdit(params.row)} startIcon={<EditIcon fontSize="small" />} color="primary">
+              Edytuj
+            </Button>
+            <Button onClick={() => setConfirmDelete(params.row)} startIcon={<DeleteIcon fontSize="small" />} color="error">
+              Usuń
+            </Button>
+          </ButtonGroup>
+        </Box>
       ),
     },
   ];
 
-  const canPrev = Boolean(employeesData?.previous) && !loading;
-  const canNext = Boolean(employeesData?.next) && !loading;
+  const columnVisibilityModel = useMemo<GridColumnVisibilityModel>(() => {
+    if (isDownSm) return { revenue_completed_total: false, completed_appointments_count: false, skills: false } as GridColumnVisibilityModel;
+    if (isDownMd) return { skills: false } as GridColumnVisibilityModel;
+    return {} as GridColumnVisibilityModel;
+  }, [isDownMd, isDownSm]);
+
+  const ordering = sortModelToOrdering(sortModel) || "-created_at";
+  const orderingLabel = ORDERING_OPTIONS.find((o) => o.value === ordering)?.label ?? ordering;
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={2}
-          alignItems={{ sm: "center" }}
-          justifyContent="space-between"
-        >
-          <Box>
-            <Typography variant="h4" fontWeight={700}>
-              Pracownicy
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Backend: paginacja PageNumberPagination (PAGE_SIZE=20) • Łącznie: {employeesData?.count ?? "—"} • Strona: {page}
-            </Typography>
-          </Box>
+    <Stack spacing={2}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "stretch", md: "flex-start" }, gap: 2, flexWrap: "wrap" }}>
+        <Box sx={{ minWidth: 240 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
+            Pracownicy
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            Łącznie: {employeesData?.count ?? "—"} • Strona: {page} • Sortowanie: {orderingLabel}
+          </Typography>
+        </Box>
 
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Tooltip title="Odśwież">
+            <span>
+              <IconButton onClick={() => loadAll()} disabled={busy} aria-label="Odśwież listę">
+                <RefreshIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} disabled={busy}>
+            Dodaj pracownika
+          </Button>
+        </Stack>
+      </Box>
+
+      {pageError && (
+        <Alert severity={publicDataWarning ? "warning" : "error"} onClose={() => setPageError(null)}>
+          {pageError}
+        </Alert>
+      )}
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
+          <TextField
+            label="Szukaj"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Nr, imię, nazwisko, login, e-mail…"
+            disabled={busy}
+            fullWidth
+          />
+
+          <FormControl sx={{ minWidth: 220 }} disabled={busy}>
+            <InputLabel id="is-active-label">Status</InputLabel>
+            <Select
+              labelId="is-active-label"
+              value={isActiveFilter}
+              label="Status"
+              onChange={(e) => setIsActiveFilter(e.target.value as "ALL" | "ACTIVE" | "INACTIVE")}
+            >
+              <MenuItem value="ALL">Wszystkie</MenuItem>
+              <MenuItem value="ACTIVE">Tylko aktywni</MenuItem>
+              <MenuItem value="INACTIVE">Tylko nieaktywni</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl sx={{ minWidth: 260 }} disabled={busy}>
+            <InputLabel id="service-filter-label">Usługa</InputLabel>
+            <Select
+              labelId="service-filter-label"
+              value={serviceIdFilter}
+              label="Usługa"
+              onChange={(e) => setServiceIdFilter(e.target.value === "" ? "" : Number(e.target.value))}
+            >
+              <MenuItem value="">Wszystkie</MenuItem>
+              {services.map((s) => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.name} ({formatPLN(s.price)})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }}>
           <Stack direction="row" spacing={1}>
-            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => loadAll()}>
-              Odśwież
+            <Button disabled={!canPrev} variant="outlined" onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Poprzednia
             </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
-              Dodaj pracownika
+            <Button disabled={!canNext} variant="contained" onClick={() => setPage((p) => p + 1)}>
+              Następna
             </Button>
           </Stack>
+          <Box sx={{ flex: 1 }} />
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            {loading ? "Odświeżanie…" : `Wyświetlono: ${rows.length}`}
+          </Typography>
         </Stack>
+      </Paper>
 
-        <Card>
-          <CardContent>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }} sx={{ mb: 2 }}>
-              <TextField
-                label="search (backend)"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="np. 00000001, Kowalska..."
-                fullWidth
-              />
+      <Card>
+        <CardContent>
+          {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
 
-              <FormControl sx={{ minWidth: 220 }}>
-                <InputLabel id="is-active-label">Status (backend)</InputLabel>
-                <Select
-                  labelId="is-active-label"
-                  value={isActiveFilter}
-                  label="Status (backend)"
-                  onChange={(e) => setIsActiveFilter(e.target.value as any)}
-                >
-                  <MenuItem value="ALL">Wszystkie</MenuItem>
-                  <MenuItem value="ACTIVE">Tylko aktywni</MenuItem>
-                  <MenuItem value="INACTIVE">Tylko nieaktywni</MenuItem>
-                </Select>
-              </FormControl>
+          {emptyInfo ? (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {emptyInfo}
+            </Alert>
+          ) : null}
 
-              <FormControl sx={{ minWidth: 260 }}>
-                <InputLabel id="service-filter-label">service_id (backend)</InputLabel>
-                <Select
-                  labelId="service-filter-label"
-                  value={serviceIdFilter}
-                  label="service_id (backend)"
-                  onChange={(e) => setServiceIdFilter(e.target.value === "" ? "" : Number(e.target.value))}
-                >
-                  <MenuItem value="">Wszystkie usługi</MenuItem>
-                  {services.map((s) => (
-                    <MenuItem key={s.id} value={s.id}>
-                      {s.name}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Stack>
+          <Box sx={{ height: "calc(100vh - 420px)", minHeight: 420, width: "100%" }}>
+            <DataGrid
+              rows={rows}
+              columns={columns}
+              getRowId={(r) => r.id}
+              disableRowSelectionOnClick
+              sortingMode="server"
+              sortModel={sortModel}
+              onSortModelChange={(model) => setSortModel(model)}
+              paginationMode="server"
+              rowCount={employeesData?.count ?? 0}
+              paginationModel={{ page: page - 1, pageSize: 20 }}
+              onPaginationModelChange={(model) => setPage(model.page + 1)}
+              loading={loading}
+              hideFooter
+              columnVisibilityModel={columnVisibilityModel}
+              sx={{ "& .MuiDataGrid-columnHeaders": { borderBottomColor: "divider" }, "& .MuiDataGrid-cell": { alignItems: "center" } }}
+              localeText={{
+                noRowsLabel: "Brak danych.",
+                noResultsOverlayLabel: "Brak wyników.",
+              }}
+            />
+          </Box>
+        </CardContent>
+      </Card>
 
-            <Divider sx={{ mb: 2 }} />
-
-            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">
-                  ordering (backend): {sortModelToOrdering(sortModel) || "-created_at"}
-                </Typography>
-
-                <Stack direction="row" spacing={1}>
-                  <Button disabled={!canPrev} variant="outlined" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                    Poprzednia
-                  </Button>
-                  <Button disabled={!canNext} variant="contained" onClick={() => setPage((p) => p + 1)}>
-                    Następna
-                  </Button>
-                </Stack>
-              </Stack>
-            </Paper>
-
-            {loading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-                <CircularProgress />
-              </Box>
-            ) : (
-              <>
-                {publicDataWarning && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    Backend zwrócił część rekordów w trybie publicznym (EmployeePublic). To zwykle oznacza problem z
-                    autoryzacją/rolą — sprawdź czy jesteś zalogowany jako <b>ADMIN</b>.
-                  </Alert>
-                )}
-
-                <Box sx={{ height: 560, width: "100%" }}>
-                  <DataGrid
-                    rows={rows}
-                    columns={columns}
-                    getRowId={(r) => r.id}
-                    disableRowSelectionOnClick
-                    sortingMode="server"
-                    sortModel={sortModel}
-                    onSortModelChange={(model) => setSortModel(model)}
-                    pageSizeOptions={[20]}
-                    paginationMode="server"
-                    rowCount={employeesData?.count ?? 0}
-                    paginationModel={{ page: page - 1, pageSize: 20 }}
-                    onPaginationModelChange={(model) => setPage(model.page + 1)}
-                  />
-                </Box>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </Stack>
-
-      {/* CREATE / EDIT DIALOG */}
-      <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="sm">
+      <Dialog open={dialogOpen} onClose={busy ? undefined : closeDialog} fullWidth maxWidth="sm">
         <DialogTitle>{isEdit ? "Edytuj pracownika" : "Dodaj pracownika"}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            {formError && (
+              <Alert severity="error" onClose={() => setFormError(null)}>
+                {formError}
+              </Alert>
+            )}
+
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
                 label="Imię"
                 value={form.first_name}
                 onChange={(e) => setForm((p) => ({ ...p, first_name: e.target.value }))}
                 fullWidth
+                disabled={busy}
+                error={Boolean(formFieldErrors.first_name)}
+                helperText={formFieldErrors.first_name || " "}
               />
               <TextField
                 label="Nazwisko"
                 value={form.last_name}
                 onChange={(e) => setForm((p) => ({ ...p, last_name: e.target.value }))}
                 fullWidth
+                disabled={busy}
+                error={Boolean(formFieldErrors.last_name)}
+                helperText={formFieldErrors.last_name || " "}
               />
             </Stack>
 
@@ -611,28 +785,48 @@ export default function EmployeesPage(): JSX.Element {
               onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
               fullWidth
               placeholder="+48123123123"
+              disabled={busy}
+              error={Boolean(formFieldErrors.phone)}
+              helperText={formFieldErrors.phone || " "}
             />
 
-            {/* ✅ Email zostaje, hasła NIE ma */}
-            <TextField
-              label="Email (dla konta)"
-              value={form.email ?? ""}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-              fullWidth
-              required={!isEdit}
-            />
+            {!isEdit && (
+              <TextField
+                label="Email (dla konta)"
+                value={form.email}
+                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                fullWidth
+                required
+                disabled={busy}
+                error={Boolean(formFieldErrors.email)}
+                helperText={formFieldErrors.email || " "}
+              />
+            )}
 
-            <FormControl fullWidth>
-              <InputLabel id="skills-label">Usługi (skills)</InputLabel>
+            {!isEdit && (
+              <TextField
+                label="Hasło"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+                fullWidth
+                required
+                disabled={busy}
+                error={Boolean(formFieldErrors.password)}
+                helperText={formFieldErrors.password || "Minimum 8 znaków"}
+                autoComplete="new-password"
+              />
+            )}
+
+            <FormControl fullWidth disabled={busy} error={Boolean(formFieldErrors.skill_ids)}>
+              <InputLabel id="skills-label">Usługi</InputLabel>
               <Select
                 labelId="skills-label"
                 multiple
                 value={form.skill_ids}
                 onChange={(e) => setForm((p) => ({ ...p, skill_ids: e.target.value as number[] }))}
-                input={<OutlinedInput label="Usługi (skills)" />}
-                renderValue={(selected) =>
-                  (selected as number[]).map((id) => serviceMap.get(id)?.name || `#${id}`).join(", ")
-                }
+                input={<OutlinedInput label="Usługi" />}
+                renderValue={(selected) => (selected as number[]).map((id) => serviceMap.get(id)?.name || `#${id}`).join(", ")}
               >
                 {services.map((s) => (
                   <MenuItem key={s.id} value={s.id}>
@@ -641,9 +835,12 @@ export default function EmployeesPage(): JSX.Element {
                   </MenuItem>
                 ))}
               </Select>
+              <Typography variant="caption" color={formFieldErrors.skill_ids ? "error" : "text.secondary"} sx={{ mt: 0.5 }}>
+                {formFieldErrors.skill_ids || " "}
+              </Typography>
             </FormControl>
 
-            <FormControl fullWidth>
+            <FormControl fullWidth disabled={busy}>
               <InputLabel id="active-label">Status</InputLabel>
               <Select
                 labelId="active-label"
@@ -655,32 +852,33 @@ export default function EmployeesPage(): JSX.Element {
                 <MenuItem value="0">Nieaktywny</MenuItem>
               </Select>
             </FormControl>
-
-            {!isEdit && (
-              <Alert severity="info">
-                Przy tworzeniu pracownika backend wygeneruje <b>employee_number</b> i ustawi login w formacie{" "}
-                <b>pracownik-XXXXXXXX</b>.
-              </Alert>
-            )}
-
-            <Alert severity="info">
-              Zmiana hasła pracownika odbywa się <b>tylko</b> przez akcję <b>Reset hasła</b> (ikona klucza w tabeli).
-            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={closeDialog}>Anuluj</Button>
-          <Button onClick={handleSave} variant="contained">
+          <Button onClick={closeDialog} disabled={busy}>
+            Anuluj
+          </Button>
+          <Button
+            onClick={handleSave}
+            variant="contained"
+            disabled={busy}
+            startIcon={actionLoading ? <CircularProgress size={18} /> : undefined}
+          >
             Zapisz
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* RESET PASSWORD DIALOG */}
-      <Dialog open={resetDialogOpen} onClose={closeResetDialog} fullWidth maxWidth="sm">
+      <Dialog open={resetDialogOpen} onClose={resetLoading ? undefined : closeResetDialog} fullWidth maxWidth="sm">
         <DialogTitle>Reset hasła pracownika</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            {resetError && (
+              <Alert severity="error" onClose={() => setResetError(null)}>
+                {resetError}
+              </Alert>
+            )}
+
             <Typography variant="body2">
               Pracownik: <b>{resetTarget?.full_name}</b>
             </Typography>
@@ -692,14 +890,17 @@ export default function EmployeesPage(): JSX.Element {
               onChange={(e) => setResetPass1(e.target.value)}
               fullWidth
               helperText="Minimum 8 znaków"
+              disabled={resetLoading}
+              autoComplete="new-password"
             />
-
             <TextField
               label="Powtórz nowe hasło"
               type="password"
               value={resetPass2}
               onChange={(e) => setResetPass2(e.target.value)}
               fullWidth
+              disabled={resetLoading}
+              autoComplete="new-password"
             />
           </Stack>
         </DialogContent>
@@ -707,17 +908,21 @@ export default function EmployeesPage(): JSX.Element {
           <Button onClick={closeResetDialog} disabled={resetLoading}>
             Anuluj
           </Button>
-          <Button onClick={handleResetPassword} variant="contained" disabled={resetLoading}>
-            {resetLoading ? "Resetuję..." : "Resetuj"}
+          <Button
+            onClick={handleResetPassword}
+            variant="contained"
+            disabled={resetLoading}
+            startIcon={resetLoading ? <CircularProgress size={16} /> : undefined}
+          >
+            Resetuj
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* DELETE CONFIRM */}
-      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
+      <Dialog open={Boolean(confirmDelete)} onClose={busy ? undefined : () => setConfirmDelete(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Usuń pracownika</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mt: 1 }}>
+        <DialogContent dividers>
+          <Typography variant="body2">
             Czy na pewno chcesz usunąć pracownika{" "}
             <b>
               {confirmDelete?.first_name} {confirmDelete?.last_name}
@@ -725,21 +930,28 @@ export default function EmployeesPage(): JSX.Element {
             ?
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Uwaga: jeśli są powiązane wizyty, backend może zablokować usunięcie (np. przez constraints).
+            Tej operacji nie można cofnąć. Jeśli są powiązane wizyty, usunięcie może być zablokowane.
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDelete(null)}>Anuluj</Button>
-          <Button color="error" variant="contained" onClick={handleDelete}>
+          <Button onClick={() => setConfirmDelete(null)} disabled={busy}>
+            Anuluj
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDelete}
+            disabled={busy}
+            startIcon={actionLoading ? <CircularProgress size={18} /> : undefined}
+          >
             Usuń
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* SNACKBAR */}
       <Snackbar
         open={snack.open}
-        autoHideDuration={3500}
+        autoHideDuration={3200}
         onClose={() => setSnack((p) => ({ ...p, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
@@ -747,6 +959,6 @@ export default function EmployeesPage(): JSX.Element {
           {snack.msg}
         </Alert>
       </Snackbar>
-    </Box>
+    </Stack>
   );
 }
