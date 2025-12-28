@@ -1,17 +1,13 @@
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import AllowAny
-from .serializers import PasswordChangeSerializer
-
-
 
 from .models import SystemLog
-from .serializers import UserDetailSerializer
+from .serializers import PasswordChangeSerializer, UserDetailSerializer
 
 
 @ensure_csrf_cookie
@@ -19,7 +15,6 @@ from .serializers import UserDetailSerializer
 @permission_classes([AllowAny])
 def csrf(request):
     return Response({"detail": "CSRF cookie set"})
-
 
 
 class SessionLoginView(APIView):
@@ -45,47 +40,47 @@ class SessionLoginView(APIView):
         "detail": "Nieprawidłowe dane logowania."
     }
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
-        username = request.data.get('username')
-        password = request.data.get('password')
+        username = request.data.get("username")
+        password = request.data.get("password")
 
         if not username or not password:
             return Response(
-                {'detail': 'Wymagane pola: username i password.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Wymagane pola: username i password."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Autentykacja
         user = authenticate(request, username=username, password=password)
-
         if user is None:
             return Response(
-                {'detail': 'Nieprawidłowe dane logowania.'},
-                status=status.HTTP_401_UNAUTHORIZED
+                {"detail": "Nieprawidłowe dane logowania."},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
         if not user.is_active:
             return Response(
-                {'detail': 'Konto jest nieaktywne.'},
-                status=status.HTTP_403_FORBIDDEN
+                {"detail": "Konto jest nieaktywne."},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
-        # Zaloguj użytkownika
         login(request, user)
 
-        # Loguj akcję w systemie (audyt)
         SystemLog.log(
             action=SystemLog.Action.AUTH_LOGIN,
             performed_by=user,
             target_user=user,
         )
 
-        return Response({
-            "detail": "Zalogowano pomyślnie.",
-            "user": UserDetailSerializer(user, context={"request": request}).data
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "detail": "Zalogowano pomyślnie.",
+                "user": UserDetailSerializer(user, context={"request": request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class SessionLogoutView(APIView):
@@ -99,12 +94,12 @@ class SessionLogoutView(APIView):
         "detail": "Wylogowano pomyślnie."
     }
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
 
-        # Loguj akcję przed wylogowaniem
         SystemLog.log(
             action=SystemLog.Action.AUTH_LOGOUT,
             performed_by=user,
@@ -115,7 +110,7 @@ class SessionLogoutView(APIView):
 
         return Response(
             {"detail": "Wylogowano pomyślnie."},
-            status=status.HTTP_200_OK
+            status=status.HTTP_200_OK,
         )
 
 
@@ -138,6 +133,7 @@ class AuthStatusView(APIView):
         "user": null
     }
     """
+
     permission_classes = [AllowAny]
 
     def get(self, request):
@@ -145,7 +141,9 @@ class AuthStatusView(APIView):
             return Response(
                 {
                     "isAuthenticated": True,
-                    "user": UserDetailSerializer(request.user, context={"request": request}).data,
+                    "user": UserDetailSerializer(
+                        request.user, context={"request": request}
+                    ).data,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -154,6 +152,7 @@ class AuthStatusView(APIView):
             {"isAuthenticated": False, "user": None},
             status=status.HTTP_200_OK,
         )
+
 
 class ChangePasswordView(APIView):
     """
@@ -168,6 +167,7 @@ class ChangePasswordView(APIView):
         "new_password2": "NoweHaslo123!"
     }
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -181,7 +181,9 @@ class ChangePasswordView(APIView):
         user.set_password(serializer.validated_data["new_password"])
         user.save(update_fields=["password"])
 
-        # 🔐 audit log (ważne do pracy inż.)
+        # Utrzymaj zalogowanie po zmianie hasła (ważne przy auth sesyjnym).
+        update_session_auth_hash(request, user)
+
         SystemLog.log(
             action=SystemLog.Action.AUTH_PASSWORD_CHANGE,
             performed_by=user,

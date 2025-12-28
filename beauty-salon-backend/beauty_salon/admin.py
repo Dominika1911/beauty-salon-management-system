@@ -3,15 +3,15 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import Group
 
 from .models import (
-    CustomUser,
-    Service,
-    EmployeeProfile,
-    ClientProfile,
-    EmployeeSchedule,
-    TimeOff,
     Appointment,
-    SystemSettings,
+    ClientProfile,
+    CustomUser,
+    EmployeeProfile,
+    EmployeeSchedule,
+    Service,
     SystemLog,
+    SystemSettings,
+    TimeOff,
 )
 
 admin.site.unregister(Group)
@@ -21,7 +21,15 @@ admin.site.unregister(Group)
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
 
-    list_display = ("username", "first_name", "last_name", "email", "role", "is_staff", "is_active")
+    list_display = (
+        "username",
+        "first_name",
+        "last_name",
+        "email",
+        "role",
+        "is_staff",
+        "is_active",
+    )
     list_filter = ("role", "is_staff", "is_superuser", "is_active")
     search_fields = ("username", "first_name", "last_name", "email")
     ordering = ("username",)
@@ -30,15 +38,29 @@ class CustomUserAdmin(UserAdmin):
         (None, {"fields": ("username", "password")}),
         ("Dane osobowe", {"fields": ("first_name", "last_name", "email")}),
         ("Rola w systemie", {"fields": ("role",)}),
-        ("Uprawnienia", {"fields": ("is_active", "is_staff", "is_superuser", "user_permissions")}),
+        (
+            "Uprawnienia",
+            {"fields": ("is_active", "is_staff", "is_superuser", "user_permissions")},
+        ),
         ("Ważne daty", {"fields": ("last_login", "date_joined")}),
     )
 
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("username", "password1", "password2", "first_name", "last_name", "email", "role"),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "username",
+                    "password1",
+                    "password2",
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "role",
+                ),
+            },
+        ),
     )
 
 
@@ -67,19 +89,19 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
     ordering = ("employee_number",)
 
     fieldsets = (
-        ("Dane pracownika", {
-            "fields": ("user", "employee_number", "first_name", "last_name", "phone")
-        }),
-        ("Umiejętności", {
-            "fields": ("skills",)
-        }),
-        ("Status", {
-            "fields": ("is_active",)
-        }),
-        ("Metadata", {
-            "fields": ("hired_at", "created_at", "updated_at"),
-            "classes": ("collapse",)
-        }),
+        (
+            "Dane pracownika",
+            {"fields": ("user", "employee_number", "first_name", "last_name", "phone")},
+        ),
+        ("Umiejętności", {"fields": ("skills",)}),
+        ("Status", {"fields": ("is_active",)}),
+        (
+            "Metadata",
+            {
+                "fields": ("hired_at", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
 
@@ -92,7 +114,10 @@ class ClientProfileAdmin(admin.ModelAdmin):
     ordering = ("client_number",)
 
     fieldsets = (
-        ("Dane klienta", {"fields": ("user", "client_number", "first_name", "last_name", "email", "phone")}),
+        (
+            "Dane klienta",
+            {"fields": ("user", "client_number", "first_name", "last_name", "email", "phone")},
+        ),
         ("Notatki wewnętrzne", {"fields": ("internal_notes",)}),
         ("Status", {"fields": ("is_active",)}),
         ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
@@ -126,8 +151,12 @@ class AppointmentAdmin(admin.ModelAdmin):
     list_display = ("id", "client", "employee", "service", "start", "status", "created_at")
     list_filter = ("status", "start", "created_at")
     search_fields = (
-        "client__client_number", "client__first_name", "client__last_name",
-        "employee__employee_number", "employee__first_name", "employee__last_name",
+        "client__client_number",
+        "client__first_name",
+        "client__last_name",
+        "employee__employee_number",
+        "employee__first_name",
+        "employee__last_name",
         "service__name",
     )
     readonly_fields = ("created_at", "updated_at")

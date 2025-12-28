@@ -1,19 +1,19 @@
 import { createTheme, responsiveFontSizes } from "@mui/material";
 
-// Definicja bazowego motywu
+// Konfiguracja motywu "Soft Eye-Friendly Pink"
 let theme = createTheme({
   palette: {
     mode: "light",
-    primary: { main: "#D81B60" },
+    primary: { main: "#D81B60" }, // Główny akcent salonu
     secondary: { main: "#AD1457" },
     background: {
-      default: "#F7F7FB",
-      paper: "#FCFCFE",
+      default: "#FFF5F7", // Bardzo jasny, cieplejszy róż zamiast białego (tło główne)
+      paper: "#FEFBFD",   // Odcień "off-white" dla kart, łagodniejszy dla oczu
     },
-    divider: "rgba(17, 24, 39, 0.12)",
+    divider: "rgba(216, 27, 96, 0.12)",
     text: {
-      primary: "#111827",
-      secondary: "#6B7280",
+      primary: "#2D2D2D",   // Ciemny grafit zamiast czerni - mniejszy kontrast, mniejsze zmęczenie
+      secondary: "#5F6368",
     },
     success: { main: "#16A34A" },
     warning: { main: "#D97706" },
@@ -33,15 +33,26 @@ let theme = createTheme({
     MuiCssBaseline: {
       styleOverrides: {
         body: {
-          backgroundColor: "#F7F7FB",
+          backgroundColor: "#FFF5F7", // Tło całej strony
+          color: "#2D2D2D",
+          scrollbarColor: "#D81B60 #FFF5F7",
+          "&::-webkit-scrollbar": {
+            width: "8px",
+          },
+          "&::-webkit-scrollbar-thumb": {
+            backgroundColor: "#D81B60",
+            borderRadius: "10px",
+          },
         },
       },
     },
     MuiAppBar: {
       styleOverrides: {
         root: {
+          backgroundColor: "#FEFBFD", // Łagodny odcień zamiast bieli
+          color: "#D81B60",
           boxShadow: "none",
-          borderBottom: "1px solid rgba(17, 24, 39, 0.12)",
+          borderBottom: "1px solid rgba(216, 27, 96, 0.12)",
           backgroundImage: "none",
         },
       },
@@ -49,7 +60,8 @@ let theme = createTheme({
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          borderRight: "1px solid rgba(17, 24, 39, 0.12)",
+          backgroundColor: "#FCE4EC", // Pastelowy róż panelu bocznego
+          borderRight: "1px solid rgba(216, 27, 96, 0.12)",
           backgroundImage: "none",
         },
       },
@@ -61,15 +73,15 @@ let theme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: "none",
+          backgroundColor: "#FEFBFD",
         },
       },
       variants: [
         {
           props: { variant: "outlined" },
           style: {
-            borderColor: "rgba(17, 24, 39, 0.12)",
-            backgroundColor: "#FFFFFF",
-            transition: "box-shadow 120ms ease, border-color 120ms ease",
+            borderColor: "rgba(216, 27, 96, 0.2)",
+            backgroundColor: "#FEFBFD",
           },
         },
       ],
@@ -79,12 +91,12 @@ let theme = createTheme({
         root: {
           borderRadius: 12,
           boxShadow: "none",
-          backgroundImage: "none",
-          backgroundColor: "#FFFFFF",
-          border: "1px solid rgba(17, 24, 39, 0.12)",
+          backgroundColor: "#FFF9FA", // Bardzo miękki róż tła karty
+          border: "1px solid rgba(216, 27, 96, 0.15)",
           transition: "box-shadow 120ms ease, border-color 120ms ease",
           "&:hover": {
-            boxShadow: "0 1px 8px rgba(17, 24, 39, 0.06)",
+            boxShadow: "0 4px 12px rgba(216, 27, 96, 0.08)",
+            borderColor: "#D81B60",
           },
         },
       },
@@ -96,9 +108,6 @@ let theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 10,
-          paddingLeft: 14,
-          paddingRight: 14,
-          minHeight: 40,
         },
       },
     },
@@ -106,123 +115,45 @@ let theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 12,
+          margin: "4px 8px",
+          "&.Mui-selected": {
+            backgroundColor: "rgba(216, 27, 96, 0.08)",
+            color: "#D81B60",
+            "& .MuiListItemIcon-root": {
+              color: "#D81B60",
+            },
+          },
         },
-      },
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          borderRadius: 999,
-          fontWeight: 700,
-        },
-      },
-    },
-    MuiAlert: {
-      defaultProps: {
-        variant: "outlined",
-      },
-      styleOverrides: {
-        root: {
-          borderRadius: 12,
-        },
-      },
-    },
-    MuiTextField: {
-      defaultProps: {
-        variant: "outlined",
-        size: "small",
-        fullWidth: true,
       },
     },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
           borderRadius: 10,
-          backgroundColor: "rgba(17, 24, 39, 0.02)",
+          backgroundColor: "#FEFBFD",
           "&:hover .MuiOutlinedInput-notchedOutline": {
-            borderColor: "rgba(17, 24, 39, 0.26)",
-          },
-          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-            borderWidth: 2,
+            borderColor: "#D81B60",
           },
         },
         notchedOutline: {
-          borderColor: "rgba(17, 24, 39, 0.16)",
+          borderColor: "rgba(216, 27, 96, 0.2)",
         },
-      },
-    },
-    MuiInputLabel: {
-      styleOverrides: {
-        root: {
-          fontWeight: 600,
-        },
-      },
-    },
-    MuiFormHelperText: {
-      styleOverrides: {
-        root: {
-          marginLeft: 0,
-        },
-      },
-    },
-    MuiTable: {
-      defaultProps: {
-        size: "small",
-        stickyHeader: true,
       },
     },
     MuiTableCell: {
       styleOverrides: {
         head: {
           fontWeight: 800,
-          color: "#111827",
-          whiteSpace: "nowrap",
-          backgroundColor: "rgba(17, 24, 39, 0.03)",
-          borderBottomColor: "rgba(17, 24, 39, 0.12)",
+          color: "#D81B60",
+          backgroundColor: "#FCE4EC",
+          borderBottom: "2px solid #D81B60",
         },
         body: {
-          borderBottomColor: "rgba(17, 24, 39, 0.12)",
+          color: "#2D2D2D",
         },
-      },
-    },
-    MuiTableRow: {
-      styleOverrides: {
-        root: {
-          "&:hover": {
-            backgroundColor: "rgba(17, 24, 39, 0.03)",
-          },
-        },
-      },
-    },
-    MuiDialogTitle: {
-      styleOverrides: {
-        root: {
-          fontWeight: 800,
-          paddingBottom: 8,
-        },
-      },
-    },
-    MuiDialogContent: {
-      styleOverrides: {
-        root: {
-          paddingTop: 12,
-        },
-      },
-    },
-    MuiDialogActions: {
-      styleOverrides: {
-        root: {
-          padding: 16,
-        },
-      },
-    },
-    MuiTooltip: {
-      defaultProps: {
-        arrow: true,
       },
     },
   },
 });
 
-// Aplikujemy responsywne fonty i eksportujemy
 export const appTheme = responsiveFontSizes(theme);

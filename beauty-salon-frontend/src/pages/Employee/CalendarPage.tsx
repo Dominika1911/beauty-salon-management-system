@@ -20,6 +20,7 @@ import {
   Stack,
   Typography,
   Chip,
+  useTheme, // Dodajemy useTheme
 } from "@mui/material";
 import type { AlertColor } from "@mui/material/Alert";
 
@@ -33,12 +34,13 @@ import { parseDrfError } from "@/utils/drfErrors";
 
 type SnackState = { open: boolean; msg: string; severity: AlertColor };
 
+// Zmieniamy kolory statusów na bardziej pastelowe, pasujące do MUI
 function statusChipColor(
   status: AppointmentStatus
-): "default" | "success" | "warning" | "error" {
+): "default" | "success" | "warning" | "error" | "primary" {
   switch (status) {
     case "CONFIRMED":
-      return "success";
+      return "primary"; // Różowy dla potwierdzonych
     case "PENDING":
       return "warning";
     case "CANCELLED":
@@ -52,7 +54,6 @@ function statusChipColor(
   }
 }
 
-// ✅ bez custom kolorów (czytelnie i spójnie z MUI); zostawiamy eventy neutralne
 function formatPL(dt: string): string {
   const d = new Date(dt);
   return Number.isNaN(d.getTime())
@@ -62,18 +63,12 @@ function formatPL(dt: string): string {
 
 function statusLabel(status: AppointmentStatus): string {
   switch (status) {
-    case "PENDING":
-      return "Oczekuje";
-    case "CONFIRMED":
-      return "Potwierdzona";
-    case "COMPLETED":
-      return "Zakończona";
-    case "CANCELLED":
-      return "Anulowana";
-    case "NO_SHOW":
-      return "No-show";
-    default:
-      return status;
+    case "PENDING": return "Oczekuje";
+    case "CONFIRMED": return "Potwierdzona";
+    case "COMPLETED": return "Zakończona";
+    case "CANCELLED": return "Anulowana";
+    case "NO_SHOW": return "No-show";
+    default: return status;
   }
 }
 
@@ -82,6 +77,7 @@ function statusLabel(status: AppointmentStatus): string {
    ========================= */
 
 export default function EmployeeCalendarPage(): JSX.Element {
+  const theme = useTheme(); // Wyciągamy kolory z motywu
   const [events, setEvents] = useState<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -98,9 +94,6 @@ export default function EmployeeCalendarPage(): JSX.Element {
 
   const busy = loading || busyAction;
 
-  /* =========================
-     LOAD ALL APPOINTMENTS (ALL PAGES)
-     ========================= */
   const loadAppointments = useCallback(async () => {
     setPageError(null);
     setLoading(true);
@@ -117,12 +110,17 @@ export default function EmployeeCalendarPage(): JSX.Element {
         page += 1;
       } while (next);
 
+      // Stylizujemy eventy kolorami z motywu
       const calendarEvents: EventInput[] = all.map((a) => ({
         id: String(a.id),
         title: `${a.service_name} • ${a.client_name ?? "Klient"}`,
         start: a.start,
         end: a.end,
         extendedProps: { ...a },
+        // Różowy dla wszystkich wizyt w kalendarzu
+        backgroundColor: theme.palette.primary.light,
+        borderColor: theme.palette.primary.main,
+        textColor: theme.palette.primary.contrastText,
       }));
 
       setEvents(calendarEvents);
@@ -133,15 +131,11 @@ export default function EmployeeCalendarPage(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [theme]); // Dodajemy theme do dependencji
 
   useEffect(() => {
     void loadAppointments();
   }, [loadAppointments]);
-
-  /* =========================
-     EVENT HANDLERS
-     ========================= */
 
   const handleEventClick = (info: EventClickArg) => {
     const appt = info.event.extendedProps as unknown as Appointment;
@@ -156,10 +150,7 @@ export default function EmployeeCalendarPage(): JSX.Element {
   };
 
   const patchEvent = useCallback((updated: Appointment) => {
-    // 1) update modal state
     setSelectedAppt(updated);
-
-    // 2) update event in calendar list
     setEvents((prev) =>
       prev.map((ev) => {
         if (String(ev.id) !== String(updated.id)) return ev;
@@ -176,13 +167,11 @@ export default function EmployeeCalendarPage(): JSX.Element {
 
   const handleAction = async (fn: (id: number) => Promise<Appointment>, successMsg: string) => {
     if (!selectedAppt) return;
-
     setBusyAction(true);
     setPageError(null);
-
     try {
       const updated = await fn(selectedAppt.id);
-      patchEvent(updated); // ✅ bez reloadu wszystkich stron
+      patchEvent(updated);
       setSnack({ open: true, msg: successMsg, severity: "success" });
       closeModal();
     } catch (e: unknown) {
@@ -193,33 +182,17 @@ export default function EmployeeCalendarPage(): JSX.Element {
     }
   };
 
-  /* =========================
-     BACKEND FLAGS
-     ========================= */
-
   const canConfirm = useMemo(() => Boolean(selectedAppt?.can_confirm), [selectedAppt]);
   const canComplete = useMemo(() => Boolean(selectedAppt?.can_complete), [selectedAppt]);
   const canCancel = useMemo(() => Boolean(selectedAppt?.can_cancel), [selectedAppt]);
   const canNoShow = useMemo(() => Boolean(selectedAppt?.can_no_show), [selectedAppt]);
-
-  /* =========================
-     RENDER
-     ========================= */
-
-  if (loading && events.length === 0) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
     <Stack
       spacing={2.5}
       sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: { xs: 1, sm: 2 }, py: { xs: 2, sm: 3 } }}
     >
-      {loading && <LinearProgress />}
+      {loading && <LinearProgress color="primary" />}
 
       <Stack
         direction={{ xs: "column", md: "row" }}
@@ -228,7 +201,7 @@ export default function EmployeeCalendarPage(): JSX.Element {
         justifyContent="space-between"
       >
         <Box>
-          <Typography variant="h5" fontWeight={900}>
+          <Typography variant="h5" fontWeight={900} color="primary">
             Mój terminarz
           </Typography>
           <Typography variant="body2" color="text.secondary">
@@ -236,7 +209,7 @@ export default function EmployeeCalendarPage(): JSX.Element {
           </Typography>
         </Box>
 
-        <Button variant="outlined" onClick={() => void loadAppointments()} disabled={busy}>
+        <Button variant="outlined" color="primary" onClick={() => void loadAppointments()} disabled={busy}>
           Odśwież
         </Button>
       </Stack>
@@ -247,7 +220,33 @@ export default function EmployeeCalendarPage(): JSX.Element {
         </Alert>
       )}
 
-      <Paper variant="outlined" sx={{ p: { xs: 1, sm: 2 }, borderRadius: 2 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: { xs: 1, sm: 2 },
+          borderRadius: 2,
+          // CSS Override dla FullCalendar, aby pasował do różowego motywu
+          "& .fc": {
+            "--fc-today-bg-color": "rgba(216, 27, 96, 0.05)",
+            "--fc-now-indicator-color": theme.palette.primary.main,
+            "--fc-border-color": "rgba(216, 27, 96, 0.12)",
+          },
+          "& .fc-button-primary": {
+            backgroundColor: theme.palette.primary.main,
+            borderColor: theme.palette.primary.main,
+          },
+          "& .fc-button-primary:hover": {
+            backgroundColor: theme.palette.secondary.main,
+          },
+          "& .fc-event": {
+            cursor: "pointer",
+            borderRadius: "6px",
+            border: "none",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+            padding: "2px",
+          }
+        }}
+      >
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridWeek"
@@ -273,74 +272,46 @@ export default function EmployeeCalendarPage(): JSX.Element {
         />
       </Paper>
 
-      {/* =========================
-         MODAL
-         ========================= */}
+      {/* MODAL I SNACKBAR BEZ ZMIAN (UŻYWAJĄ JUŻ PRIMARY) */}
+      {/* ... reszta kodu Dialogu ... */}
       <Dialog open={modalOpen} onClose={closeModal} maxWidth="xs" fullWidth>
-        <DialogTitle>Szczegóły wizyty</DialogTitle>
-
+        <DialogTitle sx={{ fontWeight: 800, color: 'primary.main' }}>Szczegóły wizyty</DialogTitle>
         <DialogContent dividers>
           {!selectedAppt ? (
-            <Typography variant="body2" color="text.secondary">
-              Brak danych wizyty.
-            </Typography>
+            <Typography variant="body2" color="text.secondary">Brak danych wizyty.</Typography>
           ) : (
             <Stack spacing={2} sx={{ mt: 0.5 }}>
               <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Usługa
-                </Typography>
-                <Typography variant="h6" fontWeight={900}>
-                  {selectedAppt.service_name}
-                </Typography>
+                <Typography variant="caption" color="text.secondary">Usługa</Typography>
+                <Typography variant="h6" fontWeight={900}>{selectedAppt.service_name}</Typography>
               </Box>
-
               <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Klient
-                </Typography>
-                <Typography variant="body1" fontWeight={600}>
-                  {selectedAppt.client_name ?? "—"}
-                </Typography>
+                <Typography variant="caption" color="text.secondary">Klient</Typography>
+                <Typography variant="body1" fontWeight={600}>{selectedAppt.client_name ?? "—"}</Typography>
               </Box>
-
               <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Termin
-                </Typography>
+                <Typography variant="caption" color="text.secondary">Termin</Typography>
                 <Typography variant="body1">
                   {formatPL(selectedAppt.start)} – {formatPL(selectedAppt.end)}
                 </Typography>
               </Box>
-
               <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Status
-                </Typography>
+                <Typography variant="caption" color="text.secondary">Status</Typography>
                 <Box sx={{ mt: 0.5 }}>
                   <Chip
                     label={selectedAppt.status_display || statusLabel(selectedAppt.status)}
                     size="small"
                     color={statusChipColor(selectedAppt.status)}
                     variant="outlined"
+                    sx={{ fontWeight: 700 }}
                   />
                 </Box>
               </Box>
-
-              {(canConfirm || canComplete || canCancel || canNoShow) ? null : (
-                <Alert severity="info" sx={{ mb: 0 }}>
-                  Dla tej wizyty nie ma dostępnych akcji.
-                </Alert>
-              )}
             </Stack>
           )}
         </DialogContent>
-
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={closeModal} disabled={busyAction}>
-            Zamknij
-          </Button>
-
+          <Button onClick={closeModal} disabled={busyAction}>Zamknij</Button>
           {selectedAppt && (
             <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
               {canConfirm && (
@@ -348,52 +319,37 @@ export default function EmployeeCalendarPage(): JSX.Element {
                   variant="contained"
                   onClick={() => void handleAction(appointmentsApi.confirm, "Wizyta potwierdzona.")}
                   disabled={busyAction}
-                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
-                >
-                  Potwierdź
-                </Button>
+                >Potwierdź</Button>
               )}
-
               {canComplete && (
                 <Button
                   variant="contained"
                   color="success"
                   onClick={() => void handleAction(appointmentsApi.complete, "Wizyta zakończona.")}
                   disabled={busyAction}
-                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
-                >
-                  Zakończ
-                </Button>
+                >Zakończ</Button>
               )}
-
               {canCancel && (
                 <Button
                   variant="outlined"
                   color="error"
                   onClick={() => void handleAction(appointmentsApi.cancel, "Wizyta anulowana.")}
                   disabled={busyAction}
-                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
-                >
-                  Anuluj
-                </Button>
+                >Anuluj</Button>
               )}
-
               {canNoShow && (
                 <Button
                   variant="contained"
                   color="error"
                   onClick={() => void handleAction(appointmentsApi.noShow, "Ustawiono no-show.")}
                   disabled={busyAction}
-                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
-                >
-                  No-show
-                </Button>
+                >No-show</Button>
               )}
             </Stack>
           )}
         </DialogActions>
       </Dialog>
-
+      {/* ... reszta kodu Snackbar ... */}
       <Snackbar
         open={snack.open}
         autoHideDuration={3000}

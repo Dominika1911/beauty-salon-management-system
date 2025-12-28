@@ -146,7 +146,7 @@ function mapEmployeeCreateMessage(msg: string): string {
     m.includes("login") &&
     (m.includes("nie można wygenerować") ||
       m.includes("nie mozna wygenerowac") ||
-      m.includes("unikaln") ||
+      m.includes("unikalny") ||
       m.includes("już istnieje") ||
       m.includes("istnieje"));
 

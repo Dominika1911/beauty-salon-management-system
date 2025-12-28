@@ -239,19 +239,23 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             ),
         )
 
-        service_id = self.request.query_params.get("service_id")
-        if service_id:
-            try:
-                sid = int(service_id)
-            except (TypeError, ValueError):
-                raise ValidationError({"service_id": "Nieprawidłowa wartość. Oczekiwano liczby całkowitej."})
-            qs = qs.filter(skills__id=sid).distinct()
-
         user = self.request.user
 
-        if user and user.is_authenticated and hasattr(user, "role") and user.role == "CLIENT":
+        if not user.is_authenticated or not hasattr(user, "role"):
+            return qs.none()
+
+        # CLIENT → tylko aktywni
+        if user.role == "CLIENT":
             return qs.filter(is_active=True)
 
+        #  EMPLOYEE → tylko swój profil
+        if user.role == "EMPLOYEE":
+            emp = getattr(user, "employee_profile", None)
+            if not emp:
+                return qs.none()
+            return qs.filter(pk=emp.pk)
+
+        # ADMIN → wszystko
         return qs
 
     def get_permissions(self):
@@ -626,18 +630,18 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         qs = self.filter_queryset(self.get_queryset())
 
         page = self.paginate_queryset(qs)
-        if page is None:
-            # ✅ nie 500; to jest błąd konfiguracji / oczekiwań endpointu
-            raise ValidationError({"detail": "Pagination is required for this endpoint."})
+        if page is not None:
+            ser = AppointmentSerializer(page, many=True, context={"request": request})
+            return self.get_paginated_response(ser.data)
 
-        ser = AppointmentSerializer(page, many=True, context={"request": request})
-        return self.get_paginated_response(ser.data)
+        ser = AppointmentSerializer(qs, many=True, context={"request": request})
+        return Response(ser.data)
 
     @action(detail=True, methods=["post"], url_path="confirm")
     @transaction.atomic
     def confirm(self, request, pk=None):
         # ✅ kluczowe: bierzemy obiekt z get_queryset() -> znika IDOR
-        appt = self.get_queryset().select_for_update().get(pk=pk)
+        appt = Appointment.objects.select_for_update().get(pk=pk)
         self.check_object_permissions(request, appt)
 
         if appt.status != Appointment.Status.PENDING:
@@ -666,7 +670,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="cancel")
     @transaction.atomic
     def cancel(self, request, pk=None):
-        appt = self.get_queryset().select_for_update().get(pk=pk)
+        # Dodaj parametr of=('self',)
+        appt = self.get_queryset().select_for_update(of=('self',)).get(pk=pk)
         self.check_object_permissions(request, appt)
 
         if appt.status == Appointment.Status.CANCELLED:
