@@ -1,49 +1,22 @@
-// src/api/reports.ts
 import axiosInstance from "@/api/axios";
+// importujemy wspólne typy z centralnego pliku, aby uniknąć duplikacji
+import type { 
+  ReportType, 
+  RevenueGroupBy, 
+  RevenueReport, 
+  AvailableReport 
+} from "@/types";
 
 /**
- * Typy raportów dostępne w backendzie
- * (jeśli backend doda nowe, możesz:
- *  - dopisać tutaj
- *  - albo w UI budować listę dynamicznie z reportsApi.list()
+ * Re-eksportujemy typy, aby komponenty (np. ReportsPage) 
+ * nadal mogły je importować z tego pliku bez błędów.
  */
-export type ReportType = "revenue" | "employees" | "clients" | "today";
-
-/**
- * ===== REVENUE REPORT =====
- */
-export type RevenueGroupBy = "day" | "month";
-
-export interface RevenueData {
-  period: string;
-  revenue: number;
-  appointments_count: number;
-}
-
-export interface RevenueReportSummary {
-  total_revenue: number;
-  total_appointments: number;
-  average_per_appointment: number;
-}
-
-export interface RevenueReportResponse {
-  range: { from: string; to: string };
-  group_by: RevenueGroupBy;
-  summary: RevenueReportSummary;
-  data: RevenueData[];
-}
-
-/**
- * ===== AVAILABLE REPORTS =====
- */
-export interface AvailableReport {
-  type: ReportType;
-  description: string;
-}
+export type { ReportType, RevenueGroupBy, AvailableReport };
+export type RevenueReportResponse = RevenueReport;
 
 /**
  * ===== PARAMS (per-report) =====
- * Dopasuj do backendu: najczęściej date_from/date_to, czasem group_by.
+ * Parametry specyficzne dla zapytań API (nie muszą być w globalnych types).
  */
 export type CommonReportParams = {
   date_from?: string; // YYYY-MM-DD
@@ -54,38 +27,28 @@ export type RevenueReportParams = CommonReportParams & {
   group_by?: RevenueGroupBy;
 };
 
-// Jeśli backend ma parametry dla innych raportów — dodaj tu:
-export type EmployeesReportParams = CommonReportParams;
-export type ClientsReportParams = CommonReportParams;
-export type TodayReportParams = {}; // zwykle bez parametrów
-
+// Mapowanie parametrów dla poszczególnych typów raportów
 type ReportParamsByType = {
   revenue: RevenueReportParams;
-  employees: EmployeesReportParams;
-  clients: ClientsReportParams;
-  today: TodayReportParams;
+  employees: CommonReportParams;
+  clients: CommonReportParams;
+  today: Record<string, never>; // Pusty obiekt dla raportu "na dziś"
 };
 
+// Mapowanie odpowiedzi dla poszczególnych typów raportów
 type ReportResponseByType = {
   revenue: RevenueReportResponse;
-  // Jeśli backend zwraca konkretne struktury dla pozostałych raportów,
-  // warto je dopisać zamiast unknown:
-  employees: unknown;
+  employees: unknown; 
   clients: unknown;
   today: unknown;
 };
 
 /**
- * ===== PDF helper =====
- * Jeśli backend zwraca Content-Disposition: attachment; filename="..."
- * to wyciągniemy filename.
+ * Pomocnik do wyciągania nazwy pliku z nagłówka Content-Disposition.
  */
 function tryGetFilenameFromContentDisposition(headerValue?: string): string | null {
   if (!headerValue) return null;
 
-  // przykłady:
-  // attachment; filename="report.pdf"
-  // attachment; filename=report.pdf
   const match =
     /filename\*=UTF-8''([^;]+)|filename="([^"]+)"|filename=([^;]+)/i.exec(headerValue);
 
@@ -95,7 +58,7 @@ function tryGetFilenameFromContentDisposition(headerValue?: string): string | nu
 
 export const reportsApi = {
   /**
-   * GET /api/reports/
+   * Pobiera listę dostępnych raportów zdefiniowanych na backendzie.
    */
   list: async (): Promise<{ available_reports: AvailableReport[] }> => {
     const response = await axiosInstance.get<{ available_reports: AvailableReport[] }>("/reports/");
@@ -103,9 +66,7 @@ export const reportsApi = {
   },
 
   /**
-   * GET /api/reports/{type}/
-   *
-   * Overloady: TS wie co zwraca dla danego reportType.
+   * Generyczna metoda pobierania danych raportu.
    */
   get: async <T extends ReportType>(
     reportType: T,
@@ -118,9 +79,7 @@ export const reportsApi = {
   },
 
   /**
-   * GET /api/reports/{type}/pdf/
-   *
-   * Zwracamy blob + opcjonalnie filename (jeśli backend daje w headerach).
+   * Pobiera raport w formacie PDF jako Blob.
    */
   pdf: async <T extends ReportType>(
     reportType: T,
@@ -131,6 +90,7 @@ export const reportsApi = {
       responseType: "blob",
     });
 
+    // Obsługa różnych wielkości liter w nagłówkach
     const contentDisposition =
       (response.headers?.["content-disposition"] as string | undefined) ||
       (response.headers?.["Content-Disposition"] as string | undefined);
@@ -141,8 +101,7 @@ export const reportsApi = {
   },
 
   /**
-   * Convenience: revenue (najczęściej używany)
-   * GET /api/reports/revenue/
+   * Skrócona metoda dedykowana dla raportu przychodów.
    */
   getRevenue: async (params?: RevenueReportParams): Promise<RevenueReportResponse> => {
     const response = await axiosInstance.get<RevenueReportResponse>("/reports/revenue/", { params });

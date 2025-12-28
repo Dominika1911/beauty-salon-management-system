@@ -5,23 +5,38 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   Divider,
   Grid,
   IconButton,
+  LinearProgress,
+  Snackbar,
   Stack,
   TextField,
   Typography,
-  Chip,
 } from "@mui/material";
+import type { AlertColor } from "@mui/material/Alert";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import SaveIcon from "@mui/icons-material/Save";
 
 import { systemSettingsApi } from "@/api/systemSettings";
 import type { SystemSettings } from "@/types";
+import { parseDrfError, pickFieldErrors } from "@/utils/drfErrors";
 
 type DayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+type Slot = { start: string; end: string };
+type OpeningHours = Record<DayKey, Slot[]>;
+
+type SnackState = {
+  open: boolean;
+  msg: string;
+  severity: AlertColor;
+};
+
+type BasicFieldKey = "salon_name" | "slot_minutes" | "buffer_minutes";
+type BasicFieldErrors = Partial<Record<BasicFieldKey, string>>;
 
 const DAYS: Array<{ key: DayKey; label: string }> = [
   { key: "mon", label: "Poniedziałek" },
@@ -33,24 +48,41 @@ const DAYS: Array<{ key: DayKey; label: string }> = [
   { key: "sun", label: "Niedziela" },
 ];
 
-function ensureOpeningHours(
-  oh: SystemSettings["opening_hours"] | undefined
-): Record<DayKey, Array<{ start: string; end: string }>> {
-  const base: Record<DayKey, Array<{ start: string; end: string }>> = {
-    mon: [],
-    tue: [],
-    wed: [],
-    thu: [],
-    fri: [],
-    sat: [],
-    sun: [],
-  };
+const emptyOpeningHours: OpeningHours = {
+  mon: [],
+  tue: [],
+  wed: [],
+  thu: [],
+  fri: [],
+  sat: [],
+  sun: [],
+};
+
+const emptyBasicTemplate: Record<BasicFieldKey, string> = {
+  salon_name: "",
+  slot_minutes: "",
+  buffer_minutes: "",
+};
+
+function ensureOpeningHours(oh: SystemSettings["opening_hours"] | undefined): OpeningHours {
+  const base: OpeningHours = { ...emptyOpeningHours };
 
   if (!oh || typeof oh !== "object") return base;
 
+  const rec = oh as Record<string, unknown>;
   for (const day of Object.keys(base) as DayKey[]) {
-    const arr = (oh as any)[day];
-    if (Array.isArray(arr)) base[day] = arr;
+    const v = rec[day];
+    if (Array.isArray(v)) {
+      base[day] = v
+        .filter((x) => typeof x === "object" && x !== null)
+        .map((x) => {
+          const obj = x as Record<string, unknown>;
+          return {
+            start: typeof obj.start === "string" ? obj.start : "09:00",
+            end: typeof obj.end === "string" ? obj.end : "17:00",
+          };
+        });
+    }
   }
 
   return base;
@@ -61,62 +93,40 @@ function isValidTime(t: string) {
 }
 
 function timeToMinutes(t: string) {
-  const [h, m] = t.split(":").map(Number);
+  const [h, m] = t.split(":").map((n) => Number(n));
   return h * 60 + m;
-}
-
-function errMsg(e: any) {
-  const d = e?.response?.data;
-  if (typeof d?.detail === "string") return d.detail;
-  if (d && typeof d === "object") {
-    const k = Object.keys(d)[0];
-    const v = d[k];
-    if (Array.isArray(v) && v.length) return String(v[0]);
-    if (typeof v === "string") return v;
-  }
-  return e?.message || "Błąd";
 }
 
 const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
-  const [openingHours, setOpeningHours] = useState<
-    Record<DayKey, Array<{ start: string; end: string }>>
-  >({
-    mon: [],
-    tue: [],
-    wed: [],
-    thu: [],
-    fri: [],
-    sat: [],
-    sun: [],
-  });
+  const [openingHours, setOpeningHours] = useState<OpeningHours>({ ...emptyOpeningHours });
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+
+  // komunikaty wg standardu
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<BasicFieldErrors>({});
+  const [snack, setSnack] = useState<SnackState>({ open: false, msg: "", severity: "success" });
+
+  const busy = loading || saving;
 
   const load = async () => {
     try {
-      setError(null);
-      setMsg(null);
+      setPageError(null);
+      setFormError(null);
+      setFieldErrors({});
       setLoading(true);
 
       const data = await systemSettingsApi.get();
       setSettings(data);
       setOpeningHours(ensureOpeningHours(data.opening_hours));
-    } catch (e: any) {
-      setError(errMsg(e) || "Nie udało się pobrać ustawień systemowych.");
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się pobrać ustawień systemowych.");
       setSettings(null);
-      setOpeningHours({
-        mon: [],
-        tue: [],
-        wed: [],
-        thu: [],
-        fri: [],
-        sat: [],
-        sun: [],
-      });
+      setOpeningHours({ ...emptyOpeningHours });
     } finally {
       setLoading(false);
     }
@@ -127,15 +137,23 @@ const SettingsPage: React.FC = () => {
   }, []);
 
   const handleBasicChange =
-    (field: "salon_name" | "slot_minutes" | "buffer_minutes") =>
+    (field: BasicFieldKey) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (!settings) return;
+
       const raw = e.target.value;
 
-      setSettings({
-        ...settings,
-        [field]: field === "salon_name" ? raw : Number(raw),
-      } as SystemSettings);
+      setSettings((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          [field]: field === "salon_name" ? raw : Number(raw),
+        } as SystemSettings;
+      });
+
+      // po edycji pola czyścimy błąd pola
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+      setFormError(null);
     };
 
   const addSlot = (day: DayKey) => {
@@ -143,6 +161,7 @@ const SettingsPage: React.FC = () => {
       ...prev,
       [day]: [...prev[day], { start: "09:00", end: "17:00" }],
     }));
+    setFormError(null);
   };
 
   const removeSlot = (day: DayKey, idx: number) => {
@@ -150,23 +169,28 @@ const SettingsPage: React.FC = () => {
       ...prev,
       [day]: prev[day].filter((_, i) => i !== idx),
     }));
+    setFormError(null);
   };
 
   const updateSlot = (day: DayKey, idx: number, field: "start" | "end", value: string) => {
     setOpeningHours((prev) => {
-      const next = { ...prev };
+      const next: OpeningHours = { ...prev };
       next[day] = next[day].map((slot, i) => (i === idx ? { ...slot, [field]: value } : slot));
       return next;
     });
+    setFormError(null);
   };
 
   const validationMessage = useMemo(() => {
     if (settings) {
       if (Number.isNaN(Number(settings.slot_minutes)) || Number(settings.slot_minutes) < 5) {
-        return "Długość slotu musi być liczbą >= 5.";
+        return "Długość slotu musi być liczbą ≥ 5.";
       }
       if (Number.isNaN(Number(settings.buffer_minutes)) || Number(settings.buffer_minutes) < 0) {
-        return "Bufor musi być liczbą >= 0.";
+        return "Bufor musi być liczbą ≥ 0.";
+      }
+      if (!String(settings.salon_name ?? "").trim()) {
+        return "Nazwa salonu nie może być pusta.";
       }
     }
 
@@ -189,8 +213,9 @@ const SettingsPage: React.FC = () => {
     if (!settings) return;
 
     try {
-      setError(null);
-      setMsg(null);
+      setFormError(null);
+      setPageError(null);
+      setFieldErrors({});
       setSaving(true);
 
       const payload = {
@@ -204,9 +229,19 @@ const SettingsPage: React.FC = () => {
 
       setSettings(saved);
       setOpeningHours(ensureOpeningHours(saved.opening_hours));
-      setMsg("Ustawienia zapisane.");
-    } catch (e: any) {
-      setError(errMsg(e) || "Błąd podczas zapisywania ustawień.");
+
+      setSnack({ open: true, msg: "Ustawienia zapisane.", severity: "success" });
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+
+      const picked = pickFieldErrors(parsed.fieldErrors, emptyBasicTemplate);
+      if (Object.keys(picked).length) {
+        setFieldErrors(picked);
+      }
+
+      setFormError(
+        parsed.message || (Object.keys(picked).length ? "Popraw błędy w formularzu." : "Błąd podczas zapisywania ustawień.")
+      );
     } finally {
       setSaving(false);
     }
@@ -222,7 +257,12 @@ const SettingsPage: React.FC = () => {
 
   if (!settings) {
     return (
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ width: "100%", maxWidth: 1100, mx: "auto", p: { xs: 2, sm: 3 } }}>
+        {pageError && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setPageError(null)}>
+            {pageError}
+          </Alert>
+        )}
         <Alert severity="warning">Brak danych ustawień.</Alert>
         <Box sx={{ mt: 2 }}>
           <Button variant="outlined" onClick={() => void load()}>
@@ -234,168 +274,253 @@ const SettingsPage: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Ustawienia systemowe
-      </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {msg && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setMsg(null)}>
-          {msg}
-        </Alert>
-      )}
-
-      {validationMessage && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          {validationMessage}
-        </Alert>
-      )}
-
-      <Card>
-        <CardContent>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Nazwa salonu"
-                value={settings.salon_name ?? ""}
-                onChange={handleBasicChange("salon_name")}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <TextField
-                fullWidth
-                label="Długość slotu (min)"
-                type="number"
-                inputProps={{ min: 5, step: 5 }}
-                value={settings.slot_minutes ?? 30}
-                onChange={handleBasicChange("slot_minutes")}
-              />
-            </Grid>
-
-            <Grid item xs={12} md={3}>
-              <TextField
-                fullWidth
-                label="Bufor między wizytami (min)"
-                type="number"
-                inputProps={{ min: 0, step: 5 }}
-                value={settings.buffer_minutes ?? 0}
-                onChange={handleBasicChange("buffer_minutes")}
-              />
-            </Grid>
-          </Grid>
-
-          <Divider sx={{ my: 2 }} />
-
-          <Typography variant="h6" gutterBottom>
-            Godziny otwarcia
+    <Stack spacing={2} sx={{ width: "100%", maxWidth: 1100, mx: "auto", p: { xs: 2, sm: 3 } }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", sm: "center" },
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
+        <Box>
+          <Typography variant="h5" fontWeight={900}>
+            Ustawienia systemowe
           </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Konfiguracja salonu oraz godzin otwarcia.
+          </Typography>
+        </Box>
 
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button variant="outlined" onClick={() => void load()} disabled={busy}>
+            Odśwież
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            disabled={!canSave || saving}
+            onClick={() => void handleSave()}
+          >
+            {saving ? "Zapisywanie..." : "Zapisz"}
+          </Button>
+        </Stack>
+      </Box>
+
+      {pageError && (
+        <Alert severity="error" onClose={() => setPageError(null)}>
+          {pageError}
+        </Alert>
+      )}
+
+      <Card variant="outlined" sx={{ position: "relative" }}>
+        {saving && <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} />}
+        <CardContent sx={{ pt: saving ? 3 : 2 }}>
           <Stack spacing={2}>
-            {DAYS.map(({ key, label }) => {
-              const slots = openingHours[key];
-              const isClosed = slots.length === 0;
+            {formError && (
+              <Alert severity="error" onClose={() => setFormError(null)}>
+                {formError}
+              </Alert>
+            )}
 
-              return (
-                <Box key={key} sx={{ border: "1px solid #eee", borderRadius: 2, p: 2 }}>
-                  <Stack
-                    direction={{ xs: "column", md: "row" }}
-                    justifyContent="space-between"
-                    alignItems={{ xs: "flex-start", md: "center" }}
-                    spacing={1}
-                    sx={{ mb: 1 }}
+            {validationMessage && <Alert severity="warning">{validationMessage}</Alert>}
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Nazwa salonu"
+                  value={settings.salon_name ?? ""}
+                  onChange={handleBasicChange("salon_name")}
+                  disabled={busy}
+                  error={Boolean(fieldErrors.salon_name)}
+                  helperText={fieldErrors.salon_name || " "}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <TextField
+                  fullWidth
+                  label="Długość slotu (min)"
+                  type="number"
+                  inputProps={{ min: 5, step: 5 }}
+                  value={settings.slot_minutes ?? 30}
+                  onChange={handleBasicChange("slot_minutes")}
+                  disabled={busy}
+                  error={Boolean(fieldErrors.slot_minutes)}
+                  helperText={fieldErrors.slot_minutes || " "}
+                />
+              </Grid>
+
+              <Grid item xs={12} md={3}>
+                <TextField
+                  fullWidth
+                  label="Bufor między wizytami (min)"
+                  type="number"
+                  inputProps={{ min: 0, step: 5 }}
+                  value={settings.buffer_minutes ?? 0}
+                  onChange={handleBasicChange("buffer_minutes")}
+                  disabled={busy}
+                  error={Boolean(fieldErrors.buffer_minutes)}
+                  helperText={fieldErrors.buffer_minutes || " "}
+                />
+              </Grid>
+            </Grid>
+
+            <Divider />
+
+            <Box>
+              <Typography variant="h6" fontWeight={800} gutterBottom>
+                Godziny otwarcia
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Dodaj przedziały godzinowe dla dni otwartych. Jeśli dzień nie ma przedziałów — traktujemy go jako zamknięty.
+              </Typography>
+            </Box>
+
+            <Stack spacing={2}>
+              {DAYS.map(({ key, label }) => {
+                const slots = openingHours[key];
+                const isClosed = slots.length === 0;
+
+                return (
+                  <Box
+                    key={key}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "divider",
+                      borderRadius: 2,
+                      p: 2,
+                    }}
                   >
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="subtitle1">{label}</Typography>
-                      {isClosed && <Chip size="small" label="Zamknięte" />}
-                    </Stack>
-
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<AddIcon />}
-                      onClick={() => addSlot(key)}
+                    <Stack
+                      direction={{ xs: "column", md: "row" }}
+                      justifyContent="space-between"
+                      alignItems={{ xs: "flex-start", md: "center" }}
+                      spacing={1}
+                      sx={{ mb: 1.25 }}
                     >
-                      Dodaj przedział
-                    </Button>
-                  </Stack>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Typography variant="subtitle1" fontWeight={800}>
+                          {label}
+                        </Typography>
+                        {isClosed && <Chip size="small" label="Zamknięte" />}
+                        {!isClosed && <Chip size="small" variant="outlined" label={`${slots.length} przedz.`} />}
+                      </Stack>
 
-                  {slots.length === 0 ? (
-                    <Typography variant="body2" sx={{ color: "text.secondary" }}>
-                      Brak godzin — dzień jest zamknięty.
-                    </Typography>
-                  ) : (
-                    <Stack spacing={1}>
-                      {slots.map((slot, idx) => (
-                        <Stack
-                          key={`${key}-${idx}`}
-                          direction={{ xs: "column", md: "row" }}
-                          spacing={1}
-                          alignItems={{ xs: "stretch", md: "center" }}
-                        >
-                          <TextField
-                            label="Start"
-                            type="time"
-                            value={slot.start}
-                            onChange={(e) => updateSlot(key, idx, "start", e.target.value)}
-                            InputLabelProps={{ shrink: true }}
-                            inputProps={{ step: 300 }}
-                            error={!isValidTime(slot.start)}
-                            sx={{ width: { md: 180 } }}
-                          />
-                          <TextField
-                            label="Koniec"
-                            type="time"
-                            value={slot.end}
-                            onChange={(e) => updateSlot(key, idx, "end", e.target.value)}
-                            InputLabelProps={{ shrink: true }}
-                            inputProps={{ step: 300 }}
-                            error={!isValidTime(slot.end)}
-                            sx={{ width: { md: 180 } }}
-                          />
-
-                          <IconButton
-                            aria-label="Usuń przedział"
-                            color="error"
-                            onClick={() => removeSlot(key, idx)}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </Stack>
-                      ))}
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<AddIcon />}
+                        onClick={() => addSlot(key)}
+                        disabled={busy}
+                      >
+                        Dodaj przedział
+                      </Button>
                     </Stack>
-                  )}
-                </Box>
-              );
-            })}
-          </Stack>
 
-          <Divider sx={{ my: 2 }} />
+                    {slots.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Brak godzin — dzień jest zamknięty.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={1}>
+                        {slots.map((slot, idx) => {
+                          const badStart = !isValidTime(slot.start);
+                          const badEnd = !isValidTime(slot.end);
+                          const badOrder =
+                            isValidTime(slot.start) && isValidTime(slot.end) && timeToMinutes(slot.start) >= timeToMinutes(slot.end);
 
-          <Stack direction="row" spacing={2}>
-            <Button
-              variant="contained"
-              startIcon={<SaveIcon />}
-              disabled={!canSave || saving}
-              onClick={() => void handleSave()}
-            >
-              {saving ? "Zapisywanie..." : "Zapisz"}
-            </Button>
+                          const helper =
+                            badStart || badEnd
+                              ? "Format HH:MM (np. 09:00)"
+                              : badOrder
+                              ? "Start musi być wcześniej niż koniec"
+                              : " ";
 
-            <Button variant="outlined" onClick={() => void load()} disabled={saving}>
-              Odśwież
-            </Button>
+                          return (
+                            <Stack
+                              key={`${key}-${idx}`}
+                              direction={{ xs: "column", sm: "row" }}
+                              spacing={1}
+                              alignItems={{ xs: "stretch", sm: "center" }}
+                            >
+                              <TextField
+                                label="Start"
+                                type="time"
+                                value={slot.start}
+                                onChange={(e) => updateSlot(key, idx, "start", e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ step: 300 }}
+                                disabled={busy}
+                                error={badStart || badOrder}
+                                helperText={helper}
+                                sx={{ width: { sm: 200 } }}
+                              />
+                              <TextField
+                                label="Koniec"
+                                type="time"
+                                value={slot.end}
+                                onChange={(e) => updateSlot(key, idx, "end", e.target.value)}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ step: 300 }}
+                                disabled={busy}
+                                error={badEnd || badOrder}
+                                helperText={helper}
+                                sx={{ width: { sm: 200 } }}
+                              />
+
+                              <Box sx={{ display: "flex", alignItems: "center", justifyContent: { xs: "flex-end", sm: "flex-start" } }}>
+                                <IconButton
+                                  aria-label="Usuń przedział"
+                                  color="error"
+                                  onClick={() => removeSlot(key, idx)}
+                                  disabled={busy}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              </Box>
+                            </Stack>
+                          );
+                        })}
+                      </Stack>
+                    )}
+                  </Box>
+                );
+              })}
+            </Stack>
+
+            <Divider />
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+              <Button variant="outlined" onClick={() => void load()} disabled={busy}>
+                Odśwież
+              </Button>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                disabled={!canSave || saving}
+                onClick={() => void handleSave()}
+              >
+                {saving ? "Zapisywanie..." : "Zapisz"}
+              </Button>
+            </Stack>
           </Stack>
         </CardContent>
       </Card>
-    </Box>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3200}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
+    </Stack>
   );
 };
 

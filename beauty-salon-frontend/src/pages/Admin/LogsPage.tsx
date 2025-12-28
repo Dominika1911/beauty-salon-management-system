@@ -6,9 +6,13 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Divider,
   FormControl,
+  Grid,
   InputLabel,
+  LinearProgress,
   MenuItem,
+  Pagination,
   Paper,
   Select,
   Stack,
@@ -24,6 +28,7 @@ import {
 
 import type { DRFPaginated, SystemLog } from "@/types";
 import { auditLogsApi } from "@/api/auditLogs";
+import { parseDrfError } from "@/utils/drfErrors";
 
 type ActionGroup =
   | "ALL"
@@ -33,6 +38,8 @@ type ActionGroup =
   | "SETTINGS"
   | "USERS"
   | "OTHER";
+
+type Ordering = "timestamp" | "-timestamp";
 
 function groupFromAction(action: string): ActionGroup {
   const a = (action || "").toLowerCase();
@@ -71,36 +78,46 @@ function niceActor(s: string | null) {
   return s.replace(/^(.+?)-0+(\d+)$/, "$1-$2");
 }
 
-function getErrorMessage(err: unknown): string {
-  const e = err as any;
-  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
-}
+const GROUP_LABEL: Record<ActionGroup, string> = {
+  ALL: "Wszystkie",
+  AUTH: "Logowanie",
+  APPOINTMENTS: "Wizyty",
+  TIMEOFF: "Urlopy",
+  SETTINGS: "Ustawienia",
+  USERS: "Użytkownicy",
+  OTHER: "Inne",
+};
 
 export default function LogsPage(): JSX.Element {
   const [data, setData] = useState<DRFPaginated<SystemLog> | null>(null);
-  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
 
-  // backend filters (prawdziwe)
-  const [actionFilter, setActionFilter] = useState<string>(""); // action code, np. AUTH_LOGIN
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | null>(null);
+
+  // applied filters (backend + UI)
+  const [actionFilter, setActionFilter] = useState<string>("");
   const [performedBy, setPerformedBy] = useState<number | "">("");
   const [targetUser, setTargetUser] = useState<number | "">("");
-  const [ordering, setOrdering] = useState<"timestamp" | "-timestamp">("-timestamp");
+  const [ordering, setOrdering] = useState<Ordering>("-timestamp");
 
-  // frontend filter (bo backend nie ma SearchFilter)
-  const [group, setGroup] = useState<ActionGroup>("ALL");
-  const [search, setSearch] = useState("");
+  const [group, setGroup] = useState<ActionGroup>("ALL"); // UI only
+  const [search, setSearch] = useState(""); // UI only (filters current page)
 
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  // draft filters (UX: no auto-request while typing)
+  const [draftActionFilter, setDraftActionFilter] = useState<string>("");
+  const [draftPerformedBy, setDraftPerformedBy] = useState<number | "">("");
+  const [draftTargetUser, setDraftTargetUser] = useState<number | "">("");
+  const [draftOrdering, setDraftOrdering] = useState<Ordering>("-timestamp");
+  const [draftGroup, setDraftGroup] = useState<ActionGroup>("ALL");
+  const [draftSearch, setDraftSearch] = useState("");
 
-  // reset page when backend filters change
-  useEffect(() => {
-    setPage(1);
-  }, [actionFilter, performedBy, targetUser, ordering]);
+  const busy = loading;
 
   const load = useCallback(async () => {
     setLoading(true);
-    setErr("");
+    setPageError(null);
 
     try {
       const res = await auditLogsApi.list({
@@ -112,8 +129,12 @@ export default function LogsPage(): JSX.Element {
       });
 
       setData(res);
-    } catch (e) {
-      setErr(getErrorMessage(e));
+
+      const len = res.results?.length ?? 0;
+      if (len > 0) setPageSize((p) => p ?? len);
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się pobrać logów. Spróbuj ponownie.");
       setData({ count: 0, next: null, previous: null, results: [] });
     } finally {
       setLoading(false);
@@ -124,10 +145,98 @@ export default function LogsPage(): JSX.Element {
     void load();
   }, [load]);
 
+  // keep draft synced
+  useEffect(() => {
+    setDraftActionFilter(actionFilter);
+    setDraftPerformedBy(performedBy);
+    setDraftTargetUser(targetUser);
+    setDraftOrdering(ordering);
+    setDraftGroup(group);
+    setDraftSearch(search);
+  }, [actionFilter, performedBy, targetUser, ordering, group, search]);
+
+  const hasUnappliedChanges = useMemo(() => {
+    return (
+      draftActionFilter !== actionFilter ||
+      draftPerformedBy !== performedBy ||
+      draftTargetUser !== targetUser ||
+      draftOrdering !== ordering ||
+      draftGroup !== group ||
+      draftSearch !== search
+    );
+  }, [
+    draftActionFilter,
+    actionFilter,
+    draftPerformedBy,
+    performedBy,
+    draftTargetUser,
+    targetUser,
+    draftOrdering,
+    ordering,
+    draftGroup,
+    group,
+    draftSearch,
+    search,
+  ]);
+
+  const hasActiveFiltersDraft = useMemo(() => {
+    return (
+      Boolean(draftActionFilter.trim()) ||
+      draftPerformedBy !== "" ||
+      draftTargetUser !== "" ||
+      draftOrdering !== "-timestamp" ||
+      draftGroup !== "ALL" ||
+      Boolean(draftSearch.trim())
+    );
+  }, [
+    draftActionFilter,
+    draftPerformedBy,
+    draftTargetUser,
+    draftOrdering,
+    draftGroup,
+    draftSearch,
+  ]);
+
+  const hasActiveFiltersApplied = useMemo(() => {
+    return (
+      Boolean(actionFilter.trim()) ||
+      performedBy !== "" ||
+      targetUser !== "" ||
+      ordering !== "-timestamp" ||
+      group !== "ALL" ||
+      Boolean(search.trim())
+    );
+  }, [actionFilter, performedBy, targetUser, ordering, group, search]);
+
+  const applyFilters = () => {
+    setPage(1);
+    setActionFilter(draftActionFilter);
+    setPerformedBy(draftPerformedBy);
+    setTargetUser(draftTargetUser);
+    setOrdering(draftOrdering);
+    setGroup(draftGroup);
+    setSearch(draftSearch);
+  };
+
+  const resetFilters = () => {
+    setDraftActionFilter("");
+    setDraftPerformedBy("");
+    setDraftTargetUser("");
+    setDraftOrdering("-timestamp");
+    setDraftGroup("ALL");
+    setDraftSearch("");
+
+    setPage(1);
+    setActionFilter("");
+    setPerformedBy("");
+    setTargetUser("");
+    setOrdering("-timestamp");
+    setGroup("ALL");
+    setSearch("");
+  };
+
   const rows = useMemo(() => {
     const base = data?.results ?? [];
-
-    // FRONTEND group + search (na aktualnej stronie paginacji)
     const s = search.trim().toLowerCase();
 
     return base.filter((l) => {
@@ -151,211 +260,305 @@ export default function LogsPage(): JSX.Element {
     });
   }, [data, group, search]);
 
-  const canPrev = Boolean(data?.previous) && !loading;
-  const canNext = Boolean(data?.next) && !loading;
+  const totalPages = useMemo(() => {
+    const count = data?.count ?? 0;
+    const size = pageSize ?? (data?.results?.length ? data.results.length : 10);
+    if (size <= 0) return 1;
+    return Math.max(1, Math.ceil(count / size));
+  }, [data, pageSize]);
+
+  const emptyInfo = useMemo(() => {
+    if (loading) return null;
+
+    const baseLen = data?.results?.length ?? 0;
+    if (baseLen === 0) {
+      if (hasActiveFiltersApplied) return "Brak logów dla wybranych filtrów.";
+      return "Brak logów.";
+    }
+
+    if (rows.length === 0) {
+      // backend dał wyniki, ale UI filtr (kategoria/szukaj) odciął wszystko na tej stronie
+      const hasUi = group !== "ALL" || Boolean(search.trim());
+      if (hasUi) {
+        const parts: string[] = [];
+        if (group !== "ALL") parts.push(`kategoria: ${GROUP_LABEL[group]}`);
+        if (search.trim()) parts.push(`szukaj: „${search.trim()}”`);
+        return `Brak wyników dla ${parts.join(", ")}.`;
+      }
+      return "Brak wyników.";
+    }
+
+    return null;
+  }, [loading, data, rows.length, hasActiveFiltersApplied, group, search]);
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Stack
-        direction={{ xs: "column", md: "row" }}
-        spacing={2}
-        alignItems={{ xs: "stretch", md: "center" }}
-        sx={{ mb: 2 }}
+    <Stack
+      spacing={2}
+      sx={{
+        width: "100%",
+        maxWidth: 1200,
+        mx: "auto",
+        px: { xs: 1, sm: 2 },
+        py: { xs: 2, sm: 3 },
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", sm: "center" },
+          gap: 2,
+          flexWrap: "wrap",
+        }}
       >
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h4" fontWeight={700}>
+        <Box>
+          <Typography variant="h5" fontWeight={900}>
             Logi operacji
           </Typography>
-          <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            DRF: paginacja + filtry backendowe (action / performed_by / target_user) + ordering po timestamp
-          </Typography>
-          <Typography variant="caption" sx={{ color: "text.secondary" }}>
-            Łącznie (backend): {data?.count ?? "—"} • Strona: {page}
+          <Typography variant="body2" color="text.secondary">
+            Historia działań w systemie — filtruj i przeglądaj zdarzenia.
           </Typography>
         </Box>
 
-        <Button variant="outlined" onClick={() => void load()} disabled={loading}>
-          Odśwież
-        </Button>
-      </Stack>
+        <Typography variant="body2" color="text.secondary">
+          Łącznie: {data?.count ?? "—"} • Strona: {page}
+        </Typography>
+      </Box>
 
-      {err && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setErr("")}>
-          {err}
+      {pageError && (
+        <Alert severity="error" onClose={() => setPageError(null)}>
+          {pageError}
         </Alert>
       )}
 
       {/* FILTERS */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack spacing={2} direction={{ xs: "column", md: "row" }} alignItems={{ md: "center" }}>
-          {/* Frontend group (UX) */}
-          <FormControl size="small" sx={{ minWidth: 190 }}>
-            <InputLabel>Kategoria (UI)</InputLabel>
-            <Select
-              label="Kategoria (UI)"
-              value={group}
-              onChange={(e) => setGroup(e.target.value as ActionGroup)}
-            >
-              <MenuItem value="ALL">Wszystkie</MenuItem>
-              <MenuItem value="AUTH">Logowanie</MenuItem>
-              <MenuItem value="APPOINTMENTS">Wizyty</MenuItem>
-              <MenuItem value="TIMEOFF">Urlopy</MenuItem>
-              <MenuItem value="SETTINGS">Ustawienia</MenuItem>
-              <MenuItem value="USERS">Użytkownicy</MenuItem>
-              <MenuItem value="OTHER">Inne</MenuItem>
-            </Select>
-          </FormControl>
+      <Paper variant="outlined" sx={{ p: 2, position: "relative" }}>
+        {loading && <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} />}
 
-          {/* Backend filters */}
-          <TextField
-            size="small"
-            label="action (backend)"
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            placeholder="np. AUTH_LOGIN"
-            sx={{ minWidth: 220 }}
-          />
+        <Stack spacing={2} sx={{ pt: loading ? 1 : 0 }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl size="small" fullWidth disabled={busy}>
+                <InputLabel>Kategoria</InputLabel>
+                <Select
+                  label="Kategoria"
+                  value={draftGroup}
+                  onChange={(e) => setDraftGroup(e.target.value as ActionGroup)}
+                >
+                  <MenuItem value="ALL">Wszystkie</MenuItem>
+                  <MenuItem value="AUTH">Logowanie</MenuItem>
+                  <MenuItem value="APPOINTMENTS">Wizyty</MenuItem>
+                  <MenuItem value="TIMEOFF">Urlopy</MenuItem>
+                  <MenuItem value="SETTINGS">Ustawienia</MenuItem>
+                  <MenuItem value="USERS">Użytkownicy</MenuItem>
+                  <MenuItem value="OTHER">Inne</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
 
-          <TextField
-            size="small"
-            label="performed_by (id)"
-            type="number"
-            value={performedBy}
-            onChange={(e) => setPerformedBy(e.target.value ? Number(e.target.value) : "")}
-            sx={{ width: 170 }}
-          />
+            <Grid item xs={12} sm={6} md={5}>
+              <TextField
+                size="small"
+                fullWidth
+                label="Akcja"
+                value={draftActionFilter}
+                onChange={(e) => setDraftActionFilter(e.target.value)}
+                placeholder="np. logowanie, appointment…"
+                disabled={busy}
+              />
+            </Grid>
 
-          <TextField
-            size="small"
-            label="target_user (id)"
-            type="number"
-            value={targetUser}
-            onChange={(e) => setTargetUser(e.target.value ? Number(e.target.value) : "")}
-            sx={{ width: 170 }}
-          />
+            <Grid item xs={12} sm={6} md={2}>
+              <TextField
+                size="small"
+                fullWidth
+                label="Wykonał (ID)"
+                type="number"
+                value={draftPerformedBy}
+                onChange={(e) => setDraftPerformedBy(e.target.value ? Number(e.target.value) : "")}
+                disabled={busy}
+              />
+            </Grid>
 
-          <FormControl size="small" sx={{ minWidth: 190 }}>
-            <InputLabel>ordering (backend)</InputLabel>
-            <Select
-              label="ordering (backend)"
-              value={ordering}
-              onChange={(e) => setOrdering(e.target.value as any)}
-            >
-              <MenuItem value="-timestamp">-timestamp (najnowsze)</MenuItem>
-              <MenuItem value="timestamp">timestamp (najstarsze)</MenuItem>
-            </Select>
-          </FormControl>
+            <Grid item xs={12} sm={6} md={2}>
+              <TextField
+                size="small"
+                fullWidth
+                label="Dotyczy (ID)"
+                type="number"
+                value={draftTargetUser}
+                onChange={(e) => setDraftTargetUser(e.target.value ? Number(e.target.value) : "")}
+                disabled={busy}
+              />
+            </Grid>
 
-          {/* Frontend search */}
-          <TextField
-            size="small"
-            label="Szukaj (UI)"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="np. admin, urlop, maria…"
-            sx={{ minWidth: 240 }}
-          />
-        </Stack>
-      </Paper>
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl size="small" fullWidth disabled={busy}>
+                <InputLabel>Sortowanie</InputLabel>
+                <Select
+                  label="Sortowanie"
+                  value={draftOrdering}
+                  onChange={(e) => setDraftOrdering(e.target.value as Ordering)}
+                >
+                  <MenuItem value="-timestamp">Najnowsze</MenuItem>
+                  <MenuItem value="timestamp">Najstarsze</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
 
-      {/* PAGINATION */}
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-          <Typography variant="body2" color="text.secondary">
-            Wyniki na stronie: {data?.results?.length ?? 0} • Po filtrze UI: {rows.length}
-          </Typography>
+            <Grid item xs={12} sm={6} md={6}>
+              <TextField
+                size="small"
+                fullWidth
+                label="Szukaj"
+                value={draftSearch}
+                onChange={(e) => setDraftSearch(e.target.value)}
+                placeholder="np. admin, maria, urlop…"
+                disabled={busy}
+              />
+            </Grid>
 
-          <Stack direction="row" spacing={1}>
-            <Button disabled={!canPrev} variant="outlined" onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              Poprzednia
-            </Button>
-            <Button disabled={!canNext} variant="contained" onClick={() => setPage((p) => p + 1)}>
-              Następna
-            </Button>
+            <Grid item xs={12} md={3}>
+              <Stack
+                direction={{ xs: "column", sm: "row" }}
+                spacing={1}
+                alignItems="stretch"
+                justifyContent={{ xs: "flex-start", md: "flex-end" }}
+                sx={{ height: "100%" }}
+              >
+                <Button
+                  variant="outlined"
+                  onClick={resetFilters}
+                  disabled={busy || (!hasActiveFiltersDraft && !hasActiveFiltersApplied)}
+                  fullWidth
+                >
+                  Wyczyść
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={applyFilters}
+                  disabled={busy || !hasUnappliedChanges}
+                  fullWidth
+                >
+                  Zastosuj
+                </Button>
+                <Button variant="outlined" onClick={() => void load()} disabled={busy} fullWidth>
+                  Odśwież
+                </Button>
+              </Stack>
+            </Grid>
+          </Grid>
+
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            {hasActiveFiltersDraft && <Chip size="small" label="Ustawione filtry" />}
+            {hasUnappliedChanges && (
+              <Chip size="small" color="warning" label="Niezastosowane zmiany" variant="outlined" />
+            )}
+          </Stack>
+
+          <Divider />
+
+          {/* TABLE */}
+          {loading && !data ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 5 }}>
+              <CircularProgress />
+            </Box>
+          ) : emptyInfo ? (
+            <Alert severity="info">{emptyInfo}</Alert>
+          ) : (
+            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ backgroundColor: "rgba(0,0,0,0.02)" }}>
+                    <TableCell sx={{ width: 190, fontWeight: "bold" }}>Data i czas</TableCell>
+                    <TableCell sx={{ width: 140, fontWeight: "bold" }}>Kategoria</TableCell>
+                    <TableCell sx={{ fontWeight: "bold" }}>Zdarzenie</TableCell>
+                    <TableCell sx={{ width: 220, fontWeight: "bold" }}>Wykonał</TableCell>
+                    <TableCell sx={{ width: 220, fontWeight: "bold" }}>Dotyczy</TableCell>
+                  </TableRow>
+                </TableHead>
+
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={5}>
+                        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                          <CircularProgress size={22} />
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    rows.map((l) => {
+                      const g = groupFromAction(l.action_display || l.action);
+                      const badge = chipPropsForGroup(g);
+
+                      return (
+                        <TableRow key={l.id} hover>
+                          <TableCell sx={{ color: "text.secondary" }}>
+                            {new Date(l.timestamp).toLocaleString("pl-PL")}
+                          </TableCell>
+
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              color={badge.color}
+                              label={badge.label}
+                              sx={{ fontWeight: 500 }}
+                            />
+                          </TableCell>
+
+                          <TableCell>
+                            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                              {l.action_display || l.action}
+                            </Typography>
+                            <Typography
+                              variant="caption"
+                              sx={{ color: "text.disabled", display: "block" }}
+                            >
+                              Szczegóły: {l.action}
+                            </Typography>
+                          </TableCell>
+
+                          <TableCell sx={{ fontWeight: 500 }}>
+                            {l.performed_by_username ? niceActor(l.performed_by_username) : "System"}
+                          </TableCell>
+
+                          <TableCell>
+                            {l.target_user_username ? (
+                              <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600 }}>
+                                {niceActor(l.target_user_username)}
+                              </Typography>
+                            ) : (
+                              <Typography variant="body2" color="text.disabled">
+                                —
+                              </Typography>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          <Divider />
+
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            alignItems={{ sm: "center" }}
+            justifyContent="space-between"
+          >
+            <Typography variant="body2" color="text.secondary">
+              Na stronie: {data?.results?.length ?? 0} • Po filtrach: {rows.length}
+            </Typography>
+
+            <Pagination count={totalPages} page={page} onChange={(_, p) => setPage(p)} disabled={busy} />
           </Stack>
         </Stack>
       </Paper>
-
-      {/* TABLE */}
-      {loading && !data ? (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-          <CircularProgress />
-        </Box>
-      ) : (
-        <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: 3 }}>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ backgroundColor: "rgba(0,0,0,0.02)" }}>
-                <TableCell sx={{ width: 190, fontWeight: "bold" }}>Data i czas</TableCell>
-                <TableCell sx={{ width: 140, fontWeight: "bold" }}>Kategoria</TableCell>
-                <TableCell sx={{ fontWeight: "bold" }}>Opis zdarzenia</TableCell>
-                <TableCell sx={{ width: 220, fontWeight: "bold" }}>Wykonał</TableCell>
-                <TableCell sx={{ width: 220, fontWeight: "bold" }}>Dotyczy</TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-                      <CircularProgress size={22} />
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ) : rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
-                    Brak logów spełniających kryteria.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                rows.map((l) => {
-                  const g = groupFromAction(l.action_display || l.action);
-                  const badge = chipPropsForGroup(g);
-
-                  return (
-                    <TableRow key={l.id} hover>
-                      <TableCell sx={{ color: "text.secondary" }}>
-                        {new Date(l.timestamp).toLocaleString("pl-PL")}
-                      </TableCell>
-
-                      <TableCell>
-                        <Chip size="small" color={badge.color} label={badge.label} sx={{ fontWeight: 500 }} />
-                      </TableCell>
-
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {l.action_display || l.action}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: "text.disabled", display: "block" }}>
-                          Kod: {l.action}
-                        </Typography>
-                      </TableCell>
-
-                      <TableCell sx={{ fontWeight: 500 }}>
-                        {l.performed_by_username ? niceActor(l.performed_by_username) : "System"}
-                      </TableCell>
-
-                      <TableCell>
-                        {l.target_user_username ? (
-                          <Typography variant="body2" color="primary.main" sx={{ fontWeight: 600 }}>
-                            {niceActor(l.target_user_username)}
-                          </Typography>
-                        ) : (
-                          <Typography variant="body2" color="text.disabled">
-                            —
-                          </Typography>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-    </Box>
+    </Stack>
   );
 }

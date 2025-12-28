@@ -444,6 +444,7 @@ class TimeOffSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
+            "employee",
             "requested_by",
             "decided_by",
             "decided_at",
@@ -578,37 +579,69 @@ class ClientSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password", None)
 
         with transaction.atomic():
-            client = ClientProfile.objects.create(**validated_data)
+            # 1) Tworzymy usera ZAWSZE (profil nie może istnieć bez konta)
+            #    (robimy tymczasowy, poprawny login "klient-XXXXXXXX", a potem zaktualizujemy
+            #     go do "klient-{client_number}" po utworzeniu profilu)
+            tmp_username = None
+            for _ in range(200):
+                candidate = f"klient-{secrets.randbelow(10 ** 8):08d}"
+                if not User.objects.filter(username=candidate).exists():
+                    tmp_username = candidate
+                    break
+            if not tmp_username:
+                raise serializers.ValidationError("Nie można wygenerować unikalnego loginu klienta.")
+
+            user = User(
+                username=tmp_username,
+                email=email or "",
+                first_name=validated_data.get("first_name", ""),
+                last_name=validated_data.get("last_name", ""),
+                role="CLIENT",
+                is_active=True,
+            )
+            if password:
+                user.set_password(password)
+            else:
+                user.set_password(secrets.token_urlsafe(10))
+
+            user.full_clean()
+            user.save()
+
+            # 2) Tworzymy profil już z userem (signals.py wygeneruje client_number)
+            client = ClientProfile.objects.create(user=user, **validated_data)
 
             if not client.client_number:
                 raise serializers.ValidationError("Nie nadano client_number (sprawdź signals.py).")
 
-            if not client.user:
-                username = f"klient-{client.client_number}"
-                if User.objects.filter(username=username).exists():
-                    raise serializers.ValidationError("Użytkownik dla tego client_number już istnieje.")
+            # 3) Ustawiamy docelowy login klienta: klient-{client_number}
+            final_username = f"klient-{client.client_number}"
 
-                user = User(
-                    username=username,
-                    email=email or client.email or "",
-                    first_name=client.first_name,
-                    last_name=client.last_name,
-                    role="CLIENT",
-                    is_active=True
-                )
-                if password:
-                    user.set_password(password)
-                else:
-                    user.set_password(secrets.token_urlsafe(10))
+            if user.username != final_username:
+                if User.objects.filter(username=final_username).exclude(pk=user.pk).exists():
+                    # Jeżeli login zajęty, dobieramy kolejny wolny numer klienta
+                    base = int(client.client_number)
+                    picked = None
+                    for _ in range(1000):
+                        base += 1
+                        candidate_num = f"{base:08d}"
+                        candidate_username = f"klient-{candidate_num}"
+                        if (
+                                not ClientProfile.objects.filter(client_number=candidate_num).exists()
+                                and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
+                        ):
+                            picked = (candidate_num, candidate_username)
+                            break
 
+                    if not picked:
+                        raise serializers.ValidationError("Nie można wygenerować unikalnego loginu klienta.")
+
+                    client.client_number = picked[0]
+                    client.save(update_fields=["client_number"])
+                    final_username = picked[1]
+
+                user.username = final_username
                 user.full_clean()
-                user.save()
-
-                client.user = user
-                client.save(update_fields=["user"])
-            else:
-                if client.user.role != "CLIENT":
-                    raise serializers.ValidationError("Użytkownik musi mieć rolę CLIENT.")
+                user.save(update_fields=["username"])
 
         return client
 
@@ -688,6 +721,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     can_confirm = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
     can_complete = serializers.SerializerMethodField()
+    can_no_show = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
@@ -714,6 +748,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             "can_confirm",
             "can_cancel",
             "can_complete",
+            "can_no_show",
 
             "internal_notes",
 
@@ -727,7 +762,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         ]
 
     # ---------------------------------------------------------------------
-    # UI permission helpers (POPRAWIONE)
+    # UI permission helpers
     # ---------------------------------------------------------------------
 
     def get_can_confirm(self, obj) -> bool:
@@ -736,12 +771,14 @@ class AppointmentSerializer(serializers.ModelSerializer):
             return False
 
         role = getattr(request.user, "role", None)
-
-        # 1:1 jak IsAdminOrEmployee
         if role not in ["ADMIN", "EMPLOYEE"]:
             return False
 
-        return obj.status == Appointment.Status.PENDING
+        if obj.status != Appointment.Status.PENDING:
+            return False
+
+        # nie potwierdzamy wizyty, która już się zaczęła
+        return obj.start > timezone.now()
 
     def get_can_cancel(self, obj) -> bool:
         request = self.context.get("request")
@@ -751,10 +788,13 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if obj.status not in (Appointment.Status.PENDING, Appointment.Status.CONFIRMED):
             return False
 
+        # nie anulujemy wizyty, która już się zaczęła
+        if obj.start <= timezone.now():
+            return False
+
         user = request.user
         role = getattr(user, "role", None)
 
-        # 1:1 jak CanCancelAppointment
         if role in ["ADMIN", "EMPLOYEE"]:
             return True
 
@@ -770,80 +810,30 @@ class AppointmentSerializer(serializers.ModelSerializer):
             return False
 
         role = getattr(request.user, "role", None)
-
-        # 1:1 jak IsAdminOrEmployee
         if role not in ["ADMIN", "EMPLOYEE"]:
             return False
 
-        return obj.status in (Appointment.Status.PENDING, Appointment.Status.CONFIRMED)
+        if obj.status not in (Appointment.Status.PENDING, Appointment.Status.CONFIRMED):
+            return False
 
-    # ---------------------------------------------------------------------
-    # Validation (bez zmian)
-    # ---------------------------------------------------------------------
+        # można zakończyć dopiero po końcu wizyty
+        return obj.end <= timezone.now()
 
-    def validate(self, data):
-        start = data.get("start")
-        end = data.get("end")
+    def get_can_no_show(self, obj) -> bool:
+        request = self.context.get("request")
+        if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
+            return False
 
-        if self.instance:
-            if start is None:
-                start = self.instance.start
-            if end is None:
-                end = self.instance.end
+        role = getattr(request.user, "role", None)
+        if role not in ["ADMIN", "EMPLOYEE"]:
+            return False
 
-        if start and end and end <= start:
-            raise serializers.ValidationError(
-                {"end": "Czas zakończenia musi być po czasie rozpoczęcia."}
-            )
+        # no-show tylko dla potwierdzonych
+        if obj.status != Appointment.Status.CONFIRMED:
+            return False
 
-        employee = data.get("employee") or (
-            self.instance.employee if self.instance else None
-        )
-        client = data.get("client") or (
-            self.instance.client if self.instance else None
-        )
-
-        if employee and start and end:
-            conflicts = (
-                Appointment.objects
-                .filter(
-                    employee=employee,
-                    start__lt=end,
-                    end__gt=start,
-                    status__in=[
-                        Appointment.Status.PENDING,
-                        Appointment.Status.CONFIRMED,
-                    ],
-                )
-            )
-            if self.instance:
-                conflicts = conflicts.exclude(id=self.instance.id)
-            if conflicts.exists():
-                raise serializers.ValidationError(
-                    {"employee": "Pracownik ma już zajęty termin w tym czasie."}
-                )
-
-        if client and start and end:
-            client_conflicts = (
-                Appointment.objects
-                .filter(
-                    client=client,
-                    start__lt=end,
-                    end__gt=start,
-                    status__in=[
-                        Appointment.Status.PENDING,
-                        Appointment.Status.CONFIRMED,
-                    ],
-                )
-            )
-            if self.instance:
-                client_conflicts = client_conflicts.exclude(id=self.instance.id)
-            if client_conflicts.exists():
-                raise serializers.ValidationError(
-                    {"client": "Klient ma już zarezerwowaną wizytę w tym czasie."}
-                )
-
-        return data
+        # dopiero po zakończeniu wizyty
+        return obj.end <= timezone.now()
 
 # =============================================================================
 # SYSTEM SETTINGS SERIALIZERS

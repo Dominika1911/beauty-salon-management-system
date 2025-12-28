@@ -64,9 +64,7 @@ interface ClientFormData {
 const BaseClientSchema = Yup.object().shape({
   first_name: Yup.string().min(2, "Imię musi mieć co najmniej 2 znaki").required("Imię jest wymagane"),
   last_name: Yup.string().min(2, "Nazwisko musi mieć co najmniej 2 znaki").required("Nazwisko jest wymagane"),
-  phone: Yup.string()
-    .matches(/^\+?\d{9,15}$/, "Telefon musi mieć 9–15 cyfr (może zaczynać się od +).")
-    .notRequired(),
+  phone: Yup.string().matches(/^\+?\d{9,15}$/, "Telefon musi mieć 9–15 cyfr (może zaczynać się od +).").notRequired(),
   email: Yup.string().email("Nieprawidłowy adres e-mail").notRequired(),
   internal_notes: Yup.string().max(1000, "Notatki mogą mieć maksymalnie 1000 znaków").notRequired(),
   is_active: Yup.boolean(),
@@ -93,7 +91,13 @@ const ClientsPage: React.FC = () => {
   const [data, setData] = useState<DRFPaginated<Client> | null>(null);
   const [page, setPage] = useState(1);
 
-  // backend params
+  // ---- Draft (bez requestów) ----
+  const [draftSearch, setDraftSearch] = useState("");
+  const [draftClientNumber, setDraftClientNumber] = useState("");
+  const [draftOnlyActive, setDraftOnlyActive] = useState(false);
+  const [draftOrdering, setDraftOrdering] = useState<string>("-created_at");
+
+  // ---- Applied (to idzie do backendu) ----
   const [search, setSearch] = useState("");
   const [clientNumber, setClientNumber] = useState("");
   const [onlyActive, setOnlyActive] = useState(false);
@@ -127,12 +131,34 @@ const ClientsPage: React.FC = () => {
 
   const busy = loading || deleting || resetSaving;
 
-  const hasActiveFilters =
-    Boolean(search.trim()) || Boolean(clientNumber.trim()) || onlyActive || ordering !== "-created_at";
+  const hasActiveFiltersDraft =
+    Boolean(draftSearch.trim()) || Boolean(draftClientNumber.trim()) || draftOnlyActive || draftOrdering !== "-created_at";
 
-  useEffect(() => {
+  const hasActiveFiltersApplied = Boolean(search.trim()) || Boolean(clientNumber.trim()) || onlyActive || ordering !== "-created_at";
+
+  const hasUnappliedChanges =
+    draftSearch !== search || draftClientNumber !== clientNumber || draftOnlyActive !== onlyActive || draftOrdering !== ordering;
+
+  const applyFilters = () => {
     setPage(1);
-  }, [search, clientNumber, onlyActive, ordering]);
+    setSearch(draftSearch);
+    setClientNumber(draftClientNumber);
+    setOnlyActive(draftOnlyActive);
+    setOrdering(draftOrdering);
+  };
+
+  const resetFilters = () => {
+    setDraftSearch("");
+    setDraftClientNumber("");
+    setDraftOnlyActive(false);
+    setDraftOrdering("-created_at");
+
+    setPage(1);
+    setSearch("");
+    setClientNumber("");
+    setOnlyActive(false);
+    setOrdering("-created_at");
+  };
 
   const loadClients = useCallback(async () => {
     try {
@@ -157,6 +183,7 @@ const ClientsPage: React.FC = () => {
     }
   }, [page, ordering, search, onlyActive, clientNumber]);
 
+  // request tylko gdy: page lub applied filtry
   useEffect(() => {
     void loadClients();
   }, [loadClients]);
@@ -239,19 +266,13 @@ const ClientsPage: React.FC = () => {
       const { message, fieldErrors } = parseDrfError(err);
 
       const d =
-        typeof err === "object" && err !== null && "response" in err
-          ? (err as { response?: { data?: unknown } }).response?.data
-          : undefined;
+        typeof err === "object" && err !== null && "response" in err ? (err as { response?: { data?: unknown } }).response?.data : undefined;
 
-      // 1) błędy pól -> helperText
       const nextFieldErrors: Record<string, string> = { ...(fieldErrors || {}) };
 
-      // UX: czasem backend wrzuca komunikat hasła do non_field_errors przy CREATE
       if (!editingClient && !nextFieldErrors.password) {
         const nonFieldErrors =
-          d && typeof d === "object" && d !== null && "non_field_errors" in d
-            ? (d as Record<string, unknown>).non_field_errors
-            : undefined;
+          d && typeof d === "object" && d !== null && "non_field_errors" in d ? (d as Record<string, unknown>).non_field_errors : undefined;
 
         const nfe = firstFromDrf(nonFieldErrors);
         if (nfe) nextFieldErrors.password = nfe;
@@ -259,10 +280,8 @@ const ClientsPage: React.FC = () => {
 
       if (Object.keys(nextFieldErrors).length) setErrors(nextFieldErrors);
 
-      // 2) globalny komunikat
       if (message) setFormError(message);
-      else if (Object.keys(nextFieldErrors).length)
-        setFormError("Nie udało się zapisać — popraw zaznaczone pola i spróbuj ponownie.");
+      else if (Object.keys(nextFieldErrors).length) setFormError("Nie udało się zapisać — popraw zaznaczone pola i spróbuj ponownie.");
       else setFormError("Nie udało się zapisać. Spróbuj ponownie.");
     }
   };
@@ -286,7 +305,7 @@ const ClientsPage: React.FC = () => {
   };
 
   const handleResetPassword = async () => {
-    if (resetTarget?.user_id == null) return;
+    if (!resetTarget) return;
 
     setResetErr(null);
 
@@ -312,9 +331,7 @@ const ClientsPage: React.FC = () => {
       const parsed = parseDrfError(err);
 
       const d =
-        typeof err === "object" && err !== null && "response" in err
-          ? (err as { response?: { data?: unknown } }).response?.data
-          : undefined;
+        typeof err === "object" && err !== null && "response" in err ? (err as { response?: { data?: unknown } }).response?.data : undefined;
 
       const obj = d && typeof d === "object" && d !== null ? (d as Record<string, unknown>) : undefined;
 
@@ -339,8 +356,8 @@ const ClientsPage: React.FC = () => {
 
   const emptyInfo =
     !loading && clients.length === 0
-      ? hasActiveFilters
-        ? "Brak wyników dla podanych filtrów."
+      ? hasActiveFiltersApplied
+        ? "Brak wyników dla podanych filtrów. Zmień filtry i kliknij „Zastosuj”."
         : "Brak klientów. Dodaj pierwszego klienta."
       : null;
 
@@ -361,8 +378,7 @@ const ClientsPage: React.FC = () => {
             Zarządzanie klientami
           </Typography>
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            Łącznie: {data?.count ?? "—"} • Strona: {page} • Sortowanie:{" "}
-            {ORDERING_OPTIONS.find((o) => o.value === ordering)?.label ?? ordering}
+            Łącznie: {data?.count ?? "—"} • Strona: {page} • Sortowanie: {ORDERING_OPTIONS.find((o) => o.value === ordering)?.label ?? ordering}
           </Typography>
         </Box>
 
@@ -377,46 +393,65 @@ const ClientsPage: React.FC = () => {
         </Alert>
       )}
 
-      {/* Filters */}
+      {/* Filters (DRAFT) */}
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
-          <TextField
-            label="Szukaj"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Nr klienta, imię, nazwisko, e-mail, telefon…"
-            disabled={busy}
-            fullWidth
-          />
-          <TextField
-            label="Nr klienta"
-            value={clientNumber}
-            onChange={(e) => setClientNumber(e.target.value)}
-            placeholder="np. 00000001"
-            disabled={busy}
-            fullWidth
-          />
-          <FormControl sx={{ minWidth: 220 }} disabled={busy}>
-            <InputLabel id="ordering-label">Sortowanie</InputLabel>
-            <Select
-              labelId="ordering-label"
-              value={ordering}
-              label="Sortowanie"
-              onChange={(e) => setOrdering(String(e.target.value))}
-            >
-              {ORDERING_OPTIONS.map((o) => (
-                <MenuItem key={o.value} value={o.value}>
-                  {o.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
+            <TextField
+              label="Szukaj"
+              value={draftSearch}
+              onChange={(e) => setDraftSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyFilters();
+              }}
+              placeholder="Nr klienta, imię, nazwisko, e-mail, telefon…"
+              disabled={busy}
+              fullWidth
+            />
+            <TextField
+              label="Nr klienta"
+              value={draftClientNumber}
+              onChange={(e) => setDraftClientNumber(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyFilters();
+              }}
+              placeholder="np. 00000001"
+              disabled={busy}
+              fullWidth
+            />
+            <FormControl sx={{ minWidth: 220 }} disabled={busy}>
+              <InputLabel id="ordering-label">Sortowanie</InputLabel>
+              <Select labelId="ordering-label" value={draftOrdering} label="Sortowanie" onChange={(e) => setDraftOrdering(String(e.target.value))}>
+                {ORDERING_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-          <FormControlLabel
-            control={<Switch checked={onlyActive} onChange={(e) => setOnlyActive(e.target.checked)} disabled={busy} />}
-            label="Tylko aktywni"
-            sx={{ ml: { md: "auto" } }}
-          />
+            <FormControlLabel
+              control={<Switch checked={draftOnlyActive} onChange={(e) => setDraftOnlyActive(e.target.checked)} disabled={busy} />}
+              label="Tylko aktywni"
+              sx={{ ml: { md: "auto" } }}
+            />
+          </Stack>
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between">
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              {hasActiveFiltersDraft && <Chip size="small" label="Ustawione filtry" />}
+              {hasUnappliedChanges && <Chip size="small" color="warning" label="Niezastosowane zmiany" variant="outlined" />}
+            </Stack>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button variant="outlined" onClick={resetFilters} disabled={busy || (!hasActiveFiltersDraft && !hasActiveFiltersApplied)}>
+                Wyczyść filtry
+              </Button>
+              <Button variant="contained" onClick={applyFilters} disabled={busy || !hasUnappliedChanges}>
+                Zastosuj
+              </Button>
+            </Stack>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -497,20 +532,9 @@ const ClientsPage: React.FC = () => {
                             Edytuj
                           </Button>
 
-                          <Tooltip
-                            title={
-                              c.user_id == null
-                                ? "Ten klient nie ma konta użytkownika — reset hasła jest niedostępny."
-                                : "Ustaw nowe hasło dla konta klienta."
-                            }
-                            arrow
-                          >
+                          <Tooltip title="Ustaw nowe hasło dla konta klienta." arrow>
                             <span>
-                              <Button
-                                onClick={() => openReset(c)}
-                                startIcon={<KeyIcon fontSize="small" />}
-                                disabled={c.user_id == null || busy}
-                              >
+                              <Button onClick={() => openReset(c)} startIcon={<KeyIcon fontSize="small" />} disabled={busy}>
                                 Hasło
                               </Button>
                             </span>
@@ -599,11 +623,7 @@ const ClientsPage: React.FC = () => {
         onClose={() => setSnack((p) => ({ ...p, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert
-          onClose={() => setSnack((p) => ({ ...p, open: false }))}
-          severity={snack.severity}
-          sx={{ width: "100%" }}
-        >
+        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
           {snack.msg}
         </Alert>
       </Snackbar>
@@ -677,30 +697,9 @@ function ClientFormDialog(props: {
                   </Alert>
                 )}
 
-                <Field
-                  as={TextField}
-                  name="first_name"
-                  label="Imię"
-                  error={hasErr("first_name")}
-                  helperText={helper("first_name")}
-                  disabled={isSubmitting}
-                />
-                <Field
-                  as={TextField}
-                  name="last_name"
-                  label="Nazwisko"
-                  error={hasErr("last_name")}
-                  helperText={helper("last_name")}
-                  disabled={isSubmitting}
-                />
-                <Field
-                  as={TextField}
-                  name="phone"
-                  label="Telefon"
-                  error={hasErr("phone")}
-                  helperText={helper("phone")}
-                  disabled={isSubmitting}
-                />
+                <Field as={TextField} name="first_name" label="Imię" error={hasErr("first_name")} helperText={helper("first_name")} disabled={isSubmitting} />
+                <Field as={TextField} name="last_name" label="Nazwisko" error={hasErr("last_name")} helperText={helper("last_name")} disabled={isSubmitting} />
+                <Field as={TextField} name="phone" label="Telefon" error={hasErr("phone")} helperText={helper("phone")} disabled={isSubmitting} />
                 <Field
                   as={TextField}
                   name="email"
@@ -734,13 +733,7 @@ function ClientFormDialog(props: {
                 />
 
                 <FormControlLabel
-                  control={
-                    <Switch
-                      checked={values.is_active}
-                      onChange={(e) => setFieldValue("is_active", e.target.checked)}
-                      disabled={isSubmitting}
-                    />
-                  }
+                  control={<Switch checked={values.is_active} onChange={(e) => setFieldValue("is_active", e.target.checked)} disabled={isSubmitting} />}
                   label="Aktywny"
                 />
               </DialogContent>
@@ -866,19 +859,13 @@ function ResetPasswordDialog(props: {
           </Alert>
         )}
 
-        {client?.user_id == null && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Ten klient nie ma konta użytkownika — reset hasła jest niedostępny.
-          </Alert>
-        )}
-
         <TextField
           label="Nowe hasło"
           type="password"
           margin="dense"
           value={p1}
           onChange={(e) => setP1(e.target.value)}
-          disabled={client?.user_id == null || saving}
+          disabled={!client || saving}
           fullWidth
           helperText="Minimum 8 znaków"
         />
@@ -888,7 +875,7 @@ function ResetPasswordDialog(props: {
           margin="dense"
           value={p2}
           onChange={(e) => setP2(e.target.value)}
-          disabled={client?.user_id == null || saving}
+          disabled={!client || saving}
           fullWidth
         />
       </DialogContent>
@@ -898,7 +885,7 @@ function ResetPasswordDialog(props: {
         </Button>
         <Button
           variant="contained"
-          disabled={client?.user_id == null || saving}
+          disabled={!client || saving}
           onClick={() => void onConfirm()}
           startIcon={saving ? <CircularProgress size={16} /> : undefined}
         >

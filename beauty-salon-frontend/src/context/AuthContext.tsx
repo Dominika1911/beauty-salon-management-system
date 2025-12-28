@@ -51,10 +51,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const initAuth = async () => {
       try {
-        // 🔐 CSRF – inicjalizacja cookie (ważne dla Django)
+        // CSRF – inicjalizacja cookie (ważne dla Django)
         await authApi.getCsrf();
 
-        // 🔑 sprawdzenie sesji
+        // sprawdzenie sesji
         await refreshUser();
       } finally {
         setLoading(false);

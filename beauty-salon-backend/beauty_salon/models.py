@@ -190,11 +190,10 @@ class EmployeeProfile(models.Model):
 class ClientProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.CASCADE,
         related_name="client_profile",
     )
+
     client_number = models.CharField(
         max_length=8,
         unique=True,
@@ -257,7 +256,7 @@ class TimeOff(models.Model):
         APPROVED = "APPROVED", "Zaakceptowany"
         REJECTED = "REJECTED", "Odrzucony"
         CANCELLED = "CANCELLED", "Anulowany"
-
+        NO_SHOW = "NO_SHOW", "Nieobecność (no-show)"
 
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs")
     date_from = models.DateField()

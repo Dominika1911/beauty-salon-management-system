@@ -1,31 +1,37 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
-import type { EventInput } from "@fullcalendar/core";
+import type { EventInput, EventClickArg } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import plLocale from "@fullcalendar/core/locales/pl";
 import {
-  Paper,
-  Box,
-  CircularProgress,
-  Typography,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
+  Box,
   Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  LinearProgress,
+  Paper,
+  Snackbar,
   Stack,
+  Typography,
   Chip,
 } from "@mui/material";
+import type { AlertColor } from "@mui/material/Alert";
 
 import { appointmentsApi } from "@/api/appointments";
 import type { Appointment, AppointmentStatus } from "@/types";
+import { parseDrfError } from "@/utils/drfErrors";
 
 /* =========================
    HELPERS
    ========================= */
+
+type SnackState = { open: boolean; msg: string; severity: AlertColor };
 
 function statusChipColor(
   status: AppointmentStatus
@@ -39,23 +45,35 @@ function statusChipColor(
       return "error";
     case "COMPLETED":
       return "success";
+    case "NO_SHOW":
+      return "error";
     default:
       return "default";
   }
 }
 
-function eventBg(status: AppointmentStatus) {
+// ✅ bez custom kolorów (czytelnie i spójnie z MUI); zostawiamy eventy neutralne
+function formatPL(dt: string): string {
+  const d = new Date(dt);
+  return Number.isNaN(d.getTime())
+    ? dt
+    : d.toLocaleString("pl-PL", { dateStyle: "long", timeStyle: "short" });
+}
+
+function statusLabel(status: AppointmentStatus): string {
   switch (status) {
-    case "CONFIRMED":
-      return "#2e7d32";
     case "PENDING":
-      return "#ed6c02";
+      return "Oczekuje";
+    case "CONFIRMED":
+      return "Potwierdzona";
     case "COMPLETED":
-      return "#1976d2";
+      return "Zakończona";
     case "CANCELLED":
-      return "#d32f2f";
+      return "Anulowana";
+    case "NO_SHOW":
+      return "No-show";
     default:
-      return "#9e9e9e";
+      return status;
   }
 }
 
@@ -66,84 +84,112 @@ function eventBg(status: AppointmentStatus) {
 export default function EmployeeCalendarPage(): JSX.Element {
   const [events, setEvents] = useState<EventInput[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [snack, setSnack] = useState<SnackState>({
+    open: false,
+    msg: "",
+    severity: "info",
+  });
 
   const [selectedAppt, setSelectedAppt] = useState<Appointment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState(false);
+
+  const busy = loading || busyAction;
 
   /* =========================
      LOAD ALL APPOINTMENTS (ALL PAGES)
      ========================= */
-  const loadAppointments = async () => {
-    setErr("");
+  const loadAppointments = useCallback(async () => {
+    setPageError(null);
     setLoading(true);
 
     try {
       let page = 1;
-      let all: Appointment[] = [];
       let next: string | null = null;
+      const all: Appointment[] = [];
 
       do {
         const res = await appointmentsApi.getMy({ page });
-        all = all.concat(res.results);
+        all.push(...(res.results ?? []));
         next = res.next;
         page += 1;
       } while (next);
 
       const calendarEvents: EventInput[] = all.map((a) => ({
         id: String(a.id),
-        title: a.service_name,
+        title: `${a.service_name} • ${a.client_name ?? "Klient"}`,
         start: a.start,
         end: a.end,
-        backgroundColor: eventBg(a.status),
-        borderColor: "transparent",
         extendedProps: { ...a },
       }));
 
       setEvents(calendarEvents);
-    } catch (e: any) {
-      setErr(
-        e?.response?.data?.detail ||
-          e?.message ||
-          "Błąd podczas ładowania terminarza."
-      );
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się pobrać terminarza.");
       setEvents([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadAppointments();
-  }, []);
+  }, [loadAppointments]);
 
   /* =========================
      EVENT HANDLERS
      ========================= */
 
-  const handleEventClick = (info: any) => {
-    setSelectedAppt(info.event.extendedProps as Appointment);
+  const handleEventClick = (info: EventClickArg) => {
+    const appt = info.event.extendedProps as unknown as Appointment;
+    setSelectedAppt(appt);
     setModalOpen(true);
   };
 
-  const handleAction = async (fn: (id: number) => Promise<Appointment>) => {
+  const closeModal = () => {
+    if (busyAction) return;
+    setModalOpen(false);
+    setSelectedAppt(null);
+  };
+
+  const patchEvent = useCallback((updated: Appointment) => {
+    // 1) update modal state
+    setSelectedAppt(updated);
+
+    // 2) update event in calendar list
+    setEvents((prev) =>
+      prev.map((ev) => {
+        if (String(ev.id) !== String(updated.id)) return ev;
+        return {
+          ...ev,
+          title: `${updated.service_name} • ${updated.client_name ?? "Klient"}`,
+          start: updated.start,
+          end: updated.end,
+          extendedProps: { ...updated },
+        };
+      })
+    );
+  }, []);
+
+  const handleAction = async (fn: (id: number) => Promise<Appointment>, successMsg: string) => {
     if (!selectedAppt) return;
 
-    setBusy(true);
+    setBusyAction(true);
+    setPageError(null);
+
     try {
-      await fn(selectedAppt.id);
-      setModalOpen(false);
-      setSelectedAppt(null);
-      await loadAppointments();
-    } catch (e: any) {
-      alert(
-        e?.response?.data?.detail ||
-          e?.message ||
-          "Błąd podczas wykonywania akcji."
-      );
+      const updated = await fn(selectedAppt.id);
+      patchEvent(updated); // ✅ bez reloadu wszystkich stron
+      setSnack({ open: true, msg: successMsg, severity: "success" });
+      closeModal();
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się wykonać akcji.");
     } finally {
-      setBusy(false);
+      setBusyAction(false);
     }
   };
 
@@ -151,24 +197,16 @@ export default function EmployeeCalendarPage(): JSX.Element {
      BACKEND FLAGS
      ========================= */
 
-  const canConfirm = useMemo(
-    () => Boolean(selectedAppt?.can_confirm),
-    [selectedAppt]
-  );
-  const canComplete = useMemo(
-    () => Boolean(selectedAppt?.can_complete),
-    [selectedAppt]
-  );
-  const canCancel = useMemo(
-    () => Boolean(selectedAppt?.can_cancel),
-    [selectedAppt]
-  );
+  const canConfirm = useMemo(() => Boolean(selectedAppt?.can_confirm), [selectedAppt]);
+  const canComplete = useMemo(() => Boolean(selectedAppt?.can_complete), [selectedAppt]);
+  const canCancel = useMemo(() => Boolean(selectedAppt?.can_cancel), [selectedAppt]);
+  const canNoShow = useMemo(() => Boolean(selectedAppt?.can_no_show), [selectedAppt]);
 
   /* =========================
      RENDER
      ========================= */
 
-  if (loading) {
+  if (loading && events.length === 0) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
         <CircularProgress />
@@ -177,18 +215,39 @@ export default function EmployeeCalendarPage(): JSX.Element {
   }
 
   return (
-    <Box sx={{ p: { xs: 1, md: 3 } }}>
-      <Typography variant="h5" fontWeight={600} gutterBottom>
-        Mój Terminarz
-      </Typography>
+    <Stack
+      spacing={2.5}
+      sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: { xs: 1, sm: 2 }, py: { xs: 2, sm: 3 } }}
+    >
+      {loading && <LinearProgress />}
 
-      {err && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {err}
+      <Stack
+        direction={{ xs: "column", md: "row" }}
+        spacing={2}
+        alignItems={{ xs: "stretch", md: "center" }}
+        justifyContent="space-between"
+      >
+        <Box>
+          <Typography variant="h5" fontWeight={900}>
+            Mój terminarz
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Kliknij wizytę w kalendarzu, aby zobaczyć szczegóły i dostępne akcje.
+          </Typography>
+        </Box>
+
+        <Button variant="outlined" onClick={() => void loadAppointments()} disabled={busy}>
+          Odśwież
+        </Button>
+      </Stack>
+
+      {pageError && (
+        <Alert severity="error" onClose={() => setPageError(null)}>
+          {pageError}
         </Alert>
       )}
 
-      <Paper sx={{ p: 2, borderRadius: 2, boxShadow: 3 }}>
+      <Paper variant="outlined" sx={{ p: { xs: 1, sm: 2 }, borderRadius: 2 }}>
         <FullCalendar
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridWeek"
@@ -217,116 +276,138 @@ export default function EmployeeCalendarPage(): JSX.Element {
       {/* =========================
          MODAL
          ========================= */}
-      <Dialog
-        open={modalOpen}
-        onClose={() => (!busy ? setModalOpen(false) : null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        {selectedAppt && (
-          <>
-            <DialogTitle sx={{ bgcolor: "#f5f5f5" }}>
-              Szczegóły wizyty
-            </DialogTitle>
+      <Dialog open={modalOpen} onClose={closeModal} maxWidth="xs" fullWidth>
+        <DialogTitle>Szczegóły wizyty</DialogTitle>
 
-            <DialogContent dividers>
-              <Stack spacing={2} sx={{ mt: 1 }}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Usługa
-                  </Typography>
-                  <Typography variant="h6">
-                    {selectedAppt.service_name}
-                  </Typography>
+        <DialogContent dividers>
+          {!selectedAppt ? (
+            <Typography variant="body2" color="text.secondary">
+              Brak danych wizyty.
+            </Typography>
+          ) : (
+            <Stack spacing={2} sx={{ mt: 0.5 }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Usługa
+                </Typography>
+                <Typography variant="h6" fontWeight={900}>
+                  {selectedAppt.service_name}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Klient
+                </Typography>
+                <Typography variant="body1" fontWeight={600}>
+                  {selectedAppt.client_name ?? "—"}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Termin
+                </Typography>
+                <Typography variant="body1">
+                  {formatPL(selectedAppt.start)} – {formatPL(selectedAppt.end)}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Status
+                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Chip
+                    label={selectedAppt.status_display || statusLabel(selectedAppt.status)}
+                    size="small"
+                    color={statusChipColor(selectedAppt.status)}
+                    variant="outlined"
+                  />
                 </Box>
+              </Box>
 
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Klient
-                  </Typography>
-                  <Typography variant="body1" fontWeight={500}>
-                    {selectedAppt.client_name || "Brak danych"}
-                  </Typography>
-                </Box>
+              {(canConfirm || canComplete || canCancel || canNoShow) ? null : (
+                <Alert severity="info" sx={{ mb: 0 }}>
+                  Dla tej wizyty nie ma dostępnych akcji.
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
 
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Termin
-                  </Typography>
-                  <Typography variant="body1">
-                    {new Date(selectedAppt.start).toLocaleString("pl-PL")}
-                  </Typography>
-                </Box>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={closeModal} disabled={busyAction}>
+            Zamknij
+          </Button>
 
-                <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Status
-                  </Typography>
-                  <Box sx={{ mt: 0.5 }}>
-                    <Chip
-                      label={
-                        selectedAppt.status_display || selectedAppt.status
-                      }
-                      size="small"
-                      color={statusChipColor(selectedAppt.status)}
-                      variant="outlined"
-                    />
-                  </Box>
-                </Box>
-              </Stack>
-            </DialogContent>
+          {selectedAppt && (
+            <Stack direction="row" spacing={1} sx={{ ml: "auto" }}>
+              {canConfirm && (
+                <Button
+                  variant="contained"
+                  onClick={() => void handleAction(appointmentsApi.confirm, "Wizyta potwierdzona.")}
+                  disabled={busyAction}
+                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
+                >
+                  Potwierdź
+                </Button>
+              )}
 
-            <DialogActions sx={{ p: 2, justifyContent: "space-between" }}>
-              <Button
-                onClick={() => setModalOpen(false)}
-                color="inherit"
-                disabled={busy}
-              >
-                Zamknij
-              </Button>
+              {canComplete && (
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={() => void handleAction(appointmentsApi.complete, "Wizyta zakończona.")}
+                  disabled={busyAction}
+                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
+                >
+                  Zakończ
+                </Button>
+              )}
 
-              <Stack direction="row" spacing={1}>
-                {canConfirm && (
-                  <Button
-                    variant="contained"
-                    onClick={() =>
-                      handleAction(appointmentsApi.confirm)
-                    }
-                    disabled={busy}
-                  >
-                    Potwierdź
-                  </Button>
-                )}
+              {canCancel && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => void handleAction(appointmentsApi.cancel, "Wizyta anulowana.")}
+                  disabled={busyAction}
+                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
+                >
+                  Anuluj
+                </Button>
+              )}
 
-                {canComplete && (
-                  <Button
-                    variant="contained"
-                    color="success"
-                    onClick={() =>
-                      handleAction(appointmentsApi.complete)
-                    }
-                    disabled={busy}
-                  >
-                    Zakończ
-                  </Button>
-                )}
-
-                {canCancel && (
-                  <Button
-                    color="error"
-                    onClick={() =>
-                      handleAction(appointmentsApi.cancel)
-                    }
-                    disabled={busy}
-                  >
-                    Anuluj
-                  </Button>
-                )}
-              </Stack>
-            </DialogActions>
-          </>
-        )}
+              {canNoShow && (
+                <Button
+                  variant="contained"
+                  color="error"
+                  onClick={() => void handleAction(appointmentsApi.noShow, "Ustawiono no-show.")}
+                  disabled={busyAction}
+                  startIcon={busyAction ? <CircularProgress size={18} /> : undefined}
+                >
+                  No-show
+                </Button>
+              )}
+            </Stack>
+          )}
+        </DialogActions>
       </Dialog>
-    </Box>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3000}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={snack.severity}
+          onClose={() => setSnack((p) => ({ ...p, open: false }))}
+          sx={{ width: "100%" }}
+        >
+          {snack.msg}
+        </Alert>
+      </Snackbar>
+    </Stack>
   );
 }

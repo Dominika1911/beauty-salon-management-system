@@ -177,6 +177,17 @@ export const appointmentsApi = {
     return response.data;
   },
 
+    /**
+   * POST /api/appointments/{id}/no-show/
+   */
+  noShow: async (id: number): Promise<Appointment> => {
+    const response = await axiosInstance.post<Appointment>(
+      `/appointments/${id}/no-show/`
+    );
+    return response.data;
+  },
+
+
   /**
    * DELETE /api/appointments/{id}/
    */

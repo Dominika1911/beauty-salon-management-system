@@ -1,4 +1,3 @@
-// src/pages/Admin/EmployeesPage.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -158,6 +157,9 @@ function mapEmployeeCreateMessage(msg: string): string {
   return msg;
 }
 
+type SnackbarState = { open: boolean; msg: string; severity: "success" | "info" };
+
+type IsActiveFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
 export default function EmployeesPage(): JSX.Element {
   const theme = useTheme();
@@ -170,8 +172,14 @@ export default function EmployeesPage(): JSX.Element {
 
   const [publicDataWarning, setPublicDataWarning] = useState(false);
 
+  // ---- Filtry: draft (bez requestów) ----
+  const [draftSearch, setDraftSearch] = useState("");
+  const [draftIsActiveFilter, setDraftIsActiveFilter] = useState<IsActiveFilter>("ALL");
+  const [draftServiceIdFilter, setDraftServiceIdFilter] = useState<number | "">("");
+
+  // ---- Filtry: applied (to idzie do backendu) ----
   const [search, setSearch] = useState("");
-  const [isActiveFilter, setIsActiveFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [isActiveFilter, setIsActiveFilter] = useState<IsActiveFilter>("ALL");
   const [serviceIdFilter, setServiceIdFilter] = useState<number | "">("");
 
   const [page, setPage] = useState(1);
@@ -196,7 +204,7 @@ export default function EmployeesPage(): JSX.Element {
 
   const [actionLoading, setActionLoading] = useState(false);
 
-  const [snack, setSnack] = useState<{ open: boolean; msg: string; severity: "success" | "info" }>({
+  const [snack, setSnack] = useState<SnackbarState>({
     open: false,
     msg: "",
     severity: "info",
@@ -208,9 +216,15 @@ export default function EmployeesPage(): JSX.Element {
     return map;
   }, [services]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, isActiveFilter, serviceIdFilter]);
+  const hasActiveFiltersDraft =
+    Boolean(draftSearch.trim()) || draftIsActiveFilter !== "ALL" || draftServiceIdFilter !== "";
+
+  const hasActiveFiltersApplied = Boolean(search.trim()) || isActiveFilter !== "ALL" || serviceIdFilter !== "";
+
+  const hasUnappliedChanges =
+    draftSearch !== search ||
+    draftIsActiveFilter !== isActiveFilter ||
+    draftServiceIdFilter !== serviceIdFilter;
 
   const loadAllServices = useCallback(async () => {
     const all: Service[] = [];
@@ -277,10 +291,12 @@ export default function EmployeesPage(): JSX.Element {
     }
   }, [loadAllServices, loadEmployees]);
 
+  // Na starcie: ładujemy usługi raz (bez dublowania requestów pracowników)
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    void loadAllServices();
+  }, [loadAllServices]);
 
+  // Lista pracowników: tylko gdy zmieni się page/sort/applied filtry
   useEffect(() => {
     void loadEmployees();
   }, [loadEmployees]);
@@ -322,6 +338,24 @@ export default function EmployeesPage(): JSX.Element {
     setFormFieldErrors({});
   };
 
+  const applyFilters = () => {
+    setPage(1);
+    setSearch(draftSearch);
+    setIsActiveFilter(draftIsActiveFilter);
+    setServiceIdFilter(draftServiceIdFilter);
+  };
+
+  const resetFilters = () => {
+    setDraftSearch("");
+    setDraftIsActiveFilter("ALL");
+    setDraftServiceIdFilter("");
+
+    setPage(1);
+    setSearch("");
+    setIsActiveFilter("ALL");
+    setServiceIdFilter("");
+  };
+
   const handleSave = async () => {
     setFormError(null);
     setFormFieldErrors({});
@@ -354,7 +388,6 @@ export default function EmployeesPage(): JSX.Element {
       };
 
       if (!isEdit) {
-        // ✅ FIX TS2353: employeesApi.create nie przyjmuje `username` w payloadzie
         await employeesApi.create({
           ...basePayload,
           email: form.email.trim(),
@@ -472,13 +505,12 @@ export default function EmployeesPage(): JSX.Element {
 
   const busy = loading || resetLoading || actionLoading;
 
-  const hasActiveFilters = Boolean(search.trim()) || isActiveFilter !== "ALL" || serviceIdFilter !== "";
   const emptyInfo = useMemo(() => {
     if (loading) return null;
     if (rows.length) return null;
-    if (hasActiveFilters) return "Brak wyników dla podanych filtrów. Zmień filtry lub je wyczyść.";
+    if (hasActiveFiltersApplied) return "Brak wyników dla podanych filtrów. Zmień filtry i kliknij „Zastosuj”.";
     return "Brak pracowników. Dodaj pierwszego pracownika, aby zarządzać grafikiem i wizytami.";
-  }, [loading, rows.length, hasActiveFilters]);
+  }, [loading, rows.length, hasActiveFiltersApplied]);
 
   const columns: GridColDef<Employee>[] = [
     {
@@ -620,7 +652,15 @@ export default function EmployeesPage(): JSX.Element {
 
   return (
     <Stack spacing={2}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: { xs: "stretch", md: "flex-start" }, gap: 2, flexWrap: "wrap" }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: { xs: "stretch", md: "flex-start" },
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
         <Box sx={{ minWidth: 240 }}>
           <Typography variant="h5" sx={{ fontWeight: 800 }}>
             Pracownicy
@@ -633,7 +673,7 @@ export default function EmployeesPage(): JSX.Element {
         <Stack direction="row" spacing={1} alignItems="center">
           <Tooltip title="Odśwież">
             <span>
-              <IconButton onClick={() => loadAll()} disabled={busy} aria-label="Odśwież listę">
+              <IconButton onClick={() => void loadAll()} disabled={busy} aria-label="Odśwież listę">
                 <RefreshIcon />
               </IconButton>
             </span>
@@ -651,47 +691,78 @@ export default function EmployeesPage(): JSX.Element {
         </Alert>
       )}
 
+      {/* Filters (DRAFT) */}
       <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
-          <TextField
-            label="Szukaj"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Nr, imię, nazwisko, login, e-mail…"
-            disabled={busy}
-            fullWidth
-          />
+        <Stack spacing={1.5}>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "center" }}>
+            <TextField
+              label="Szukaj"
+              value={draftSearch}
+              onChange={(e) => setDraftSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") applyFilters();
+              }}
+              placeholder="Nr, imię, nazwisko, login, e-mail…"
+              disabled={busy}
+              fullWidth
+            />
 
-          <FormControl sx={{ minWidth: 220 }} disabled={busy}>
-            <InputLabel id="is-active-label">Status</InputLabel>
-            <Select
-              labelId="is-active-label"
-              value={isActiveFilter}
-              label="Status"
-              onChange={(e) => setIsActiveFilter(e.target.value as "ALL" | "ACTIVE" | "INACTIVE")}
-            >
-              <MenuItem value="ALL">Wszystkie</MenuItem>
-              <MenuItem value="ACTIVE">Tylko aktywni</MenuItem>
-              <MenuItem value="INACTIVE">Tylko nieaktywni</MenuItem>
-            </Select>
-          </FormControl>
+            <FormControl sx={{ minWidth: 220 }} disabled={busy}>
+              <InputLabel id="is-active-label">Status</InputLabel>
+              <Select
+                labelId="is-active-label"
+                value={draftIsActiveFilter}
+                label="Status"
+                onChange={(e) => setDraftIsActiveFilter(e.target.value as IsActiveFilter)}
+              >
+                <MenuItem value="ALL">Wszystkie</MenuItem>
+                <MenuItem value="ACTIVE">Tylko aktywni</MenuItem>
+                <MenuItem value="INACTIVE">Tylko nieaktywni</MenuItem>
+              </Select>
+            </FormControl>
 
-          <FormControl sx={{ minWidth: 260 }} disabled={busy}>
-            <InputLabel id="service-filter-label">Usługa</InputLabel>
-            <Select
-              labelId="service-filter-label"
-              value={serviceIdFilter}
-              label="Usługa"
-              onChange={(e) => setServiceIdFilter(e.target.value === "" ? "" : Number(e.target.value))}
-            >
-              <MenuItem value="">Wszystkie</MenuItem>
-              {services.map((s) => (
-                <MenuItem key={s.id} value={s.id}>
-                  {s.name} ({formatPLN(s.price)})
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+            <FormControl sx={{ minWidth: 260 }} disabled={busy}>
+              <InputLabel id="service-filter-label">Usługa</InputLabel>
+              <Select
+                labelId="service-filter-label"
+                value={draftServiceIdFilter}
+                label="Usługa"
+                onChange={(e) => setDraftServiceIdFilter(e.target.value === "" ? "" : Number(e.target.value))}
+              >
+                <MenuItem value="">Wszystkie</MenuItem>
+                {services.map((s) => (
+                  <MenuItem key={s.id} value={s.id}>
+                    {s.name} ({formatPLN(s.price)})
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={1}
+            alignItems={{ xs: "stretch", sm: "center" }}
+            justifyContent="space-between"
+          >
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              {hasActiveFiltersDraft && <Chip size="small" label="Ustawione filtry" />}
+              {hasUnappliedChanges && <Chip size="small" color="warning" label="Niezastosowane zmiany" variant="outlined" />}
+            </Stack>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button
+                variant="outlined"
+                onClick={resetFilters}
+                disabled={busy || (!hasActiveFiltersDraft && !hasActiveFiltersApplied)}
+              >
+                Wyczyść filtry
+              </Button>
+              <Button variant="contained" onClick={applyFilters} disabled={busy || !hasUnappliedChanges}>
+                Zastosuj
+              </Button>
+            </Stack>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -722,7 +793,7 @@ export default function EmployeesPage(): JSX.Element {
             </Alert>
           ) : null}
 
-          <Box sx={{ height: "calc(100vh - 420px)", minHeight: 420, width: "100%" }}>
+          <Box sx={{ height: "calc(100vh - 460px)", minHeight: 420, width: "100%" }}>
             <DataGrid
               rows={rows}
               columns={columns}
@@ -738,7 +809,10 @@ export default function EmployeesPage(): JSX.Element {
               loading={loading}
               hideFooter
               columnVisibilityModel={columnVisibilityModel}
-              sx={{ "& .MuiDataGrid-columnHeaders": { borderBottomColor: "divider" }, "& .MuiDataGrid-cell": { alignItems: "center" } }}
+              sx={{
+                "& .MuiDataGrid-columnHeaders": { borderBottomColor: "divider" },
+                "& .MuiDataGrid-cell": { alignItems: "center" },
+              }}
               localeText={{
                 noRowsLabel: "Brak danych.",
                 noResultsOverlayLabel: "Brak wyników.",
@@ -826,7 +900,9 @@ export default function EmployeesPage(): JSX.Element {
                 value={form.skill_ids}
                 onChange={(e) => setForm((p) => ({ ...p, skill_ids: e.target.value as number[] }))}
                 input={<OutlinedInput label="Usługi" />}
-                renderValue={(selected) => (selected as number[]).map((id) => serviceMap.get(id)?.name || `#${id}`).join(", ")}
+                renderValue={(selected) =>
+                  (selected as number[]).map((id) => serviceMap.get(id)?.name || `#${id}`).join(", ")
+                }
               >
                 {services.map((s) => (
                   <MenuItem key={s.id} value={s.id}>

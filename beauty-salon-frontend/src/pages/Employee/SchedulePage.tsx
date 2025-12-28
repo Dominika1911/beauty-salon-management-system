@@ -10,9 +10,10 @@ import {
   Divider,
   Chip,
 } from "@mui/material";
-import { useAuth } from "../../context/AuthContext";
-import { employeesApi } from "@/api/employees";
 import { AccessTime, EventBusy } from "@mui/icons-material";
+
+import { useAuth } from "@/context/AuthContext";
+import { employeesApi } from "@/api/employees";
 
 type Period = { start: string; end: string };
 type WeeklyHours = Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", Period[]>;
@@ -27,17 +28,40 @@ const DAYS: Array<{ key: keyof WeeklyHours; label: string }> = [
   { key: "sun", label: "Niedziela" },
 ];
 
+const EMPTY_SCHEDULE: WeeklyHours = {
+  mon: [],
+  tue: [],
+  wed: [],
+  thu: [],
+  fri: [],
+  sat: [],
+  sun: [],
+};
+
 function getErrorMessage(err: unknown): string {
   const e = err as any;
-  return e?.response?.data?.detail || e?.response?.data?.message || e?.message || "Wystąpił błąd.";
+  const d = e?.response?.data;
+
+  if (typeof d?.detail === "string") return d.detail;
+  if (typeof d?.message === "string") return d.message;
+
+  // DRF errors: {field: ["msg"]} / {non_field_errors: ["msg"]}
+  if (d && typeof d === "object") {
+    const k = Object.keys(d)[0];
+    const v = d[k];
+    if (Array.isArray(v) && v.length) return String(v[0]);
+    if (typeof v === "string") return v;
+  }
+
+  return e?.message || "Wystąpił błąd.";
 }
 
-function normalizeWeeklyHours(input: unknown): Partial<WeeklyHours> {
-  // backend: weekly_hours to Record<string, Array<{start,end}>>
-  // UI: chcemy tylko mon..sun, zawsze jako tablice
-  const out: Partial<WeeklyHours> = {};
-  if (!input || typeof input !== "object") return out;
+function normalizeWeeklyHours(input: unknown): WeeklyHours {
+  // backend: weekly_hours = Record<string, Array<{start,end}>>
+  // UI: mon..sun zawsze jako tablice
+  const out: WeeklyHours = { ...EMPTY_SCHEDULE };
 
+  if (!input || typeof input !== "object") return out;
   const obj = input as Record<string, any>;
 
   for (const day of DAYS.map((d) => d.key)) {
@@ -50,8 +74,8 @@ function normalizeWeeklyHours(input: unknown): Partial<WeeklyHours> {
     out[day] = raw
       .filter((p: any) => p && typeof p === "object")
       .map((p: any) => ({
-        start: String(p.start ?? ""),
-        end: String(p.end ?? ""),
+        start: String(p.start ?? "").trim(),
+        end: String(p.end ?? "").trim(),
       }))
       .filter((p: Period) => Boolean(p.start) && Boolean(p.end));
   }
@@ -61,52 +85,51 @@ function normalizeWeeklyHours(input: unknown): Partial<WeeklyHours> {
 
 export default function EmployeeSchedulePage(): JSX.Element {
   const { user } = useAuth();
-  // ✅ employee_profile.id z /api/users/me/ to EmployeeProfile.id (pk do /employees/{id}/schedule/)
+  // employee_profile.id z /api/users/me/ -> pk do /employees/{id}/schedule/
   const employeeId = user?.employee_profile?.id ?? null;
 
-  const [schedule, setSchedule] = useState<Partial<WeeklyHours>>({});
+  const [schedule, setSchedule] = useState<WeeklyHours>(EMPTY_SCHEDULE);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
+    const controller = new AbortController();
 
     async function load() {
-      setErr("");
+      setErr(null);
       setLoading(true);
 
       if (!employeeId) {
-        if (mounted) {
-          setErr("Brak profilu pracownika (employee_profile).");
-          setSchedule({});
-          setLoading(false);
-        }
+        setSchedule(EMPTY_SCHEDULE);
+        setErr("Brak profilu pracownika (employee_profile).");
+        setLoading(false);
         return;
       }
 
       try {
-        const data = await employeesApi.getSchedule(employeeId);
-        if (!mounted) return;
+        // jeśli employeesApi nie wspiera signal, axios zignoruje - ale cleanup nadal OK
+        const data = await employeesApi.getSchedule(employeeId /*, { signal: controller.signal } as any */);
+        if (controller.signal.aborted) return;
+
         setSchedule(normalizeWeeklyHours((data as any)?.weekly_hours));
-      } catch (e) {
-        if (!mounted) return;
+      } catch (e: unknown) {
+        if (controller.signal.aborted) return;
+        setSchedule(EMPTY_SCHEDULE);
         setErr(getErrorMessage(e) || "Nie udało się pobrać grafiku pracy.");
-        setSchedule({});
       } finally {
-        if (!mounted) return;
+        if (controller.signal.aborted) return;
         setLoading(false);
       }
     }
 
     void load();
-    return () => {
-      mounted = false;
-    };
+    return () => controller.abort();
   }, [employeeId]);
 
-  const hasAnyHours = useMemo(() => {
-    return DAYS.some((d) => (schedule[d.key] ?? []).some((p) => p?.start && p?.end));
-  }, [schedule]);
+  const hasAnyHours = useMemo(
+    () => DAYS.some((d) => schedule[d.key].some((p) => p.start && p.end)),
+    [schedule]
+  );
 
   if (loading) {
     return (
@@ -117,10 +140,10 @@ export default function EmployeeSchedulePage(): JSX.Element {
   }
 
   return (
-    <Stack spacing={3} sx={{ maxWidth: 600, mx: "auto", mt: 2 }}>
+    <Stack spacing={3} sx={{ maxWidth: 650, mx: "auto", mt: 2 }}>
       <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <AccessTime color="primary" />
-        <Typography variant="h5" fontWeight={600}>
+        <Typography variant="h5" fontWeight={800}>
           Mój grafik pracy
         </Typography>
       </Box>
@@ -137,19 +160,25 @@ export default function EmployeeSchedulePage(): JSX.Element {
         </Alert>
       )}
 
-      <Paper sx={{ borderRadius: 3, overflow: "hidden", boxShadow: 2 }}>
+      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
         <Stack divider={<Divider />}>
           {DAYS.map((day) => {
-            const periods = (schedule[day.key] ?? []).filter((p) => p?.start && p?.end);
+            const periods = schedule[day.key];
             const isOff = periods.length === 0;
 
             return (
-              <Box key={day.key} sx={{ p: 2, bgcolor: isOff ? "#fafafa" : "white" }}>
+              <Box
+                key={day.key}
+                sx={{
+                  p: 2,
+                  bgcolor: isOff ? "action.hover" : "background.paper",
+                }}
+              >
                 <Grid container alignItems="center" spacing={1}>
                   <Grid item xs={12} sm={5}>
                     <Typography
                       variant="body1"
-                      fontWeight={isOff ? 400 : 600}
+                      fontWeight={isOff ? 500 : 800}
                       color={isOff ? "text.secondary" : "text.primary"}
                     >
                       {day.label}
@@ -169,12 +198,12 @@ export default function EmployeeSchedulePage(): JSX.Element {
                     }}
                   >
                     {isOff ? (
-                      <>
-                        <EventBusy sx={{ fontSize: 18, color: "error.light" }} />
-                        <Typography variant="body2" color="error.main" fontWeight={500}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <EventBusy sx={{ fontSize: 18, color: "text.secondary" }} />
+                        <Typography variant="body2" color="text.secondary" fontWeight={600}>
                           Wolne
                         </Typography>
-                      </>
+                      </Stack>
                     ) : (
                       periods.map((p, idx) => (
                         <Chip

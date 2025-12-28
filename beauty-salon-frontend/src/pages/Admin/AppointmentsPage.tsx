@@ -2,27 +2,39 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  Box,
   Button,
   Chip,
   CircularProgress,
-  Paper,
-  Stack,
-  Typography,
-  Select,
-  MenuItem,
+  Divider,
   FormControl,
   InputLabel,
-  Box,
-  Divider,
+  LinearProgress,
+  MenuItem,
+  Pagination,
+  Paper,
+  Select,
+  Snackbar,
+  Stack,
+  Typography,
 } from "@mui/material";
+import type { AlertColor } from "@mui/material/Alert";
 
 import type { Appointment, AppointmentStatus, DRFPaginated } from "@/types";
 import { appointmentsApi } from "@/api/appointments";
+import { parseDrfError } from "@/utils/drfErrors";
 
 type StatusFilter = AppointmentStatus | "ALL";
 type StatusColor = "default" | "success" | "warning" | "error";
 
-/** ✅ stała – dzięki temu data nigdy nie jest null */
+type SnackState = {
+  open: boolean;
+  msg: string;
+  severity: AlertColor;
+};
+
+const PAGE_SIZE = 20;
+
 const EMPTY_PAGE: DRFPaginated<Appointment> = {
   count: 0,
   next: null,
@@ -40,27 +52,35 @@ function statusColor(status: AppointmentStatus): StatusColor {
       return "error";
     case "COMPLETED":
       return "success";
+    case "NO_SHOW":
+      return "error";
     default:
       return "default";
   }
 }
 
-function getErrorMessage(err: unknown): string {
-  if (err && typeof err === "object") {
-    const e = err as any;
-    return e.response?.data?.detail || e.response?.data?.message || e.message || "Wystąpił błąd.";
+function statusLabel(status: AppointmentStatus): string {
+  switch (status) {
+    case "PENDING":
+      return "Oczekuje";
+    case "CONFIRMED":
+      return "Potwierdzona";
+    case "COMPLETED":
+      return "Zakończona";
+    case "CANCELLED":
+      return "Anulowana";
+    case "NO_SHOW":
+      return "No-show";
+    default:
+      return status;
   }
-  return "Wystąpił błąd.";
 }
 
 function formatPrice(price?: string | number): string {
   if (price == null) return "—";
   const n = Number(price);
   if (Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("pl-PL", {
-    style: "currency",
-    currency: "PLN",
-  }).format(n);
+  return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(n);
 }
 
 function formatDateTimePL(iso: string): string {
@@ -70,80 +90,130 @@ function formatDateTimePL(iso: string): string {
 
 export default function AdminAppointmentsPage(): JSX.Element {
   const [data, setData] = useState<DRFPaginated<Appointment>>(EMPTY_PAGE);
-  const [page, setPage] = useState(1); // DRF: page jest 1-indexed
+  const [page, setPage] = useState(1); // DRF page is 1-indexed
+
+  // applied filters
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [ordering] = useState<string>("-created_at");
+
+  // draft filters
+  const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>("ALL");
 
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
 
-  // backend filter -> wracamy na 1 stronę
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [snack, setSnack] = useState<SnackState>({ open: false, msg: "", severity: "info" });
+
+  const rows = useMemo(() => data.results ?? [], [data.results]);
+
+  const initialLoading = loading && rows.length === 0;
+  const busy = loading || busyId !== null;
+
+  // reset page when applied filter changes
   useEffect(() => {
     setPage(1);
   }, [statusFilter]);
 
+  // keep draft synced with applied
+  useEffect(() => {
+    setDraftStatusFilter(statusFilter);
+  }, [statusFilter]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    setErr("");
+    setPageError(null);
 
     try {
       const res = await appointmentsApi.list({
         page,
-        ordering: "-created_at",
+        ordering,
         status: statusFilter === "ALL" ? undefined : statusFilter,
       });
-
       setData(res);
-    } catch (e) {
-      setErr(getErrorMessage(e));
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się pobrać wizyt. Spróbuj ponownie.");
       setData(EMPTY_PAGE);
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter]);
+  }, [page, statusFilter, ordering]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const canPrev = Boolean(data.previous) && !loading;
-  const canNext = Boolean(data.next) && !loading;
+  const hasUnappliedChanges = useMemo(
+    () => draftStatusFilter !== statusFilter,
+    [draftStatusFilter, statusFilter]
+  );
 
-  const goPrev = () => {
-    if (!data.previous) return;
-    setPage((p) => Math.max(1, p - 1));
+  const hasActiveFiltersApplied = useMemo(() => statusFilter !== "ALL", [statusFilter]);
+
+  const applyFilters = () => {
+    setPage(1);
+    setStatusFilter(draftStatusFilter);
   };
 
-  const goNext = () => {
-    if (!data.next) return;
-    setPage((p) => p + 1);
+  const resetFilters = () => {
+    setDraftStatusFilter("ALL");
+    setPage(1);
+    setStatusFilter("ALL");
   };
 
-  const runAction = async (
-    fn: (id: number) => Promise<Appointment>,
-    id: number,
-    successMsg: string
-  ) => {
+  const totalPages = useMemo(() => {
+    const count = data.count ?? 0;
+    return Math.max(1, Math.ceil(count / PAGE_SIZE));
+  }, [data.count]);
+
+  const emptyInfo = useMemo(() => {
+    if (loading) return null;
+    if (rows.length > 0) return null;
+    if (hasActiveFiltersApplied) return "Brak wizyt dla wybranego statusu.";
+    return "Brak wizyt.";
+  }, [loading, rows.length, hasActiveFiltersApplied]);
+
+  const patchRowAndCount = useCallback(
+    (updated: Appointment) => {
+      setData((prev) => {
+        const prevResults = prev.results ?? [];
+
+        const nextResultsRaw = prevResults.map((r) => (r.id === updated.id ? updated : r));
+
+        const filterActive = statusFilter !== "ALL";
+        const nextResults = filterActive
+          ? nextResultsRaw.filter((r) => r.status === statusFilter)
+          : nextResultsRaw;
+
+        // jeśli filtr aktywny i status po akcji nie pasuje -> element znika z listy
+        const removedByFilter = filterActive && updated.status !== statusFilter;
+
+        const nextCount = removedByFilter ? Math.max(0, (prev.count ?? 0) - 1) : prev.count;
+
+        return { ...prev, count: nextCount, results: nextResults };
+      });
+    },
+    [statusFilter]
+  );
+
+  const runAction = async (fn: (id: number) => Promise<Appointment>, id: number, successMsg: string) => {
     setBusyId(id);
-    setErr("");
-    setMsg("");
+    setPageError(null);
 
     try {
-      await fn(id);
-      setMsg(successMsg);
-      await load();
-    } catch (e) {
-      setErr(getErrorMessage(e));
+      const updated = await fn(id);
+      patchRowAndCount(updated);
+      setSnack({ open: true, msg: successMsg, severity: "success" });
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setPageError(parsed.message || "Nie udało się wykonać operacji. Spróbuj ponownie.");
     } finally {
       setBusyId(null);
     }
   };
 
-  const rows = useMemo(() => data.results ?? [], [data.results]);
-
-  // Loader na start (pierwsze ładowanie)
-  if (loading && rows.length === 0) {
+  if (initialLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
         <CircularProgress />
@@ -152,153 +222,233 @@ export default function AdminAppointmentsPage(): JSX.Element {
   }
 
   return (
-    <Stack spacing={3}>
-      <Typography variant="h5" fontWeight={700}>
-        Zarządzanie wizytami (ADMIN)
-      </Typography>
+    <Stack
+      spacing={2}
+      sx={{
+        width: "100%",
+        maxWidth: 1200,
+        mx: "auto",
+        px: { xs: 1, sm: 2 },
+        py: { xs: 2, sm: 3 },
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: { xs: "flex-start", sm: "center" },
+          gap: 2,
+          flexWrap: "wrap",
+        }}
+      >
+        <Box>
+          <Typography variant="h5" fontWeight={900}>
+            Zarządzanie wizytami
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Przeglądaj i zarządzaj wizytami — filtruj po statusie i wykonuj akcje.
+          </Typography>
+        </Box>
 
-      {msg && (
-        <Alert severity="success" onClose={() => setMsg("")}>
-          {msg}
+        <Typography variant="body2" color="text.secondary">
+          Łącznie: {data.count} • Strona: {page} / {totalPages}
+        </Typography>
+      </Box>
+
+      {pageError && (
+        <Alert severity="error" onClose={() => setPageError(null)}>
+          {pageError}
         </Alert>
       )}
 
-      {err && (
-        <Alert severity="error" onClose={() => setErr("")}>
-          {err}
-        </Alert>
-      )}
+      <Paper variant="outlined" sx={{ p: 2, position: "relative" }}>
+        {loading && <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} />}
 
-      {/* FILTER + PAGINATION */}
-      <Paper sx={{ p: 2 }}>
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={2}
-          justifyContent="space-between"
-          alignItems={{ xs: "stretch", md: "center" }}
-        >
-          <FormControl size="small" sx={{ minWidth: 240 }}>
-            <InputLabel>Status (backend)</InputLabel>
-            <Select
-              label="Status (backend)"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            >
-              <MenuItem value="ALL">Wszystkie</MenuItem>
-              <MenuItem value="PENDING">PENDING</MenuItem>
-              <MenuItem value="CONFIRMED">CONFIRMED</MenuItem>
-              <MenuItem value="COMPLETED">COMPLETED</MenuItem>
-              <MenuItem value="CANCELLED">CANCELLED</MenuItem>
-            </Select>
-          </FormControl>
+        <Stack spacing={2} sx={{ pt: loading ? 1 : 0 }}>
+          {/* Filters */}
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={2}
+            alignItems={{ md: "center" }}
+            justifyContent="space-between"
+          >
+            <FormControl size="small" sx={{ minWidth: 240 }} disabled={busy}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                label="Status"
+                value={draftStatusFilter}
+                onChange={(e) => setDraftStatusFilter(e.target.value as StatusFilter)}
+              >
+                <MenuItem value="ALL">Wszystkie</MenuItem>
+                <MenuItem value="PENDING">Oczekuje</MenuItem>
+                <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>
+                <MenuItem value="COMPLETED">Zakończona</MenuItem>
+                <MenuItem value="CANCELLED">Anulowana</MenuItem>
+                <MenuItem value="NO_SHOW">No-show</MenuItem>
+              </Select>
+            </FormControl>
 
-          <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+              <Button
+                variant="outlined"
+                onClick={resetFilters}
+                disabled={busy || (!hasActiveFiltersApplied && !hasUnappliedChanges)}
+              >
+                Wyczyść filtry
+              </Button>
+              <Button variant="contained" onClick={applyFilters} disabled={busy || !hasUnappliedChanges}>
+                Zastosuj
+              </Button>
+              <Button variant="outlined" onClick={() => void load()} disabled={busy}>
+                Odśwież
+              </Button>
+            </Stack>
+          </Stack>
+
+          <Divider />
+
+          {/* List */}
+          {loading && rows.length > 0 ? (
+            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : emptyInfo ? (
+            <Alert severity="info">{emptyInfo}</Alert>
+          ) : (
+            <Stack spacing={1}>
+              {rows.map((a) => {
+                const isBusy = busyId === a.id;
+
+                const canConfirm = a.can_confirm;
+                const canCancel = a.can_cancel;
+                const canComplete = a.can_complete;
+                const canNoShow = a.can_no_show;
+
+                return (
+                  <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
+                    <Stack spacing={1.5}>
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        justifyContent="space-between"
+                        alignItems={{ sm: "flex-start" }}
+                        spacing={1}
+                      >
+                        <Box>
+                          <Typography fontWeight={800}>{a.service_name}</Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Pracownik: {a.employee_name} • Klient: {a.client_name ?? "—"}
+                          </Typography>
+                        </Box>
+
+                        <Stack alignItems={{ xs: "flex-start", sm: "flex-end" }} spacing={0.5}>
+                          <Chip
+                            label={a.status_display || statusLabel(a.status)}
+                            color={statusColor(a.status)}
+                            size="small"
+                          />
+                          <Typography fontWeight={800}>{formatPrice(a.service_price)}</Typography>
+                        </Stack>
+                      </Stack>
+
+                      <Typography variant="body2">
+                        {formatDateTimePL(a.start)} – {formatDateTimePL(a.end)}
+                      </Typography>
+
+                      {a.internal_notes ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
+                          {a.internal_notes}
+                        </Typography>
+                      ) : null}
+
+                      {(canConfirm || canCancel || canComplete || canNoShow) && <Divider />}
+
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {canConfirm && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            disabled={busy || isBusy}
+                            onClick={() => void runAction(appointmentsApi.confirm, a.id, "Wizyta potwierdzona.")}
+                          >
+                            {isBusy ? "..." : "Potwierdź"}
+                          </Button>
+                        )}
+
+                        {canCancel && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            disabled={busy || isBusy}
+                            onClick={() => void runAction(appointmentsApi.cancel, a.id, "Wizyta anulowana.")}
+                          >
+                            {isBusy ? "..." : "Anuluj"}
+                          </Button>
+                        )}
+
+                        {canComplete && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            disabled={busy || isBusy}
+                            onClick={() => void runAction(appointmentsApi.complete, a.id, "Wizyta zakończona.")}
+                          >
+                            {isBusy ? "..." : "Zakończ"}
+                          </Button>
+                        )}
+
+                        {canNoShow && (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="error"
+                            disabled={busy || isBusy}
+                            onClick={() => void runAction(appointmentsApi.noShow, a.id, "Ustawiono no-show.")}
+                          >
+                            {isBusy ? "..." : "No-show"}
+                          </Button>
+                        )}
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                );
+              })}
+            </Stack>
+          )}
+
+          <Divider />
+
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            spacing={2}
+            alignItems={{ sm: "center" }}
+            justifyContent="space-between"
+          >
             <Typography variant="body2" color="text.secondary">
-              Łącznie: {data.count} • Strona: {page}
+              Łącznie: {data.count}
             </Typography>
 
-            <Button variant="outlined" onClick={goPrev} disabled={!canPrev}>
-              Poprzednia
-            </Button>
-            <Button variant="contained" onClick={goNext} disabled={!canNext}>
-              Następna
-            </Button>
+            <Pagination
+              count={totalPages}
+              page={page}
+              onChange={(_, p) => setPage(p)}
+              disabled={busy}
+            />
           </Stack>
         </Stack>
       </Paper>
 
-      {/* LIST */}
-      {loading ? (
-        <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
-          <CircularProgress />
-        </Box>
-      ) : rows.length === 0 ? (
-        <Alert severity="info">Brak wizyt.</Alert>
-      ) : (
-        <Stack spacing={1}>
-          {rows.map((a) => {
-            const isBusy = busyId === a.id;
-
-            // backend jest jedynym źródłem prawdy dla UI akcji
-            const canConfirm = a.can_confirm;
-            const canCancel = a.can_cancel;
-            const canComplete = a.can_complete;
-
-            return (
-              <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1.5}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                    <Box>
-                      <Typography fontWeight={700}>{a.service_name}</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Pracownik: {a.employee_name} • Klient: {a.client_name ?? "—"}
-                      </Typography>
-                    </Box>
-
-                    <Stack alignItems="flex-end" spacing={0.5}>
-                      <Chip
-                        label={a.status_display || a.status}
-                        color={statusColor(a.status)}
-                        size="small"
-                      />
-                      <Typography fontWeight={700}>{formatPrice(a.service_price)}</Typography>
-                    </Stack>
-                  </Stack>
-
-                  <Typography variant="body2">
-                    {formatDateTimePL(a.start)} – {formatDateTimePL(a.end)}
-                  </Typography>
-
-                  {a.internal_notes ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: "pre-wrap" }}>
-                      {a.internal_notes}
-                    </Typography>
-                  ) : null}
-
-                  {(canConfirm || canCancel || canComplete) && <Divider />}
-
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                    {canConfirm && (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        disabled={isBusy}
-                        onClick={() => runAction(appointmentsApi.confirm, a.id, "Wizyta potwierdzona.")}
-                      >
-                        Potwierdź
-                      </Button>
-                    )}
-
-                    {canCancel && (
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        disabled={isBusy}
-                        onClick={() => runAction(appointmentsApi.cancel, a.id, "Wizyta anulowana.")}
-                      >
-                        Anuluj
-                      </Button>
-                    )}
-
-                    {canComplete && (
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="success"
-                        disabled={isBusy}
-                        onClick={() => runAction(appointmentsApi.complete, a.id, "Wizyta zakończona.")}
-                      >
-                        Zakończ
-                      </Button>
-                    )}
-                  </Stack>
-                </Stack>
-              </Paper>
-            );
-          })}
-        </Stack>
-      )}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={3200}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }

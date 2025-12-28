@@ -110,16 +110,41 @@ export default function BookingPage() {
     });
   }, [services, serviceQuery, serviceSort]);
 
+  // ✅ wybór usługi: resetuj dalej (pracownik/sloty)
+  const pickService = (s: Service) => {
+    setError("");
+    setSelectedService(s);
+
+    // downstream reset
+    setSelectedEmployee(null);
+    setEmployees([]);
+    setSelectedSlotStart(null);
+    setAvailableSlots([]);
+    setSelectedDate(new Date());
+  };
+
+  // ✅ wybór pracownika: resetuj sloty
+  const pickEmployee = (e: EmployeePublic) => {
+    setError("");
+    setSelectedEmployee(e);
+
+    // downstream reset
+    setSelectedSlotStart(null);
+    setAvailableSlots([]);
+  };
+
   // === LOAD EMPLOYEES ===
   useEffect(() => {
     if (!selectedService) return;
 
     (async () => {
       try {
+        setError("");
         const res = await employeesApi.list({ service_id: selectedService.id });
         setEmployees(res.results);
       } catch (e) {
         setError(getErrorMessage(e));
+        setEmployees([]);
       }
     })();
   }, [selectedService]);
@@ -130,6 +155,9 @@ export default function BookingPage() {
 
     (async () => {
       setFetchingSlots(true);
+      setError("");
+      setAvailableSlots([]); // ✅ nie pokazuj starych slotów w trakcie pobierania
+
       try {
         const res = await appointmentsApi.getAvailableSlots(
           selectedEmployee.id,
@@ -139,6 +167,7 @@ export default function BookingPage() {
         setAvailableSlots(res.slots);
       } catch (e) {
         setError(getErrorMessage(e));
+        setAvailableSlots([]);
       } finally {
         setFetchingSlots(false);
       }
@@ -172,6 +201,16 @@ export default function BookingPage() {
     (activeStep === 1 && !selectedEmployee) ||
     (activeStep === 2 && (!selectedSlotStart || fetchingSlots || booking));
 
+  const goNext = () => {
+    setError("");
+    setActiveStep((s) => s + 1);
+  };
+
+  const goBack = () => {
+    setError("");
+    setActiveStep((s) => s - 1);
+  };
+
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", p: 6 }}>
@@ -203,7 +242,10 @@ export default function BookingPage() {
             <TextField
               placeholder="Szukaj usługi"
               value={serviceQuery}
-              onChange={(e) => setServiceQuery(e.target.value)}
+              onChange={(e) => {
+                setError("");
+                setServiceQuery(e.target.value);
+              }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -214,7 +256,13 @@ export default function BookingPage() {
             />
 
             <FormControl size="small" sx={{ maxWidth: 240 }}>
-              <Select value={serviceSort} onChange={(e) => setServiceSort(e.target.value as any)}>
+              <Select
+                value={serviceSort}
+                onChange={(e) => {
+                  setError("");
+                  setServiceSort(e.target.value as any);
+                }}
+              >
                 <MenuItem value="name">Nazwa</MenuItem>
                 <MenuItem value="price">Cena</MenuItem>
                 <MenuItem value="duration">Czas</MenuItem>
@@ -231,7 +279,7 @@ export default function BookingPage() {
                       cursor: "pointer",
                       borderColor: selectedService?.id === s.id ? "primary.main" : undefined,
                     }}
-                    onClick={() => setSelectedService(s)}
+                    onClick={() => pickService(s)}
                   >
                     <Typography fontWeight={700}>{s.name}</Typography>
                     <Typography variant="body2" color="text.secondary">
@@ -254,7 +302,7 @@ export default function BookingPage() {
                 <Button
                   key={e.id}
                   variant={selectedEmployee?.id === e.id ? "contained" : "outlined"}
-                  onClick={() => setSelectedEmployee(e)}
+                  onClick={() => pickEmployee(e)}
                 >
                   {e.full_name}
                 </Button>
@@ -272,20 +320,29 @@ export default function BookingPage() {
                 value={selectedDate}
                 disablePast
                 onChange={(d) => {
+                  setError("");
                   setSelectedDate(d);
                   setSelectedSlotStart(null);
+                  setAvailableSlots([]);
                 }}
               />
 
               {fetchingSlots ? (
                 <CircularProgress />
+              ) : availableSlots.length === 0 ? (
+                <Alert severity="info">
+                  Brak wolnych terminów w tym dniu. Wybierz inny dzień.
+                </Alert>
               ) : (
                 <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap" }}>
                   {availableSlots.map((slot) => (
                     <Button
                       key={slot.start}
                       variant={selectedSlotStart === slot.start ? "contained" : "outlined"}
-                      onClick={() => setSelectedSlotStart(slot.start)}
+                      onClick={() => {
+                        setError("");
+                        setSelectedSlotStart(slot.start);
+                      }}
                     >
                       {formatTimeRange(slot.start, slot.end)}
                     </Button>
@@ -299,14 +356,14 @@ export default function BookingPage() {
         <Divider sx={{ my: 4 }} />
 
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Button disabled={activeStep === 0} onClick={() => setActiveStep((s) => s - 1)}>
+          <Button disabled={activeStep === 0} onClick={goBack}>
             Wstecz
           </Button>
 
           <Button
             variant="contained"
             disabled={nextDisabled}
-            onClick={activeStep === 2 ? handleConfirmBooking : () => setActiveStep((s) => s + 1)}
+            onClick={activeStep === 2 ? handleConfirmBooking : goNext}
           >
             {booking ? "Rezerwuję…" : activeStep === 2 ? "Potwierdzam rezerwację" : "Dalej"}
           </Button>

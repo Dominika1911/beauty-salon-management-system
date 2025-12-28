@@ -24,25 +24,13 @@ type TimeOffListParams = {
 /**
  * Dane potrzebne do utworzenia wniosku o wolne
  * Backend:
- * - EMPLOYEE: employee i tak jest nadpisywane w perform_create
- * - ADMIN: employee jest wymagane (backend waliduje)
+ * - EMPLOYEE: tworzy tylko własne wnioski (employee jest nadpisywane w perform_create)
+ * - ADMIN: nie tworzy wniosków (frontend nie powinien tego wspierać)
  */
 type TimeOffCreatePayload = {
   date_from: string;
   date_to: string;
   reason?: string;
-  employee?: number;
-};
-
-/**
- * Dane do aktualizacji (PATCH)
- * Backend: update/partial_update tylko ADMIN (get_permissions)
- */
-type TimeOffUpdatePayload = {
-  date_from?: string;
-  date_to?: string;
-  reason?: string;
-  status?: TimeOffStatus; // backend pozwala ADMIN edytować status przez update (serializer ma pole status)
 };
 
 export const timeOffApi = {
@@ -72,21 +60,6 @@ export const timeOffApi = {
   },
 
   /**
-   * PATCH /api/time-offs/{id}/
-   */
-  update: async (id: number, data: TimeOffUpdatePayload): Promise<TimeOff> => {
-    const response = await axiosInstance.patch<TimeOff>(`/time-offs/${id}/`, data);
-    return response.data;
-  },
-
-  /**
-   * DELETE /api/time-offs/{id}/
-   */
-  remove: async (id: number): Promise<void> => {
-    await axiosInstance.delete(`/time-offs/${id}/`);
-  },
-
-  /**
    * POST /api/time-offs/{id}/approve/
    */
   approve: async (id: number): Promise<TimeOff> => {
@@ -104,8 +77,8 @@ export const timeOffApi = {
 
   /**
    * POST /api/time-offs/{id}/cancel/
-   * Backend: EMPLOYEE może anulować tylko swoje PENDING,
-   * ADMIN/is_staff może anulować dowolne PENDING
+   * Backend: EMPLOYEE może anulować tylko swoje wnioski w statusie PENDING.
+   * ADMIN: nie anuluje (frontend nie powinien tego wspierać).
    */
   cancel: async (id: number): Promise<TimeOff> => {
     const response = await axiosInstance.post<TimeOff>(`/time-offs/${id}/cancel/`);

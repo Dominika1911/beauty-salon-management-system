@@ -11,17 +11,21 @@ import {
   CircularProgress,
   Container,
   Divider,
+  LinearProgress,
   List,
   ListItem,
   ListItemText,
+  Snackbar,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
+import type { AlertColor } from "@mui/material/Alert";
 
 import type { Appointment, AppointmentStatus, DashboardResponse } from "@/types";
 import { dashboardApi } from "@/api/dashboard";
 import { statisticsApi } from "@/api/statistics";
+import { parseDrfError } from "@/utils/drfErrors";
 
 /* =============================================================================
  * Types
@@ -41,22 +45,15 @@ type StatsState =
   | { status: "success"; data: StatisticsResponse }
   | { status: "error"; message: string };
 
-/* =============================================================================
- * Helpers (lokalne – bez utils)
- * ============================================================================= */
+type SnackState = {
+  open: boolean;
+  msg: string;
+  severity: AlertColor;
+};
 
-function getErrorMessage(err: unknown): string {
-  if (err && typeof err === "object") {
-    const e = err as any;
-    return (
-      e.response?.data?.detail ||
-      e.response?.data?.message ||
-      e.message ||
-      "Nie udało się pobrać danych."
-    );
-  }
-  return "Nie udało się pobrać danych.";
-}
+/* =============================================================================
+ * Helpers
+ * ============================================================================= */
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -83,13 +80,15 @@ function isAppointmentStatus(value: string): value is AppointmentStatus {
     value === "PENDING" ||
     value === "CONFIRMED" ||
     value === "COMPLETED" ||
-    value === "CANCELLED"
+    value === "CANCELLED" ||
+    value === "NO_SHOW"
   );
 }
 
-function statusChipProps(
-  status: string
-): { label: string; color: "default" | "warning" | "success" | "error" } {
+function statusChipProps(status: string): {
+  label: string;
+  color: "default" | "warning" | "success" | "error";
+} {
   if (!isAppointmentStatus(status)) {
     return { label: status, color: "default" };
   }
@@ -103,13 +102,15 @@ function statusChipProps(
       return { label: "Zakończona", color: "default" };
     case "CANCELLED":
       return { label: "Anulowana", color: "error" };
+    case "NO_SHOW":
+      return { label: "No-show", color: "error" };
     default:
       return { label: status, color: "default" };
   }
 }
 
 function formatMoneyPLN(value: number): string {
-  return `${value.toFixed(2)} zł`;
+  return new Intl.NumberFormat("pl-PL", { style: "currency", currency: "PLN" }).format(value);
 }
 
 /* =============================================================================
@@ -118,53 +119,93 @@ function formatMoneyPLN(value: number): string {
 
 export default function DashboardPage(): JSX.Element {
   const [state, setState] = React.useState<ViewState>({ status: "idle" });
+  const [snack, setSnack] = React.useState<SnackState>({
+    open: false,
+    msg: "",
+    severity: "info",
+  });
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (showSnack = false) => {
     setState({ status: "loading" });
     try {
       const data = await dashboardApi.get();
       setState({ status: "success", data });
-    } catch (e) {
-      setState({ status: "error", message: getErrorMessage(e) });
+      if (showSnack) {
+        setSnack({ open: true, msg: "Dane odświeżone.", severity: "info" });
+      }
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setState({ status: "error", message: parsed.message || "Nie udało się pobrać danych." });
     }
   }, []);
 
   React.useEffect(() => {
-    void load();
+    void load(false); // bez snacka na wejściu (StrictMode w dev potrafi odpalić efekt 2x)
   }, [load]);
 
+  const loading = state.status === "idle" || state.status === "loading";
+
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
       <Stack spacing={2}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center">
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: { xs: "flex-start", sm: "center" },
+            gap: 2,
+            flexWrap: "wrap",
+          }}
+        >
           <Box>
-            <Typography variant="h4" fontWeight={700}>
+            <Typography variant="h5" fontWeight={900}>
               Dashboard
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Panel dopasowany do roli użytkownika
+              Najważniejsze informacje w jednym miejscu
             </Typography>
           </Box>
-          <Button variant="outlined" onClick={load}>
+
+          <Button variant="outlined" onClick={() => void load(true)} disabled={loading}>
             Odśwież
           </Button>
-        </Stack>
+        </Box>
 
-        {(state.status === "idle" || state.status === "loading") && (
-          <Card variant="outlined">
+        {state.status === "error" && (
+          <Alert severity="error" onClose={() => setState({ status: "idle" })}>
+            {state.message}
+          </Alert>
+        )}
+
+        {loading ? (
+          <Card variant="outlined" sx={{ position: "relative" }}>
+            <LinearProgress sx={{ position: "absolute", left: 0, right: 0, top: 0 }} />
             <CardContent>
-              <Stack direction="row" spacing={2} alignItems="center">
+              <Stack direction="row" spacing={2} alignItems="center" sx={{ pt: 1 }}>
                 <CircularProgress size={20} />
                 <Typography>Ładowanie danych…</Typography>
               </Stack>
             </CardContent>
           </Card>
-        )}
-
-        {state.status === "error" && <Alert severity="error">{state.message}</Alert>}
-
-        {state.status === "success" && <RoleDashboard data={state.data} />}
+        ) : state.status === "success" ? (
+          <RoleDashboard data={state.data} />
+        ) : null}
       </Stack>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={2500}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setSnack((p) => ({ ...p, open: false }))}
+          severity={snack.severity}
+          sx={{ width: "100%" }}
+        >
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }
@@ -195,13 +236,13 @@ function StatCard({
   action?: React.ReactNode;
 }): JSX.Element {
   return (
-    <Card variant="outlined">
+    <Card variant="outlined" sx={{ height: "100%" }}>
       <CardContent>
         <Stack spacing={1}>
           <Typography variant="overline" color="text.secondary">
             {title}
           </Typography>
-          <Typography variant="h5" fontWeight={700}>
+          <Typography variant="h5" fontWeight={900}>
             {value}
           </Typography>
           {hint && (
@@ -236,23 +277,19 @@ function AppointmentsList({
       {items.map((a) => {
         const chip = statusChipProps(a.status);
         return (
-          <ListItem key={a.id} disableGutters>
+          <ListItem key={a.id} disableGutters sx={{ py: 1 }}>
             <ListItemText
               primary={
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Typography fontWeight={600}>{formatDateTime(a.start)}</Typography>
+                  <Typography fontWeight={700}>{formatDateTime(a.start)}</Typography>
                   <Chip size="small" {...chip} />
                   <Typography>{a.service_name}</Typography>
                 </Stack>
               }
               secondary={
-                <Stack spacing={0.25}>
-                  {showEmployee && (
-                    <Typography variant="body2">Pracownik: {a.employee_name}</Typography>
-                  )}
-                  {showClient && (
-                    <Typography variant="body2">Klient: {a.client_name ?? "—"}</Typography>
-                  )}
+                <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                  {showEmployee && <Typography variant="body2">Pracownik: {a.employee_name}</Typography>}
+                  {showClient && <Typography variant="body2">Klient: {a.client_name ?? "—"}</Typography>}
                   <Typography variant="body2">Cena: {a.service_price} zł</Typography>
                 </Stack>
               }
@@ -268,44 +305,51 @@ function AppointmentsList({
  * ADMIN
  * ============================================================================= */
 
-function AdminDashboardView({
-  data,
-}: {
-  data: Extract<DashboardResponse, { role: "ADMIN" }>;
-}): JSX.Element {
+function AdminDashboardView({ data }: { data: Extract<DashboardResponse, { role: "ADMIN" }> }): JSX.Element {
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <StatCard
-          title="Wizyty dzisiaj"
-          value={data.today.appointments_count}
-          hint={data.today.date}
-          action={
-            <Button component={RouterLink} to="/admin/appointments" size="small">
-              Zobacz
-            </Button>
-          }
-        />
-        <StatCard title="Oczekujące wizyty" value={data.pending_appointments} />
-        <StatCard
-          title="Przychód (miesiąc)"
-          value={formatMoneyPLN(data.current_month.revenue)}
-          hint={`Zakończone: ${data.current_month.completed_appointments}`}
-        />
+        <Box sx={{ flex: 1 }}>
+          <StatCard
+            title="Wizyty dzisiaj"
+            value={data.today.appointments_count}
+            hint={data.today.date}
+            action={
+              <Button component={RouterLink} to="/admin/appointments" size="small">
+                Zobacz
+              </Button>
+            }
+          />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Oczekujące wizyty" value={data.pending_appointments} />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard
+            title="Przychód (miesiąc)"
+            value={formatMoneyPLN(data.current_month.revenue)}
+            hint={`Zakończone: ${data.current_month.completed_appointments}`}
+          />
+        </Box>
       </Stack>
 
-      {/* ✅ wykorzystanie backend.system */}
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <StatCard title="Aktywni pracownicy" value={data.system.active_employees} />
-        <StatCard title="Aktywni klienci" value={data.system.active_clients} />
-        <StatCard title="Aktywne usługi" value={data.system.active_services} />
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Aktywni pracownicy" value={data.system.active_employees} />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Aktywni klienci" value={data.system.active_clients} />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Aktywne usługi" value={data.system.active_services} />
+        </Box>
       </Stack>
 
       <AdminStatisticsSection />
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={900}>
             Grafik na dziś
           </Typography>
           <Divider sx={{ my: 1 }} />
@@ -318,68 +362,126 @@ function AdminDashboardView({
 
 function AdminStatisticsSection(): JSX.Element {
   const today = new Date();
-  const [dateFrom, setDateFrom] = React.useState(
-    toYmd(new Date(today.getTime() - 30 * 86400000))
-  );
+
+  const [dateFrom, setDateFrom] = React.useState(toYmd(new Date(today.getTime() - 30 * 86400000)));
   const [dateTo, setDateTo] = React.useState(toYmd(today));
 
-  const [stats, setStats] = React.useState<StatsState>({ status: "idle" });
-  const [localError, setLocalError] = React.useState<string | null>(null);
+  const [draftFrom, setDraftFrom] = React.useState(dateFrom);
+  const [draftTo, setDraftTo] = React.useState(dateTo);
 
-  const load = async () => {
-    if (dateFrom && dateTo && dateFrom > dateTo) {
-      setLocalError("Błędny zakres: data 'Od' nie może być późniejsza niż data 'Do'.");
+  const [stats, setStats] = React.useState<StatsState>({ status: "idle" });
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const [snack, setSnack] = React.useState<SnackState>({ open: false, msg: "", severity: "info" });
+
+  const busy = stats.status === "loading";
+
+  const hasUnapplied = draftFrom !== dateFrom || draftTo !== dateTo;
+
+  const applyRange = () => {
+    if (draftFrom && draftTo && draftFrom > draftTo) {
+      setFormError("Sprawdź zakres dat — „Od” nie może być późniejsza niż „Do”.");
       return;
     }
-    setLocalError(null);
+    setFormError(null);
+    setDateFrom(draftFrom);
+    setDateTo(draftTo);
+  };
+
+  const load = async (showSnack = false) => {
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      setFormError("Sprawdź zakres dat — „Od” nie może być późniejsza niż „Do”.");
+      return;
+    }
+    setFormError(null);
 
     setStats({ status: "loading" });
     try {
       const data = await statisticsApi.get({ date_from: dateFrom, date_to: dateTo });
       setStats({ status: "success", data });
-    } catch (e) {
-      setStats({ status: "error", message: getErrorMessage(e) });
+      if (showSnack) {
+        setSnack({ open: true, msg: "Statystyki odświeżone.", severity: "info" });
+      }
+    } catch (e: unknown) {
+      const parsed = parseDrfError(e);
+      setStats({ status: "error", message: parsed.message || "Nie udało się pobrać statystyk." });
     }
   };
 
   React.useEffect(() => {
-    void load();
+    void load(false); // bez snacka na mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // po apply (zmianie range) pobierz dane, ale bez snacka (to nie jest "ręczne odświeżenie")
+  React.useEffect(() => {
+    void load(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   return (
     <Card variant="outlined">
       <CardContent>
         <Stack spacing={2}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6" fontWeight={700}>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: { xs: "flex-start", sm: "center" },
+              gap: 2,
+              flexWrap: "wrap",
+            }}
+          >
+            <Typography variant="h6" fontWeight={900}>
               Statystyki
             </Typography>
-            <Button variant="outlined" size="small" onClick={() => void load()}>
-              Pobierz
-            </Button>
-          </Stack>
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <Button variant="outlined" size="small" onClick={() => void load(true)} disabled={busy}>
+                Odśwież
+              </Button>
+            </Stack>
+          </Box>
 
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
             <TextField
               type="date"
               label="Od"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              value={draftFrom}
+              onChange={(e) => setDraftFrom(e.target.value)}
               InputLabelProps={{ shrink: true }}
               fullWidth
+              disabled={busy}
             />
             <TextField
               type="date"
               label="Do"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              value={draftTo}
+              onChange={(e) => setDraftTo(e.target.value)}
               InputLabelProps={{ shrink: true }}
               fullWidth
+              disabled={busy}
             />
           </Stack>
 
-          {localError && <Alert severity="warning">{localError}</Alert>}
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => {
+                setDraftFrom(dateFrom);
+                setDraftTo(dateTo);
+                setFormError(null);
+              }}
+              disabled={busy || !hasUnapplied}
+            >
+              Wyczyść
+            </Button>
+            <Button variant="contained" size="small" onClick={applyRange} disabled={busy || !hasUnapplied}>
+              Zastosuj
+            </Button>
+          </Stack>
+
+          {formError && <Alert severity="warning">{formError}</Alert>}
 
           {stats.status === "loading" ? (
             <Stack direction="row" spacing={1} alignItems="center">
@@ -391,25 +493,28 @@ function AdminStatisticsSection(): JSX.Element {
           ) : stats.status === "success" ? (
             <Stack spacing={2}>
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <StatCard
-                  title="Wizyty w zakresie"
-                  value={stats.data.appointments.count_in_range}
-                  hint={`${stats.data.range.from} → ${stats.data.range.to}`}
-                />
-                <StatCard
-                  title="Przychód zakończonych (zakres)"
-                  value={formatMoneyPLN(stats.data.appointments.revenue_completed_in_range)}
-                  hint="Tylko status COMPLETED"
-                />
-                <StatCard
-                  title="Wizyty (wszystkie czasy)"
-                  value={stats.data.appointments.total_all_time}
-                />
+                <Box sx={{ flex: 1 }}>
+                  <StatCard
+                    title="Wizyty w zakresie"
+                    value={stats.data.appointments.count_in_range}
+                    hint={`${stats.data.range.from} → ${stats.data.range.to}`}
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <StatCard
+                    title="Przychód zakończonych (zakres)"
+                    value={formatMoneyPLN(stats.data.appointments.revenue_completed_in_range)}
+                    hint="Tylko zakończone wizyty"
+                  />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <StatCard title="Wizyty (łącznie)" value={stats.data.appointments.total_all_time} />
+                </Box>
               </Stack>
 
               <Card variant="outlined">
                 <CardContent>
-                  <Typography variant="subtitle1" fontWeight={700}>
+                  <Typography variant="subtitle1" fontWeight={900}>
                     Wizyty wg statusu
                   </Typography>
                   <Divider sx={{ my: 1 }} />
@@ -433,7 +538,7 @@ function AdminStatisticsSection(): JSX.Element {
               <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
                 <Card variant="outlined" sx={{ flex: 1 }}>
                   <CardContent>
-                    <Typography variant="subtitle1" fontWeight={700}>
+                    <Typography variant="subtitle1" fontWeight={900}>
                       Top usługi (zakres)
                     </Typography>
                     <Divider sx={{ my: 1 }} />
@@ -443,10 +548,7 @@ function AdminStatisticsSection(): JSX.Element {
                       <List disablePadding>
                         {stats.data.top_services_in_range.map((s) => (
                           <ListItem key={s.service__id} disableGutters>
-                            <ListItemText
-                              primary={s.service__name}
-                              secondary={`Ilość wizyt: ${s.count}`}
-                            />
+                            <ListItemText primary={s.service__name} secondary={`Liczba wizyt: ${s.count}`} />
                           </ListItem>
                         ))}
                       </List>
@@ -456,7 +558,7 @@ function AdminStatisticsSection(): JSX.Element {
 
                 <Card variant="outlined" sx={{ flex: 1 }}>
                   <CardContent>
-                    <Typography variant="subtitle1" fontWeight={700}>
+                    <Typography variant="subtitle1" fontWeight={900}>
                       Top pracownicy (zakres)
                     </Typography>
                     <Divider sx={{ my: 1 }} />
@@ -468,7 +570,7 @@ function AdminStatisticsSection(): JSX.Element {
                           <ListItem key={e.employee__id} disableGutters>
                             <ListItemText
                               primary={`Nr: ${e.employee__employee_number}`}
-                              secondary={`Ilość wizyt: ${e.count}`}
+                              secondary={`Liczba wizyt: ${e.count}`}
                             />
                           </ListItem>
                         ))}
@@ -479,10 +581,21 @@ function AdminStatisticsSection(): JSX.Element {
               </Stack>
             </Stack>
           ) : (
-            <Typography color="text.secondary">Ustaw zakres i kliknij „Pobierz”.</Typography>
+            <Typography color="text.secondary">Ustaw zakres i kliknij „Odśwież”.</Typography>
           )}
         </Stack>
       </CardContent>
+
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={2500}
+        onClose={() => setSnack((p) => ({ ...p, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
     </Card>
   );
 }
@@ -499,37 +612,31 @@ function EmployeeDashboardView({
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <StatCard title="Profil" value={data.full_name} hint={`Nr: ${data.employee_number}`} />
-        <StatCard
-          title="Wizyty dziś"
-          value={data.today.appointments.length}
-          hint={data.today.date}
-        />
-        <StatCard
-          title="Zakończone w tym miesiącu"
-          value={data.this_month.completed_appointments}
-        />
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Profil" value={data.full_name} hint={`Nr: ${data.employee_number}`} />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Wizyty dziś" value={data.today.appointments.length} hint={data.today.date} />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Zakończone w tym miesiącu" value={data.this_month.completed_appointments} />
+        </Box>
       </Stack>
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={900}>
             Dzisiaj
           </Typography>
           <Divider sx={{ my: 1 }} />
-          <AppointmentsList
-            items={data.today.appointments}
-            emptyText="Brak wizyt dzisiaj."
-            showEmployee={false}
-          />
+          <AppointmentsList items={data.today.appointments} emptyText="Brak wizyt dzisiaj." showEmployee={false} />
         </CardContent>
       </Card>
 
-      {/* ✅ wykorzystanie backend.upcoming */}
       <Card variant="outlined">
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h6" fontWeight={700}>
+            <Typography variant="h6" fontWeight={900}>
               Najbliższe 7 dni
             </Typography>
             <Chip size="small" label={`Razem: ${data.upcoming.count}`} variant="outlined" />
@@ -558,49 +665,39 @@ function ClientDashboardView({
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <StatCard
-          title="Nadchodzące wizyty"
-          value={data.upcoming_appointments.count}
-          action={
-            <Button component={RouterLink} to="/client/booking">
-              Umów wizytę
-            </Button>
-          }
-        />
-        {/* ✅ wykorzystanie backend.history */}
-        <StatCard
-          title="Historia (zakończone)"
-          value={data.history.total_completed}
-          hint="Status COMPLETED"
-        />
+        <Box sx={{ flex: 1 }}>
+          <StatCard
+            title="Nadchodzące wizyty"
+            value={data.upcoming_appointments.count}
+            action={
+              <Button component={RouterLink} to="/client/booking">
+                Umów wizytę
+              </Button>
+            }
+          />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <StatCard title="Historia wizyt" value={data.history.total_completed} hint="Zakończone wizyty" />
+        </Box>
       </Stack>
 
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={900}>
             Nadchodzące
           </Typography>
           <Divider sx={{ my: 1 }} />
-          <AppointmentsList
-            items={data.upcoming_appointments.appointments}
-            emptyText="Brak nadchodzących wizyt."
-            showClient={false}
-          />
+          <AppointmentsList items={data.upcoming_appointments.appointments} emptyText="Brak nadchodzących wizyt." showClient={false} />
         </CardContent>
       </Card>
 
-      {/* ✅ backend.history.recent */}
       <Card variant="outlined">
         <CardContent>
-          <Typography variant="h6" fontWeight={700}>
+          <Typography variant="h6" fontWeight={900}>
             Ostatnie zakończone
           </Typography>
           <Divider sx={{ my: 1 }} />
-          <AppointmentsList
-            items={data.history.recent}
-            emptyText="Brak zakończonych wizyt w historii."
-            showClient={false}
-          />
+          <AppointmentsList items={data.history.recent} emptyText="Brak zakończonych wizyt w historii." showClient={false} />
         </CardContent>
       </Card>
     </Stack>

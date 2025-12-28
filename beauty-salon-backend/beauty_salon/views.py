@@ -11,7 +11,6 @@ from django.db.models import Count, Sum, Q
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.http import HttpResponse
 from django.utils import timezone
-from django.contrib.auth import logout
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, viewsets, permissions, serializers, filters
@@ -141,7 +140,6 @@ class UserViewSet(viewsets.ModelViewSet):
             {"detail": f"Hasło użytkownika {target_user.username} zostało zresetowane."},
             status=status.HTTP_200_OK,
         )
-
 
 
 # =============================================================================
@@ -318,15 +316,24 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     search_fields = ["reason", "employee__first_name", "employee__last_name"]
 
     def get_permissions(self):
-        # ADMIN-only: akceptacja/odrzucenie i edycja/usunięcie
-        if self.action in ["approve", "reject", "update", "partial_update", "destroy"]:
+        # ADMIN: może tylko decydować
+        if self.action in ["approve", "reject"]:
             return [IsAdmin()]
 
-        # cancel: zalogowany; szczegółowa weryfikacja w metodzie cancel()
-        if self.action == "cancel":
-            return [permissions.IsAuthenticated()]
+        # EMPLOYEE: tworzy wniosek
+        if self.action == "create":
+            return [IsEmployee()]
 
-        return [permissions.IsAuthenticated()]
+        # EMPLOYEE: może anulować (w metodzie cancel sprawdzamy właściciela)
+        if self.action == "cancel":
+            return [IsEmployee()]
+
+        # blokujemy adminowi edycję/usuwanie (bo ma tylko przeglądać + decydować)
+        if self.action in ["update", "partial_update", "destroy"]:
+            raise PermissionDenied("Edycja i usuwanie wniosków urlopowych jest zablokowane.")
+
+        # list/retrieve: admin + employee
+        return [IsAdminOrEmployee()]
 
     def get_queryset(self):
         qs = (
@@ -370,20 +377,18 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = self.request.user
         role = getattr(user, "role", None)
 
-        if role == "EMPLOYEE":
-            emp = getattr(user, "employee_profile", None)
-            if not emp:
-                raise PermissionDenied("Brak profilu pracownika.")
-            obj = serializer.save(employee=emp, status=TimeOff.Status.PENDING, requested_by=user)
+        if role != "EMPLOYEE":
+            raise PermissionDenied("Tylko pracownik może wysłać wniosek urlopowy.")
 
-        elif role == "ADMIN" or user.is_staff:
-            employee = serializer.validated_data.get("employee")
-            if not employee:
-                raise serializers.ValidationError({"employee": "Pole employee jest wymagane dla ADMIN."})
-            obj = serializer.save(status=TimeOff.Status.PENDING, requested_by=user)
+        emp = getattr(user, "employee_profile", None)
+        if not emp:
+            raise PermissionDenied("Brak profilu pracownika.")
 
-        else:
-            raise PermissionDenied("Brak uprawnień.")
+        obj = serializer.save(
+            employee=emp,
+            status=TimeOff.Status.PENDING,
+            requested_by=user
+        )
 
         SystemLog.log(
             action=SystemLog.Action.TIMEOFF_CREATED,
@@ -433,7 +438,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     def cancel(self, request, pk=None):
         """
         EMPLOYEE: może anulować tylko własny wniosek w statusie PENDING.
-        ADMIN/is_staff: może anulować dowolny wniosek w statusie PENDING.
         """
         obj: TimeOff = self.get_object()
 
@@ -446,10 +450,11 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         user = request.user
         role = getattr(user, "role", None)
 
-        is_admin = (role == "ADMIN") or getattr(user, "is_staff", False)
+        # ✅ admin i tak nie ma permission do cancel (IsEmployee),
+        # a tu sprawdzamy właściciela 1:1
         is_owner_employee = (role == "EMPLOYEE") and (obj.employee.user_id == user.id)
 
-        if not (is_admin or is_owner_employee):
+        if not is_owner_employee:
             raise PermissionDenied("Brak uprawnień do anulowania tego wniosku.")
 
         obj.status = TimeOff.Status.CANCELLED
@@ -527,7 +532,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "status", "created_at"]
 
     def get_permissions(self):
-        if self.action in ["confirm", "complete"]:
+        if self.action in ["confirm", "complete", "no_show"]:
             return [IsAdminOrEmployee()]
 
         if self.action == "cancel":
@@ -583,12 +588,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if not employee:
             return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
 
-        qs = (
-            Appointment.objects
-            .select_related("client", "employee", "service")
-            .filter(employee=employee)
-            .order_by("start")
-        )
+        qs = self.filter_queryset(self.get_queryset())
 
         page = self.paginate_queryset(qs)
         if page is None:
@@ -609,6 +609,12 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if appt.start <= timezone.now():
+            return Response(
+                {"detail": "Nie można potwierdzić wizyty, która już się rozpoczęła."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         appt.status = Appointment.Status.CONFIRMED
         appt.save(update_fields=["status"])
 
@@ -618,9 +624,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(
-            AppointmentSerializer(appt, context={"request": request}).data
-        )
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="cancel")
     @transaction.atomic
@@ -637,6 +641,12 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
             return Response({"detail": "Nie można anulować wizyty w tym statusie."}, status=status.HTTP_400_BAD_REQUEST)
 
+        if appt.start <= timezone.now():
+            return Response(
+                {"detail": "Nie można anulować wizyty, która już się rozpoczęła."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         appt.status = Appointment.Status.CANCELLED
         appt.internal_notes = (appt.internal_notes or "") + (
             f"\n[ANULOWANO {timezone.now():%Y-%m-%d %H:%M}] przez {request.user.username}"
@@ -649,9 +659,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(
-            AppointmentSerializer(appt, context={"request": request}).data
-        )
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
     @action(detail=True, methods=["post"], url_path="complete")
     @transaction.atomic
@@ -665,6 +673,12 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if appt.end > timezone.now():
+            return Response(
+                {"detail": "Nie można zakończyć wizyty przed jej zakończeniem."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         appt.status = Appointment.Status.COMPLETED
         appt.save(update_fields=["status"])
 
@@ -674,9 +688,39 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=getattr(getattr(appt, "client", None), "user", None),
         )
 
-        return Response(
-            AppointmentSerializer(appt, context={"request": request}).data
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="no-show")
+    @transaction.atomic
+    def no_show(self, request, pk=None):
+        appt = Appointment.objects.select_for_update().get(pk=pk)
+        self.check_object_permissions(request, appt)
+
+        if appt.status != Appointment.Status.CONFIRMED:
+            return Response(
+                {"detail": "No-show można ustawić tylko dla wizyt potwierdzonych."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if appt.end > timezone.now():
+            return Response(
+                {"detail": "No-show można ustawić dopiero po zakończeniu wizyty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appt.status = Appointment.Status.NO_SHOW
+        appt.internal_notes = (appt.internal_notes or "") + (
+            f"\n[NO_SHOW {timezone.now():%Y-%m-%d %H:%M}] przez {request.user.username}"
         )
+        appt.save(update_fields=["status", "internal_notes"])
+
+        SystemLog.log(
+            action=getattr(SystemLog.Action, "APPOINTMENT_NO_SHOW", SystemLog.Action.APPOINTMENT_UPDATED),
+            performed_by=request.user,
+            target_user=getattr(getattr(appt, "client", None), "user", None),
+        )
+
+        return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
 
 # =============================================================================
@@ -959,12 +1003,13 @@ class DashboardView(APIView):
 
     def get(self, request):
         user = request.user
+        role = getattr(user, "role", None)
 
-        if getattr(user, "is_admin_role", False):
+        if role == "ADMIN":
             return self._admin_dashboard(request)
-        if getattr(user, "is_employee", False):
+        if role == "EMPLOYEE":
             return self._employee_dashboard(request, user)
-        if getattr(user, "is_client", False):
+        if role == "CLIENT":
             return self._client_dashboard(request, user)
 
         return Response({"detail": "Brak uprawnień"}, status=status.HTTP_403_FORBIDDEN)
