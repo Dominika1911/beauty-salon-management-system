@@ -252,3 +252,25 @@ export interface TimeOff {
   decided_at: string | null;
   created_at: string;
 }
+
+export interface SystemSettings {
+  id: number;
+  salon_name: string;
+  slot_minutes: number;
+  buffer_minutes: number;
+  opening_hours: Record<string, Array<{ start: string; end: string }>>;
+  updated_at: string;
+  updated_by: number | null;
+  updated_by_username: string | null;
+}
+
+export interface SystemLog {
+  id: number;
+  action: string;
+  action_display: string;
+  performed_by: number | null;
+  performed_by_username: string | null;
+  target_user: number | null;
+  target_user_username: string | null;
+  timestamp: string;
+}

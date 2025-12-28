@@ -277,8 +277,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
             _validate_password_or_raise(password, user=self.instance.user, field_name="password")
 
         user = data.get("user")
-        if user and getattr(user, "role", None) != "EMPLOYEE":
-            raise serializers.ValidationError("Użytkownik musi mieć rolę EMPLOYEE.")
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if user:
+            if not hasattr(user, "role") or user.role != "EMPLOYEE":
+                raise serializers.ValidationError("Użytkownik musi mieć rolę EMPLOYEE.")
 
         return data
 
@@ -292,7 +294,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
             if not user:
                 tmp_username = None
                 for _ in range(200):
-                    candidate = f"pracownik-{secrets.randbelow(10**8):08d}"
+                    candidate = f"pracownik-{secrets.randbelow(10 ** 8):08d}"
                     if not User.objects.filter(username=candidate).exists():
                         tmp_username = candidate
                         break
@@ -332,8 +334,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
                         candidate_num = f"{base:08d}"
                         candidate_username = f"pracownik-{candidate_num}"
                         if (
-                            not EmployeeProfile.objects.filter(employee_number=candidate_num).exists()
-                            and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
+                                not EmployeeProfile.objects.filter(employee_number=candidate_num).exists()
+                                and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
                         ):
                             picked = (candidate_num, candidate_username)
                             break
@@ -464,7 +466,10 @@ class TimeOffSerializer(serializers.ModelSerializer):
             return False
 
         user = request.user
-        role = getattr(user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie role
+        if not hasattr(user, "role"):
+            return False
+        role = user.role
 
         # ADMIN/staff: może anulować każdy PENDING
         if role == "ADMIN" or getattr(user, "is_staff", False):
@@ -482,7 +487,10 @@ class TimeOffSerializer(serializers.ModelSerializer):
             return False
 
         user = request.user
-        role = getattr(user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie role
+        if not hasattr(user, "role"):
+            return False
+        role = user.role
 
         return role == "ADMIN" or getattr(user, "is_staff", False)
 
@@ -495,7 +503,10 @@ class TimeOffSerializer(serializers.ModelSerializer):
             return False
 
         user = request.user
-        role = getattr(user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie role
+        if not hasattr(user, "role"):
+            return False
+        role = user.role
 
         return role == "ADMIN" or getattr(user, "is_staff", False)
 
@@ -569,8 +580,10 @@ class ClientSerializer(serializers.ModelSerializer):
             _validate_password_or_raise(password, user=self.instance.user, field_name="password")
 
         user = data.get("user")
-        if user and user.role != "CLIENT":
-            raise serializers.ValidationError("Użytkownik musi mieć rolę CLIENT.")
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if user:
+            if not hasattr(user, "role") or user.role != "CLIENT":
+                raise serializers.ValidationError("Użytkownik musi mieć rolę CLIENT.")
 
         return data
 
@@ -770,7 +783,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        role = getattr(request.user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if not hasattr(request.user, "role"):
+            return False
+        role = request.user.role
+
         if role not in ["ADMIN", "EMPLOYEE"]:
             return False
 
@@ -793,7 +810,10 @@ class AppointmentSerializer(serializers.ModelSerializer):
             return False
 
         user = request.user
-        role = getattr(user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if not hasattr(user, "role"):
+            return False
+        role = user.role
 
         if role in ["ADMIN", "EMPLOYEE"]:
             return True
@@ -809,7 +829,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        role = getattr(request.user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if not hasattr(request.user, "role"):
+            return False
+        role = request.user.role
+
         if role not in ["ADMIN", "EMPLOYEE"]:
             return False
 
@@ -824,7 +848,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if not request or not getattr(request, "user", None) or not request.user.is_authenticated:
             return False
 
-        role = getattr(request.user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if not hasattr(request.user, "role"):
+            return False
+        role = request.user.role
+
         if role not in ["ADMIN", "EMPLOYEE"]:
             return False
 
@@ -834,6 +862,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
         # dopiero po zakończeniu wizyty
         return obj.end <= timezone.now()
+
 
 # =============================================================================
 # SYSTEM SETTINGS SERIALIZERS
@@ -881,13 +910,17 @@ class BookingCreateSerializer(serializers.Serializer):
     start = serializers.DateTimeField(required=True)
     client_id = serializers.IntegerField(required=False)
 
+    @transaction.atomic
     def validate(self, data):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
-            raise serializers.ValidationError("Musisz być zalogowany aby zarezerwować wizytę.")
+            raise serializers.ValidationError({"detail": "Musisz być zalogowany aby zarezerwować wizytę."})
 
         user = request.user
-        role = getattr(user, "role", None)
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if not hasattr(user, "role"):
+            raise serializers.ValidationError({"detail": "Brak roli użytkownika."})
+        role = user.role
 
         if role == "CLIENT":
             client = getattr(user, "client_profile", None)
@@ -899,18 +932,21 @@ class BookingCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"client_id": "Wymagane dla ADMIN/EMPLOYEE."})
             try:
                 client = ClientProfile.objects.get(pk=int(data["client_id"]), is_active=True)
-            except Exception:
-                raise serializers.ValidationError({"client_id": "Nie znaleziono klienta."})
+                data["client"] = client
+            except (ClientProfile.DoesNotExist, ValueError, TypeError):
+                raise serializers.ValidationError({"client_id": "Nie znaleziono aktywnego klienta."})
         else:
-            raise serializers.ValidationError("Brak uprawnień do rezerwacji.")
+            raise serializers.ValidationError({"detail": "Brak uprawnień do rezerwacji."})
 
         try:
             service = Service.objects.get(id=data["service_id"], is_active=True)
+            data["service"] = service
         except Service.DoesNotExist:
             raise serializers.ValidationError({"service_id": "Nie znaleziono usługi."})
 
         try:
             employee = EmployeeProfile.objects.get(id=data["employee_id"], is_active=True)
+            data["employee"] = employee
         except EmployeeProfile.DoesNotExist:
             raise serializers.ValidationError({"employee_id": "Nie znaleziono pracownika."})
 
@@ -931,10 +967,10 @@ class BookingCreateSerializer(serializers.Serializer):
         end = start + duration
 
         if TimeOff.objects.filter(
-            employee=employee,
-            status=TimeOff.Status.APPROVED,
-            date_from__lte=start.date(),
-            date_to__gte=start.date()
+                employee=employee,
+                status=TimeOff.Status.APPROVED,
+                date_from__lte=start.date(),
+                date_to__gte=start.date()
         ).exists():
             raise serializers.ValidationError({"start": "Pracownik jest nieobecny w tym dniu."})
 

@@ -20,17 +20,13 @@ from beauty_salon.models import (
 
 
 def _dt(days_offset: int, hour: int, minute: int = 0):
-    """Helper: timezone-aware datetime in local tz."""
     now = timezone.localtime(timezone.now())
     d = now + timedelta(days=days_offset)
     return d.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
 
 @transaction.atomic
-def seed(clear: bool = False) -> None:
-    # -------------------------------------------------------------------------
-    # CLEAR
-    # -------------------------------------------------------------------------
+def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> None:
     if clear:
         Appointment.objects.all().delete()
         TimeOff.objects.all().delete()
@@ -38,13 +34,8 @@ def seed(clear: bool = False) -> None:
         ClientProfile.objects.all().delete()
         EmployeeProfile.objects.all().delete()
         Service.objects.all().delete()
-
-        # Usuń wszystkich userów poza superuserami (żeby nie skasować admina jeśli już jest)
         CustomUser.objects.filter(is_superuser=False).delete()
 
-    # -------------------------------------------------------------------------
-    # SYSTEM SETTINGS
-    # -------------------------------------------------------------------------
     settings_obj, _ = SystemSettings.objects.get_or_create(
         pk=1,
         defaults={
@@ -62,46 +53,32 @@ def seed(clear: bool = False) -> None:
             },
         },
     )
-    buffer_minutes = int(settings_obj.buffer_minutes or 0)
+    buffer_minutes = int(settings_obj.buffer_minutes or 10)
 
-    # -------------------------------------------------------------------------
-    # ADMIN USER
-    # -------------------------------------------------------------------------
     admin, created = CustomUser.objects.get_or_create(
         username="admin-00000001",
         defaults={
             "first_name": "Administrator",
             "last_name": "Systemu",
             "email": "admin@beautysalon.pl",
-            "role": "ADMIN",
+            "role": CustomUser.Role.ADMIN,
             "is_staff": True,
             "is_superuser": True,
             "is_active": True,
         },
     )
     if created:
-        admin.set_password("admin123")
+        admin.set_password(password)
         admin.full_clean()
         admin.save()
     else:
-        # Upewnij się, że admin ma poprawne flagi
-        updated = False
-        if not admin.is_staff:
+        if not admin.is_staff or not admin.is_superuser or admin.role != CustomUser.Role.ADMIN:
             admin.is_staff = True
-            updated = True
-        if not admin.is_superuser:
             admin.is_superuser = True
-            updated = True
-        if admin.role != "ADMIN":
-            admin.role = "ADMIN"
-            updated = True
-        if updated:
+            admin.role = CustomUser.Role.ADMIN
             admin.full_clean()
             admin.save()
 
-    # -------------------------------------------------------------------------
-    # EMPLOYEES
-    # -------------------------------------------------------------------------
     employees_data = [
         {
             "username": "anna.kowalska",
@@ -129,7 +106,7 @@ def seed(clear: bool = False) -> None:
         },
     ]
 
-    employee_profiles: list[EmployeeProfile] = []
+    employee_profiles = []
     for e in employees_data:
         u, created = CustomUser.objects.get_or_create(
             username=e["username"],
@@ -137,20 +114,17 @@ def seed(clear: bool = False) -> None:
                 "first_name": e["first_name"],
                 "last_name": e["last_name"],
                 "email": e["email"],
-                "role": "EMPLOYEE",
+                "role": CustomUser.Role.EMPLOYEE,
                 "is_active": True,
-                "is_staff": True,  # często pracownicy mają dostęp do panelu
+                "is_staff": True,
             },
         )
         if created:
-            u.set_password("employee123")
+            u.set_password(password)
         else:
-            # dopnij role/flagę jeśli ktoś wcześniej istniał
-            u.role = "EMPLOYEE"
+            u.role = CustomUser.Role.EMPLOYEE
             u.is_active = True
             u.is_staff = True
-            if u.email != e["email"]:
-                u.email = e["email"]
 
         u.full_clean()
         u.save()
@@ -166,89 +140,56 @@ def seed(clear: bool = False) -> None:
             },
         )
 
-        # Upewnij się, że numer pracownika jest ustawiony
         if not profile.employee_number:
             profile.employee_number = e["employee_number"]
             profile.save(update_fields=["employee_number"])
 
         employee_profiles.append(profile)
 
-    # -------------------------------------------------------------------------
-    # SERVICES
-    # -------------------------------------------------------------------------
     services_data = [
-        {"name": "Manicure klasyczny", "category": "Paznokcie", "price": 50, "duration": 45,
-         "desc": "Podstawowy manicure z malowaniem"},
-        {"name": "Manicure hybrydowy", "category": "Paznokcie", "price": 80, "duration": 60,
-         "desc": "Manicure z użyciem lakieru hybrydowego"},
-        {"name": "Manicure żelowy", "category": "Paznokcie", "price": 100, "duration": 90,
-         "desc": "Przedłużanie paznokci metodą żelową"},
-        {"name": "Pedicure klasyczny", "category": "Paznokcie", "price": 60, "duration": 60,
-         "desc": "Podstawowy pedicure z malowaniem"},
-        {"name": "Pedicure hybrydowy", "category": "Paznokcie", "price": 90, "duration": 75,
-         "desc": "Pedicure z lakierem hybrydowym"},
-
-        {"name": "Przedłużanie rzęs 1:1", "category": "Rzęsy", "price": 120, "duration": 90,
-         "desc": "Klasyczne przedłużanie metodą 1:1"},
-        {"name": "Przedłużanie rzęs 2D-3D", "category": "Rzęsy", "price": 150, "duration": 120,
-         "desc": "Przedłużanie metodą objętościową"},
-        {"name": "Lifting rzęs", "category": "Rzęsy", "price": 100, "duration": 60,
-         "desc": "Laminacja i lifting naturalnych rzęs"},
-        {"name": "Uzupełnienie rzęs", "category": "Rzęsy", "price": 80, "duration": 60,
-         "desc": "Uzupełnienie po 2-3 tygodniach"},
-
-        {"name": "Stylizacja brwi", "category": "Brwi", "price": 40, "duration": 30,
-         "desc": "Regulacja kształtu brwi"},
-        {"name": "Henna brwi", "category": "Brwi", "price": 50, "duration": 45,
-         "desc": "Farbowanie henną"},
-        {"name": "Microblading", "category": "Brwi", "price": 400, "duration": 120,
-         "desc": "Makijaż permanentny brwi"},
-
-        {"name": "Oczyszczanie wodorowe", "category": "Twarz", "price": 120, "duration": 60,
-         "desc": "Głębokie oczyszczanie twarzy"},
-        {"name": "Mezoterapia igłowa", "category": "Twarz", "price": 200, "duration": 45,
-         "desc": "Zabieg mezoterapii"},
-        {"name": "Peeling kawitacyjny", "category": "Twarz", "price": 100, "duration": 45,
-         "desc": "Peeling ultradźwiękowy"},
-        {"name": "Masaż twarzy", "category": "Twarz", "price": 80, "duration": 45,
-         "desc": "Relaksujący masaż twarzy"},
-
-        {"name": "Depilacja woskiem - nogi", "category": "Depilacja", "price": 80, "duration": 45,
-         "desc": "Depilacja całych nóg"},
-        {"name": "Depilacja woskiem - pachy", "category": "Depilacja", "price": 40, "duration": 20,
-         "desc": "Depilacja pach"},
-        {"name": "Depilacja laserowa - nogi", "category": "Depilacja", "price": 300, "duration": 60,
-         "desc": "Laserowe usuwanie owłosienia"},
-
-        {"name": "Masaż relaksacyjny", "category": "Masaż", "price": 150, "duration": 60,
-         "desc": "Masaż całego ciała"},
+        {"name": "Manicure klasyczny", "category": "Paznokcie", "price": 50, "duration": 45},
+        {"name": "Manicure hybrydowy", "category": "Paznokcie", "price": 80, "duration": 60},
+        {"name": "Manicure żelowy", "category": "Paznokcie", "price": 100, "duration": 90},
+        {"name": "Pedicure klasyczny", "category": "Paznokcie", "price": 60, "duration": 60},
+        {"name": "Pedicure hybrydowy", "category": "Paznokcie", "price": 90, "duration": 75},
+        {"name": "Przedłużanie rzęs 1:1", "category": "Rzęsy", "price": 120, "duration": 90},
+        {"name": "Przedłużanie rzęs 2D-3D", "category": "Rzęsy", "price": 150, "duration": 120},
+        {"name": "Lifting rzęs", "category": "Rzęsy", "price": 100, "duration": 60},
+        {"name": "Uzupełnienie rzęs", "category": "Rzęsy", "price": 80, "duration": 60},
+        {"name": "Stylizacja brwi", "category": "Brwi", "price": 40, "duration": 30},
+        {"name": "Henna brwi", "category": "Brwi", "price": 50, "duration": 45},
+        {"name": "Microblading", "category": "Brwi", "price": 400, "duration": 120},
+        {"name": "Oczyszczanie wodorowe", "category": "Twarz", "price": 120, "duration": 60},
+        {"name": "Mezoterapia igłowa", "category": "Twarz", "price": 200, "duration": 45},
+        {"name": "Peeling kawitacyjny", "category": "Twarz", "price": 100, "duration": 45},
+        {"name": "Masaż twarzy", "category": "Twarz", "price": 80, "duration": 45},
+        {"name": "Depilacja woskiem - nogi", "category": "Depilacja", "price": 80, "duration": 45},
+        {"name": "Depilacja woskiem - pachy", "category": "Depilacja", "price": 40, "duration": 20},
+        {"name": "Depilacja laserowa - nogi", "category": "Depilacja", "price": 300, "duration": 60},
+        {"name": "Masaż relaksacyjny", "category": "Masaż", "price": 150, "duration": 60},
     ]
 
-    services: list[Service] = []
+    services = []
     for s in services_data:
         obj, _ = Service.objects.get_or_create(
             name=s["name"],
             defaults={
                 "category": s["category"],
-                "description": s["desc"],
+                "description": f"Profesjonalna {s['name'].lower()}",
                 "price": Decimal(str(s["price"])),
-                "duration_minutes": int(s["duration"]),
+                "duration_minutes": s["duration"],
                 "is_active": True,
             },
         )
         services.append(obj)
 
-    # Skills (przykładowy podział usług)
     if employee_profiles:
-        employee_profiles[0].skills.set(services[:7])
+        employee_profiles[0].skills.set(services[0:12])
     if len(employee_profiles) > 1:
-        employee_profiles[1].skills.set(services[7:14])
+        employee_profiles[1].skills.set(services[12:19])
     if len(employee_profiles) > 2:
-        employee_profiles[2].skills.set(services[14:])
+        employee_profiles[2].skills.set([services[5], services[6], services[7], services[8], services[19]])
 
-    # -------------------------------------------------------------------------
-    # EMPLOYEE SCHEDULES
-    # -------------------------------------------------------------------------
     schedule = {
         "mon": [{"start": "09:00", "end": "17:00"}],
         "tue": [{"start": "09:00", "end": "17:00"}],
@@ -261,67 +202,37 @@ def seed(clear: bool = False) -> None:
     for emp in employee_profiles:
         EmployeeSchedule.objects.get_or_create(employee=emp, defaults={"weekly_hours": schedule})
 
-    # -------------------------------------------------------------------------
-    # CLIENTS
-    # -------------------------------------------------------------------------
     clients_data = [
-        {
-            "num": "00000001",
-            "first_name": "Katarzyna",
-            "last_name": "Zielińska",
-            "email": "katarzyna.zielinska@gmail.com",
-            "phone": "+48601234567",
-        },
-        {
-            "num": "00000002",
-            "first_name": "Magdalena",
-            "last_name": "Lewandowska",
-            "email": "magdalena.lewandowska@gmail.com",
-            "phone": "+48602345678",
-        },
-        {
-            "num": "00000003",
-            "first_name": "Agnieszka",
-            "last_name": "Kamińska",
-            "email": "agnieszka.kaminska@gmail.com",
-            "phone": "+48603456789",
-        },
-        {
-            "num": "00000004",
-            "first_name": "Julia",
-            "last_name": "Kowalczyk",
-            "email": "julia.kowalczyk@gmail.com",
-            "phone": "+48604567890",
-        },
-        {
-            "num": "00000005",
-            "first_name": "Natalia",
-            "last_name": "Wójcik",
-            "email": "natalia.wojcik@gmail.com",
-            "phone": "+48605678901",
-        },
+        {"num": "00000001", "first_name": "Katarzyna", "last_name": "Zielińska",
+         "email": "katarzyna.zielinska@gmail.com", "phone": "+48601234567"},
+        {"num": "00000002", "first_name": "Magdalena", "last_name": "Lewandowska",
+         "email": "magdalena.lewandowska@gmail.com", "phone": "+48602345678"},
+        {"num": "00000003", "first_name": "Agnieszka", "last_name": "Kamińska",
+         "email": "agnieszka.kaminska@gmail.com", "phone": "+48603456789"},
+        {"num": "00000004", "first_name": "Julia", "last_name": "Kowalczyk",
+         "email": "julia.kowalczyk@gmail.com", "phone": "+48604567890"},
+        {"num": "00000005", "first_name": "Natalia", "last_name": "Wójcik",
+         "email": "natalia.wojcik@gmail.com", "phone": "+48605678901"},
     ]
 
-    client_profiles: list[ClientProfile] = []
+    client_profiles = []
     for c in clients_data:
         username = f"klient-{c['num']}"
-
         u, created = CustomUser.objects.get_or_create(
             username=username,
             defaults={
                 "first_name": c["first_name"],
                 "last_name": c["last_name"],
                 "email": c["email"],
-                "role": "CLIENT",
+                "role": CustomUser.Role.CLIENT,
                 "is_active": True,
             },
         )
         if created:
-            u.set_password("client123")
+            u.set_password(password)
         else:
-            u.role = "CLIENT"
+            u.role = CustomUser.Role.CLIENT
             u.is_active = True
-            # email/imię/nazwisko zsynchronizujmy
             u.first_name = c["first_name"]
             u.last_name = c["last_name"]
             u.email = c["email"]
@@ -332,45 +243,41 @@ def seed(clear: bool = False) -> None:
         profile, _ = ClientProfile.objects.get_or_create(
             user=u,
             defaults={
-                "client_number": c["num"],   # możesz zostawić puste jeśli masz signal generator
+                "client_number": c["num"],
                 "first_name": c["first_name"],
                 "last_name": c["last_name"],
                 "email": c["email"],
                 "phone": c["phone"],
-                "internal_notes": "",
                 "is_active": True,
             },
         )
 
-        # jeśli profil istniał i nie ma numeru, ustaw
         if not profile.client_number:
             profile.client_number = c["num"]
             profile.save(update_fields=["client_number"])
 
         client_profiles.append(profile)
 
-    # -------------------------------------------------------------------------
-    # APPOINTMENTS
-    # -------------------------------------------------------------------------
-    def calc_end(start_dt, service_obj: Service):
+    def calc_end(start_dt, service_obj):
         return start_dt + timedelta(minutes=int(service_obj.duration_minutes) + buffer_minutes)
 
     if client_profiles and employee_profiles and services:
-        appts = [
-            # przeszłe (COMPLETED)
-            (client_profiles[0], employee_profiles[0], services[1], -7, 10, "COMPLETED"),
-            (client_profiles[1], employee_profiles[1], services[5], -5, 14, "COMPLETED"),
-            (client_profiles[2], employee_profiles[2], services[12], -3, 11, "COMPLETED"),
-
-            # przyszłe (CONFIRMED / PENDING)
-            (client_profiles[0], employee_profiles[0], services[2], 2, 10, "CONFIRMED"),
-            (client_profiles[1], employee_profiles[1], services[7], 3, 15, "CONFIRMED"),
-            (client_profiles[3], employee_profiles[2], services[13], 5, 12, "PENDING"),
-            (client_profiles[4], employee_profiles[0], services[4], 7, 14, "PENDING"),
+        appointments = [
+            (client_profiles[0], employee_profiles[0], services[1], -7, 10, 0, Appointment.Status.COMPLETED),
+            (client_profiles[1], employee_profiles[1], services[13], -5, 14, 0, Appointment.Status.COMPLETED),
+            (client_profiles[2], employee_profiles[2], services[5], -3, 11, 0, Appointment.Status.COMPLETED),
+            (client_profiles[0], employee_profiles[0], services[3], -10, 15, 0, Appointment.Status.COMPLETED),
+            (client_profiles[3], employee_profiles[0], services[0], -2, 16, 0, Appointment.Status.CANCELLED),
+            (client_profiles[4], employee_profiles[1], services[12], -1, 14, 0, Appointment.Status.NO_SHOW),
+            (client_profiles[0], employee_profiles[0], services[2], 2, 10, 0, Appointment.Status.CONFIRMED),
+            (client_profiles[1], employee_profiles[1], services[14], 3, 15, 0, Appointment.Status.CONFIRMED),
+            (client_profiles[2], employee_profiles[2], services[7], 4, 12, 0, Appointment.Status.CONFIRMED),
+            (client_profiles[3], employee_profiles[0], services[4], 5, 14, 0, Appointment.Status.PENDING),
+            (client_profiles[4], employee_profiles[1], services[16], 7, 11, 0, Appointment.Status.PENDING),
         ]
 
-        for client, emp, svc, days, hour, status in appts:
-            start = _dt(days, hour)
+        for client, emp, svc, days, hour, minute, appt_status in appointments:
+            start = _dt(days, hour, minute)
             Appointment.objects.get_or_create(
                 client=client,
                 employee=emp,
@@ -378,47 +285,84 @@ def seed(clear: bool = False) -> None:
                 start=start,
                 defaults={
                     "end": calc_end(start, svc),
-                    "status": status,
+                    "status": appt_status,
                 },
             )
 
-        # przykładowa anulowana
-        start = _dt(1, 16)
-        Appointment.objects.get_or_create(
-            client=client_profiles[2],
+    today = timezone.localdate()
+
+    if employee_profiles:
+        TimeOff.objects.get_or_create(
             employee=employee_profiles[0],
-            service=services[0],
-            start=start,
+            date_from=today + timedelta(days=20),
+            date_to=today + timedelta(days=25),
             defaults={
-                "end": calc_end(start, services[0]),
-                "status": "CANCELLED",
-                "internal_notes": "Klient odwołał wizytę.",
+                "reason": "Urlop wypoczynkowy",
+                "status": TimeOff.Status.PENDING,
+                "requested_by": employee_profiles[0].user,
             },
         )
 
-    # -------------------------------------------------------------------------
-    # TIME OFF
-    # -------------------------------------------------------------------------
     if len(employee_profiles) > 1:
         TimeOff.objects.get_or_create(
             employee=employee_profiles[1],
-            date_from=(timezone.localdate() + timedelta(days=10)),
-            date_to=(timezone.localdate() + timedelta(days=17)),
-            defaults={"reason": "Urlop wypoczynkowy"},
+            date_from=today + timedelta(days=30),
+            date_to=today + timedelta(days=35),
+            defaults={
+                "reason": "Wakacje",
+                "status": TimeOff.Status.APPROVED,
+                "requested_by": employee_profiles[1].user,
+                "decided_by": admin,
+                "decided_at": timezone.now(),
+            },
         )
 
-    print("Seed OK.")
-    print("ADMIN:   admin-00000001 / admin123")
-    print("EMPLOYEE: anna.kowalska / employee123")
-    print("CLIENT:  klient-00000001 / client123")
+    if len(employee_profiles) > 2:
+        TimeOff.objects.get_or_create(
+            employee=employee_profiles[2],
+            date_from=today + timedelta(days=10),
+            date_to=today + timedelta(days=12),
+            defaults={
+                "reason": "Sprawy rodzinne",
+                "status": TimeOff.Status.REJECTED,
+                "requested_by": employee_profiles[2].user,
+                "decided_by": admin,
+                "decided_at": timezone.now() - timedelta(days=1),
+            },
+        )
+
+    if employee_profiles:
+        TimeOff.objects.get_or_create(
+            employee=employee_profiles[0],
+            date_from=today + timedelta(days=5),
+            date_to=today + timedelta(days=7),
+            defaults={
+                "reason": "Pilne sprawy",
+                "status": TimeOff.Status.CANCELLED,
+                "requested_by": employee_profiles[0].user,
+                "decided_by": employee_profiles[0].user,
+                "decided_at": timezone.now() - timedelta(hours=2),
+            },
+        )
+
+    print("Seed completed successfully.")
+    print(f"Admin: admin-00000001 / {password}")
+    print(f"Employee: anna.kowalska / {password}")
+    print(f"Client: klient-00000001 / {password}")
 
 
 class Command(BaseCommand):
-    help = "Seed danych startowych"
+    help = "Seed initial data for the beauty salon system"
 
     def add_arguments(self, parser):
-        parser.add_argument("--clear", action="store_true")
+        parser.add_argument("--clear", action="store_true", help="Clear existing data before seeding")
+        parser.add_argument("--demo", action="store_true", help="Include additional demo data")
+        parser.add_argument("--password", type=str, default="demo123", help="Password for all users")
 
     def handle(self, *args, **options):
-        seed(clear=options["clear"])
-        self.stdout.write(self.style.SUCCESS("Seed zakończony."))
+        seed(
+            clear=options["clear"],
+            demo=options["demo"],
+            password=options["password"]
+        )
+        self.stdout.write(self.style.SUCCESS("Data seeding completed."))

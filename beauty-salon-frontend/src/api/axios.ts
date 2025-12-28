@@ -48,7 +48,7 @@ axiosInstance.interceptors.response.use(
         reqUrl.includes("/auth/csrf/");
 
       if (!isAuthEndpoint && window.location.pathname !== "/login") {
-        window.location.href = "/login";
+        window.location.assign("/login");
       }
     }
     return Promise.reject(error);

@@ -81,7 +81,7 @@ class CustomUser(AbstractUser):
 
         username = self.username.strip().lower()
 
-        # 1) ogólna walidacja formatu (jak dotychczas)
+        # 1) ogólna walidacja formatu
         if not USERNAME_PATTERN.match(username):
             raise ValidationError({
                 "username": _(
@@ -183,8 +183,10 @@ class EmployeeProfile(models.Model):
         super().clean()
         if self.employee_number == "":
             self.employee_number = None
-        if self.user and getattr(self.user, "role", None) != CustomUser.Role.EMPLOYEE:
-            raise ValidationError(_("Profil pracownika może być przypisany tylko do użytkownika z rolą PRACOWNIK."))
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if self.user:
+            if not hasattr(self.user, "role") or self.user.role != CustomUser.Role.EMPLOYEE:
+                raise ValidationError(_("Profil pracownika może być przypisany tylko do użytkownika z rolą PRACOWNIK."))
 
 
 class ClientProfile(models.Model):
@@ -228,8 +230,10 @@ class ClientProfile(models.Model):
         super().clean()
         if self.client_number == "":
             self.client_number = None
-        if self.user and getattr(self.user, "role", None) != CustomUser.Role.CLIENT:
-            raise ValidationError(_("Profil klienta może być przypisany tylko do użytkownika z rolą KLIENT."))
+        # POPRAWKA: bezpieczniejsze sprawdzanie
+        if self.user:
+            if not hasattr(self.user, "role") or self.user.role != CustomUser.Role.CLIENT:
+                raise ValidationError(_("Profil klienta może być przypisany tylko do użytkownika z rolą KLIENT."))
 
 
 # =============================================================================
@@ -256,7 +260,6 @@ class TimeOff(models.Model):
         APPROVED = "APPROVED", "Zaakceptowany"
         REJECTED = "REJECTED", "Odrzucony"
         CANCELLED = "CANCELLED", "Anulowany"
-        NO_SHOW = "NO_SHOW", "Nieobecność (no-show)"
 
     employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs")
     date_from = models.DateField()
@@ -320,6 +323,7 @@ class Appointment(models.Model):
         CONFIRMED = "CONFIRMED", _("Potwierdzona")
         COMPLETED = "COMPLETED", _("Zakończona")
         CANCELLED = "CANCELLED", _("Anulowana")
+        NO_SHOW = "NO_SHOW", _("Nieobecność (no-show)")
 
     client = models.ForeignKey(
         ClientProfile,
@@ -368,13 +372,12 @@ class Appointment(models.Model):
         indexes = [
             models.Index(fields=["employee", "start"]),
             models.Index(fields=["status", "start"]),
-            models.Index(fields=["client", "start"]),  # NOWE
+            models.Index(fields=["client", "start"]),
         ]
 
     def clean(self):
         super().clean()
 
-        # timezone sanity (minimalnie; nie rozbijam na osobny commit)
         if self.start and timezone.is_naive(self.start):
             raise ValidationError({"start": _("Data rozpoczęcia musi zawierać strefę czasową (timezone-aware).")})
         if self.end and timezone.is_naive(self.end):
@@ -387,7 +390,6 @@ class Appointment(models.Model):
             return
 
         # konflikty pracownika: tylko aktywne statusy
-        # było: .exclude(status=Appointment.Status.CANCELLED)
         emp_qs = (
             Appointment.objects
             .filter(employee_id=self.employee_id, status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED])
@@ -441,7 +443,7 @@ class SystemLog(models.Model):
         SERVICE_CREATED = "SERVICE_CREATED", "Service created"
         SERVICE_UPDATED = "SERVICE_UPDATED", "Service updated"
         SERVICE_DISABLED = "SERVICE_DISABLED", "Service disabled"
-        SERVICE_ENABLED = "SERVICE_ENABLED", "Service enabled"  # <-- NOWE
+        SERVICE_ENABLED = "SERVICE_ENABLED", "Service enabled"
 
         # EMPLOYEES
         EMPLOYEE_CREATED = "EMPLOYEE_CREATED", "Employee created"
@@ -455,10 +457,11 @@ class SystemLog(models.Model):
 
         # APPOINTMENTS
         APPOINTMENT_CREATED = "APPOINTMENT_CREATED", "Appointment created"
-        APPOINTMENT_UPDATED = "APPOINTMENT_UPDATED", "Appointment updated"  # <-- NOWE
+        APPOINTMENT_UPDATED = "APPOINTMENT_UPDATED", "Appointment updated"
         APPOINTMENT_CONFIRMED = "APPOINTMENT_CONFIRMED", "Appointment confirmed"
         APPOINTMENT_CANCELLED = "APPOINTMENT_CANCELLED", "Appointment cancelled"
         APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", "Appointment completed"
+        APPOINTMENT_NO_SHOW = "APPOINTMENT_NO_SHOW", "Appointment no-show"
 
         # TIME OFF WORKFLOW
         TIMEOFF_CREATED = "TIMEOFF_CREATED", "Time off created"
@@ -498,8 +501,8 @@ class SystemLog(models.Model):
         ordering = ["-timestamp"]
         indexes = [
             models.Index(fields=["action", "timestamp"]),
-            models.Index(fields=["performed_by", "timestamp"]),  # NOWE
-            models.Index(fields=["target_user", "timestamp"]),   # NOWE
+            models.Index(fields=["performed_by", "timestamp"]),
+            models.Index(fields=["target_user", "timestamp"]),
         ]
 
     def save(self, *args, **kwargs):
@@ -509,7 +512,6 @@ class SystemLog(models.Model):
 
     @classmethod
     def log(cls, *, action, performed_by=None, target_user=None):
-        # lekkie doprecyzowanie argumentów (bez zmiany architektury)
         return cls.objects.create(
             action=action,
             performed_by=performed_by,
