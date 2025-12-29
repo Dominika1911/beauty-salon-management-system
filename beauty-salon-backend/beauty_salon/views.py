@@ -1200,9 +1200,15 @@ class DashboardView(APIView):
         })
 
 
-# =============================================================================
-# PDF REPORTS ENGINE
-# =============================================================================
+# ============================================================================
+# RAPORTY Z DEJAVU - TYLKO DejaVuSans.ttf (JEDEN PLIK)
+# ============================================================================
+
+"""
+ZAMIEŃ całą klasę ReportView w views.py na TĘ WERSJĘ:
+(używa tylko DejaVuSans.ttf - jeden plik, bez Bold)
+"""
+
 
 class ReportView(APIView):
     permission_classes = [IsAdmin]
@@ -1213,82 +1219,161 @@ class ReportView(APIView):
         if report_type is None:
             return Response({
                 "available_reports": [
-                    {"type": "employees", "description": "Lista pracowników"},
-                    {"type": "clients", "description": "Baza klientów"},
-                    {"type": "today", "description": "Grafik na dziś"},
-                    {"type": "revenue", "description": "Raport finansowy"},
+                    {"type": "employee-performance", "description": "Wydajność pracowników"},
+                    {"type": "revenue-analysis", "description": "Analiza przychodów"},
+                    {"type": "client-analytics", "description": "Analityka klientów"},
+                    {"type": "operations", "description": "Raport operacyjny"},
+                    {"type": "capacity-utilization", "description": "Wykorzystanie mocy"},
                 ]
             })
 
-        if report_type == "revenue":
-            if "pdf" in request.path or request.query_params.get("format") == "pdf":
-                return self._revenue_pdf_report(request)
-            return self._revenue_json_report(request)
-
-        if report_type == "employees":
-            return self._employees_report()
-        if report_type == "clients":
-            return self._clients_report()
-        if report_type == "today":
-            return self._today_appointments_report()
+        # Wszystkie raporty od razu zwracają PDF
+        if report_type == "employee-performance":
+            return self._employee_performance_pdf()
+        if report_type == "revenue-analysis":
+            return self._revenue_analysis_pdf()
+        if report_type == "client-analytics":
+            return self._client_analytics_pdf()
+        if report_type == "operations":
+            return self._operations_pdf()
+        if report_type == "capacity-utilization":
+            return self._capacity_utilization_pdf()
 
         return Response({"error": "Nieznany typ raportu."}, status=status.HTTP_400_BAD_REQUEST)
 
+    def _register_fonts(self):
+        """Rejestruje font DejaVu (TYLKO JEDEN PLIK - DejaVuSans.ttf)"""
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        import os
+        from django.conf import settings
+
+        font_path = os.path.join(settings.BASE_DIR, 'static', 'fonts', 'DejaVuSans.ttf')
+
+        try:
+            # Rejestruj tylko jeden font
+            pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+            return True
+        except Exception as e:
+            print(f"Warning: Could not register DejaVu font: {e}")
+            return False
+
     def _build_pdf_response(self, title_text, data, filename, landscape_mode=False):
+        """Wspólna metoda do budowania PDF"""
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        import io
+        from django.http import HttpResponse
+
+        # Rejestruj font
+        fonts_ok = self._register_fonts()
+        font_name = 'DejaVuSans' if fonts_ok else 'Helvetica'
+
         buffer = io.BytesIO()
         pagesize = landscape(A4) if landscape_mode else A4
+
         doc = SimpleDocTemplate(
             buffer,
             pagesize=pagesize,
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
-            bottomMargin=18,
+            bottomMargin=18
         )
+
         styles = getSampleStyleSheet()
-        styles["Title"].fontName = PDF_FONT_NAME
-        styles["Normal"].fontName = PDF_FONT_NAME
+        elements = []
 
-        elements = [
-            Paragraph(title_text, styles["Title"]),
-            Paragraph(f"Wygenerowano: {timezone.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]),
-            Spacer(1, 24),
-        ]
+        # Tytuł
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Title'],
+            fontName=font_name,
+            fontSize=16,
+            textColor=colors.HexColor('#1976d2'),
+            alignment=TA_CENTER,
+        )
 
+        elements.append(Paragraph(f"<b>{title_text}</b>", title_style))
+        elements.append(Spacer(1, 12))
+
+        # Tabela
         table = Table(data, repeatRows=1)
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#9c27b0")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-            ("FONTNAME", (0, 0), (-1, 0), PDF_FONT_NAME),
-            ("FONTNAME", (0, 1), (-1, -1), PDF_FONT_NAME),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-            ("BACKGROUND", (0, 1), (-1, -1), colors.white),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976d2')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), font_name),  # Wszędzie ten sam font
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ]))
 
         elements.append(table)
         doc.build(elements)
+
         buffer.seek(0)
+        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
-        resp = HttpResponse(buffer, content_type="application/pdf")
-        resp["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return resp
-
-    def _revenue_json_report(self, request):
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
-        group_by = request.query_params.get("group_by", "day")
+    def _employee_performance_pdf(self):
+        """Raport wydajności pracowników - ostatnie 30 dni"""
+        from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
         until = timezone.now()
-        if date_from and date_to:
-            try:
-                since = timezone.make_aware(datetime.combine(datetime.strptime(date_from, "%Y-%m-%d"), time.min))
-                until = timezone.make_aware(datetime.combine(datetime.strptime(date_to, "%Y-%m-%d"), time.max))
-            except (ValueError, TypeError):
-                raise ValidationError({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."})
+
+        employees = EmployeeProfile.objects.filter(is_active=True)
+
+        data = [['Pracownik', 'Nr', 'Wizyty', 'Ukończone', 'No-show', 'Przychód', 'No-show %', 'Completion %']]
+
+        for emp in employees:
+            appointments = Appointment.objects.filter(employee=emp, start__gte=since, start__lte=until)
+
+            total = appointments.count()
+            completed = appointments.filter(status=Appointment.Status.COMPLETED)
+            completed_count = completed.count()
+            no_shows = appointments.filter(status=Appointment.Status.NO_SHOW).count()
+
+            revenue = completed.aggregate(total=Sum("service__price"))["total"] or Decimal("0")
+
+            confirmed_total = appointments.filter(
+                status__in=[Appointment.Status.CONFIRMED, Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW]
+            ).count()
+            no_show_rate = (no_shows / confirmed_total * 100) if confirmed_total > 0 else 0
+            completion_rate = (completed_count / total * 100) if total > 0 else 0
+
+            data.append([
+                emp.get_full_name()[:25],
+                emp.employee_number,
+                str(total),
+                str(completed_count),
+                str(no_shows),
+                f"{float(revenue):.0f} zł",
+                f"{no_show_rate:.1f}%",
+                f"{completion_rate:.1f}%",
+            ])
+
+        return self._build_pdf_response(
+            title_text="Raport wydajności pracowników (ostatnie 30 dni)",
+            data=data,
+            filename="wydajnosc_pracownikow.pdf",
+            landscape_mode=True,
+        )
+
+    def _revenue_analysis_pdf(self):
+        """Analiza przychodów - ostatnie 30 dni"""
+        from datetime import timedelta
+
+        since = timezone.now() - timedelta(days=30)
+        until = timezone.now()
 
         completed = Appointment.objects.filter(
             status=Appointment.Status.COMPLETED,
@@ -1296,108 +1381,153 @@ class ReportView(APIView):
             start__lte=until,
         )
 
-        trunc_func = TruncDate("start") if group_by == "day" else TruncMonth("start")
-        grouped = (
-            completed.annotate(period=trunc_func)
-            .values("period")
+        # Top 10 usług
+        top_services = (
+            completed.values("service__name", "service__category")
             .annotate(revenue=Sum("service__price"), count=Count("id"))
-            .order_by("period")
+            .order_by("-revenue")[:10]
         )
 
-        data = [{
-            "period": item["period"].strftime("%Y-%m-%d" if group_by == "day" else "%Y-%m"),
-            "revenue": float(item["revenue"] or 0),
-            "appointments_count": item["count"],
-        } for item in grouped]
+        data = [['Usługa', 'Kategoria', 'Przychód', 'Liczba wizyt']]
 
-        summary = completed.aggregate(total_rev=Sum("service__price"), total_app=Count("id"))
-        total_rev = summary["total_rev"] or 0
-        total_app = summary["total_app"] or 0
+        for svc in top_services:
+            data.append([
+                (svc['service__name'] or '-')[:40],
+                (svc['service__category'] or '-')[:20],
+                f"{float(svc['revenue'] or 0):.2f} zł",
+                str(svc['count']),
+            ])
 
-        return Response({
-            "range": {"from": since.date().isoformat(), "to": until.date().isoformat()},
-            "group_by": group_by,
-            "summary": {
-                "total_revenue": float(total_rev),
-                "total_appointments": total_app,
-                "average_per_appointment": round(float(total_rev) / total_app, 2) if total_app > 0 else 0,
-            },
-            "data": data,
-        })
+        return self._build_pdf_response(
+            title_text="Analiza przychodów - Top 10 usług (ostatnie 30 dni)",
+            data=data,
+            filename="analiza_przychodow.pdf",
+            landscape_mode=True,
+        )
 
-    def _revenue_pdf_report(self, request):
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
+    def _client_analytics_pdf(self):
+        """Top 20 klientów - ostatnie 30 dni"""
+        from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
         until = timezone.now()
-        if date_from and date_to:
-            try:
-                since = timezone.make_aware(datetime.combine(datetime.strptime(date_from, "%Y-%m-%d"), time.min))
-                until = timezone.make_aware(datetime.combine(datetime.strptime(date_to, "%Y-%m-%d"), time.max))
-            except (ValueError, TypeError):
-                raise ValidationError({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."})
 
-        appts = Appointment.objects.filter(
-            status=Appointment.Status.COMPLETED,
+        top_clients = (
+            Appointment.objects.filter(
+                status=Appointment.Status.COMPLETED,
+                start__gte=since,
+                start__lte=until,
+            )
+            .values("client__first_name", "client__last_name", "client__client_number")
+            .annotate(revenue=Sum("service__price"), visits=Count("id"))
+            .order_by("-revenue")[:20]
+        )
+
+        data = [['Klient', 'Numer', 'Przychód', 'Liczba wizyt', 'Średnia na wizytę']]
+
+        for client in top_clients:
+            full_name = f"{client['client__first_name']} {client['client__last_name']}"
+            avg = (client['revenue'] or 0) / client['visits'] if client['visits'] > 0 else 0
+
+            data.append([
+                full_name[:30],
+                client['client__client_number'] or '-',
+                f"{float(client['revenue'] or 0):.2f} zł",
+                str(client['visits']),
+                f"{float(avg):.2f} zł",
+            ])
+
+        return self._build_pdf_response(
+            title_text="Top 20 klientów (ostatnie 30 dni)",
+            data=data,
+            filename="top_klienci.pdf",
+            landscape_mode=True,
+        )
+
+    # ============================================================================
+    # RAPORTY Z POLSKIMI NAZWAMI STATUSÓW
+    # ============================================================================
+
+    """
+    ZAMIEŃ metodę _operations_pdf() w klasie ReportView:
+    """
+
+    def _operations_pdf(self):
+        """Raport operacyjny - ostatnie 30 dni - POLSKIE NAZWY STATUSÓW"""
+        from datetime import timedelta
+
+        since = timezone.now() - timedelta(days=30)
+        until = timezone.now()
+
+        appointments = Appointment.objects.filter(start__gte=since, start__lte=until)
+
+        total = appointments.count()
+        pending = appointments.filter(status=Appointment.Status.PENDING).count()
+        confirmed = appointments.filter(status=Appointment.Status.CONFIRMED).count()
+        completed = appointments.filter(status=Appointment.Status.COMPLETED).count()
+        cancelled = appointments.filter(status=Appointment.Status.CANCELLED).count()
+        no_shows = appointments.filter(status=Appointment.Status.NO_SHOW).count()
+
+        data = [['Status', 'Liczba', 'Procent']]
+
+        # POLSKIE NAZWY STATUSÓW
+        status_list = [
+            ('Oczekujące', pending),  # PENDING
+            ('Potwierdzone', confirmed),  # CONFIRMED
+            ('Ukończone', completed),  # COMPLETED
+            ('Anulowane', cancelled),  # CANCELLED
+            ('Nieobecność', no_shows),  # NO_SHOW
+        ]
+
+        for status_name, count in status_list:
+            percentage = (count / total * 100) if total > 0 else 0
+            data.append([
+                status_name,
+                str(count),
+                f"{percentage:.1f}%",
+            ])
+
+        return self._build_pdf_response(
+            title_text="Raport operacyjny - Breakdown statusów (ostatnie 30 dni)",
+            data=data,
+            filename="raport_operacyjny.pdf",
+            landscape_mode=False,
+        )
+
+    def _capacity_utilization_pdf(self):
+        """Wykorzystanie mocy - ostatnie 7 dni"""
+        from datetime import timedelta
+        from django.db.models.functions import ExtractWeekDay
+
+        since = timezone.now() - timedelta(days=7)
+        until = timezone.now()
+
+        appointments = Appointment.objects.filter(
             start__gte=since,
             start__lte=until,
-        ).select_related("client", "service", "employee").order_by("start")
+            status__in=[Appointment.Status.CONFIRMED, Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW],
+        )
 
-        total = appts.aggregate(s=Sum("service__price"))["s"] or 0
-        data = [["Data", "Klient", "Usługa", "Cena"]]
+        # Według dnia tygodnia
+        by_day = (
+            appointments.annotate(day=ExtractWeekDay("start"))
+            .values("day")
+            .annotate(count=Count("id"))
+            .order_by("day")
+        )
 
-        for a in appts:
-            c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
-            data.append([
-                a.start.strftime("%Y-%m-%d"),
-                clean_text(c_name),
-                clean_text(a.service.name if a.service else "-"),
-                f"{a.service.price} zł" if a.service else "-",
-            ])
+        day_names = ["Niedziela", "Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota"]
 
-        data.append(["", "", "SUMA:", f"{total} zł"])
-        return self._build_pdf_response("Raport Przychodów", data, "raport_finansowy.pdf")
+        data = [['Dzień tygodnia', 'Liczba wizyt']]
 
-    def _employees_report(self):
-        employees = EmployeeProfile.objects.all().order_by("last_name")
-        data = [["Nr", "Imię i Nazwisko", "Telefon", "Status"]]
-        for e in employees:
-            data.append([
-                clean_text(e.employee_number),
-                clean_text(f"{e.first_name} {e.last_name}"),
-                clean_text(e.phone or "-"),
-                "Aktywny" if e.is_active else "Nieaktywny",
-            ])
-        return self._build_pdf_response("Lista Pracowników", data, "pracownicy.pdf")
+        for item in by_day:
+            day_name = day_names[item['day'] - 1]
+            data.append([day_name, str(item['count'])])
 
-    def _clients_report(self):
-        clients = ClientProfile.objects.all().order_by("last_name")
-        data = [["Nr", "Imię i Nazwisko", "Telefon", "Email"]]
-        for c in clients:
-            data.append([
-                clean_text(getattr(c, "client_number", c.id)),
-                clean_text(f"{c.first_name} {c.last_name}"),
-                clean_text(getattr(c, "phone", None) or "-"),
-                clean_text(getattr(c, "email", None) or "-"),
-            ])
-        return self._build_pdf_response("Baza Klientów", data, "klienci.pdf")
+        return self._build_pdf_response(
+            title_text="Wykorzystanie mocy - Według dnia tygodnia (ostatnie 7 dni)",
+            data=data,
+            filename="wykorzystanie_mocy.pdf",
+            landscape_mode=False,
+        )
 
-    def _today_appointments_report(self):
-        today = timezone.now().date()
-        appts = Appointment.objects.filter(start__date=today).select_related("client", "employee", "service").order_by(
-            "start")
-        data = [["Godz", "Klient", "Pracownik", "Usługa", "Cena"]]
-
-        for a in appts:
-            c_name = f"{a.client.first_name} {a.client.last_name}" if a.client else "Gość"
-            e_name = f"{a.employee.first_name} {a.employee.last_name}" if a.employee else "-"
-            data.append([
-                a.start.strftime("%H:%M"),
-                clean_text(c_name),
-                clean_text(e_name),
-                clean_text(a.service.name if a.service else "-"),
-                f"{a.service.price} zł" if a.service else "-",
-            ])
-
-        return self._build_pdf_response(f"Grafik na dzień {today}", data, "grafik_dzis.pdf")

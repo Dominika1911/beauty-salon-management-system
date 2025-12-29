@@ -189,23 +189,12 @@ export type DashboardResponse = AdminDashboard | EmployeeDashboard | ClientDashb
 // RAPORTY
 // ============================================================================
 
-export type ReportType = "revenue" | "employees" | "clients" | "today";
-export type RevenueGroupBy = "day" | "month";
-
-export interface RevenueReport {
-  range: { from: string; to: string };
-  group_by: RevenueGroupBy;
-  summary: {
-    total_revenue: number;
-    total_appointments: number;
-    average_per_appointment: number;
-  };
-  data: Array<{
-    period: string;
-    revenue: number;
-    appointments_count: number;
-  }>;
-}
+export type ReportType =
+  | "employee-performance"
+  | "revenue-analysis"
+  | "client-analytics"
+  | "operations"
+  | "capacity-utilization";
 
 export interface AvailableReport {
   type: ReportType;
