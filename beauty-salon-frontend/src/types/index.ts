@@ -202,6 +202,47 @@ export interface AvailableReport {
 }
 
 // ============================================================================
+// STATYSTYKI
+// ============================================================================
+
+export interface Statistics {
+  appointments: {
+    total_all_time: number;
+    last_30_days: number;
+    completed_last_30d: number;
+    cancelled_last_30d: number;
+    no_shows_last_30d: number;
+    upcoming: number;
+  };
+  revenue: {
+    total_all_time: number;
+    last_30_days: number;
+    avg_appointment_value: number;
+  };
+  employees: {
+    total: number;
+    active: number;
+    with_appointments_last_30d: number;
+  };
+  clients: {
+    total: number;
+    active: number;
+    with_appointments_last_30d: number;
+  };
+  services: {
+    total: number;
+    active: number;
+  };
+  popular_services: Array<{
+    id: number;
+    name: string;
+    category: string;
+    booking_count: number;
+    total_revenue: number;
+    price: number;
+  }>;
+}
+// ============================================================================
 // SYSTEM I AUTORYZACJA
 // ============================================================================
 
@@ -263,3 +304,5 @@ export interface SystemLog {
   target_user_username: string | null;
   timestamp: string;
 }
+
+

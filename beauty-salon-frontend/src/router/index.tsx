@@ -24,6 +24,7 @@ import EmployeesPage from "@/pages/Admin/EmployeesPage";
 import EmployeesSchedulePage from "@/pages/Admin/EmployeesSchedulePage";
 import ClientsPage from "@/pages/Admin/ClientsPage";
 import AdminAppointmentsPage from "@/pages/Admin/AppointmentsPage";
+import StatisticsPage from "@/pages/Admin/StatisticsPage";
 import ReportsPage from "@/pages/Admin/ReportsPage";
 import SettingsPage from "@/pages/Admin/SettingsPage";
 import LogsPage from "@/pages/Admin/LogsPage";
@@ -117,6 +118,15 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={["ADMIN"]}>
             <AdminAppointmentsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        // ✅ DODANE - STATYSTYKI
+        path: "/admin/statistics",
+        element: (
+          <ProtectedRoute allowedRoles={["ADMIN"]}>
+            <StatisticsPage />
           </ProtectedRoute>
         ),
       },

@@ -1,4 +1,3 @@
-// src/pages/DashboardPage.tsx
 import React from "react";
 import { Link as RouterLink } from "react-router-dom";
 import {
@@ -17,14 +16,12 @@ import {
   ListItemText,
   Snackbar,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import type { AlertColor } from "@mui/material/Alert";
 
 import type { Appointment, AppointmentStatus, DashboardResponse } from "@/types";
 import { dashboardApi } from "@/api/dashboard";
-import { statisticsApi } from "@/api/statistics";
 import { parseDrfError } from "@/utils/drfErrors";
 
 /* =============================================================================
@@ -35,14 +32,6 @@ type ViewState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "success"; data: DashboardResponse }
-  | { status: "error"; message: string };
-
-type StatisticsResponse = Awaited<ReturnType<typeof statisticsApi.get>>;
-
-type StatsState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "success"; data: StatisticsResponse }
   | { status: "error"; message: string };
 
 type SnackState = {
@@ -66,13 +55,6 @@ function formatDateTime(iso: string): string {
         hour: "2-digit",
         minute: "2-digit",
       });
-}
-
-function toYmd(d: Date): string {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 function isAppointmentStatus(value: string): value is AppointmentStatus {
@@ -140,7 +122,7 @@ export default function DashboardPage(): JSX.Element {
   }, []);
 
   React.useEffect(() => {
-    void load(false); // bez snacka na wejściu (StrictMode w dev potrafi odpalić efekt 2x)
+    void load(false);
   }, [load]);
 
   const loading = state.status === "idle" || state.status === "loading";
@@ -274,23 +256,35 @@ function AppointmentsList({
 
   return (
     <List disablePadding>
-      {items.map((a) => {
-        const chip = statusChipProps(a.status);
+      {items.map((apt) => {
+        const chip = statusChipProps(apt.status);
         return (
-          <ListItem key={a.id} disableGutters sx={{ py: 1 }}>
+          <ListItem key={apt.id} divider>
             <ListItemText
               primary={
-                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                  <Typography fontWeight={700}>{formatDateTime(a.start)}</Typography>
-                  <Chip size="small" {...chip} />
-                  <Typography>{a.service_name}</Typography>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                  <Typography variant="body1" fontWeight={600}>
+                    {apt.service_name}
+                  </Typography>
+                  <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
                 </Stack>
               }
               secondary={
-                <Stack spacing={0.25} sx={{ mt: 0.5 }}>
-                  {showEmployee && <Typography variant="body2">Pracownik: {a.employee_name}</Typography>}
-                  {showClient && <Typography variant="body2">Klient: {a.client_name ?? "—"}</Typography>}
-                  <Typography variant="body2">Cena: {a.service_price} zł</Typography>
+                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {formatDateTime(apt.start)} – {formatDateTime(apt.end)}
+                  </Typography>
+                  {showClient && apt.client_name && (
+                    <Typography variant="body2">Klient: {apt.client_name}</Typography>
+                  )}
+                  {showEmployee && apt.employee_name && (
+                    <Typography variant="body2">Pracownik: {apt.employee_name}</Typography>
+                  )}
+                  {apt.service_price && (
+                    <Typography variant="body2" fontWeight={600}>
+                      {formatMoneyPLN(parseFloat(apt.service_price))}
+                    </Typography>
+                  )}
                 </Stack>
               }
             />
@@ -305,7 +299,11 @@ function AppointmentsList({
  * ADMIN
  * ============================================================================= */
 
-function AdminDashboardView({ data }: { data: Extract<DashboardResponse, { role: "ADMIN" }> }): JSX.Element {
+function AdminDashboardView({
+  data,
+}: {
+  data: Extract<DashboardResponse, { role: "ADMIN" }>;
+}): JSX.Element {
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -314,289 +312,58 @@ function AdminDashboardView({ data }: { data: Extract<DashboardResponse, { role:
             title="Wizyty dzisiaj"
             value={data.today.appointments_count}
             hint={data.today.date}
-            action={
-              <Button component={RouterLink} to="/admin/appointments" size="small">
-                Zobacz
-              </Button>
-            }
           />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <StatCard title="Oczekujące wizyty" value={data.pending_appointments} />
+          <StatCard
+            title="Oczekujące wizyty"
+            value={data.pending_appointments}
+            hint="Do potwierdzenia"
+          />
         </Box>
         <Box sx={{ flex: 1 }}>
           <StatCard
-            title="Przychód (miesiąc)"
+            title="Przychód w tym miesiącu"
             value={formatMoneyPLN(data.current_month.revenue)}
-            hint={`Zakończone: ${data.current_month.completed_appointments}`}
+            hint={`${data.current_month.completed_appointments} ukończonych wizyt`}
           />
         </Box>
       </Stack>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
         <Box sx={{ flex: 1 }}>
-          <StatCard title="Aktywni pracownicy" value={data.system.active_employees} />
+          <StatCard
+            title="Aktywni pracownicy"
+            value={data.system.active_employees}
+          />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <StatCard title="Aktywni klienci" value={data.system.active_clients} />
+          <StatCard
+            title="Aktywni klienci"
+            value={data.system.active_clients}
+          />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <StatCard title="Aktywne usługi" value={data.system.active_services} />
+          <StatCard
+            title="Aktywne usługi"
+            value={data.system.active_services}
+          />
         </Box>
       </Stack>
-
-      <AdminStatisticsSection />
 
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6" fontWeight={900}>
-            Grafik na dziś
+            Wizyty dzisiaj
           </Typography>
           <Divider sx={{ my: 1 }} />
-          <AppointmentsList items={data.today.appointments} emptyText="Brak wizyt na dziś." />
+          <AppointmentsList
+            items={data.today.appointments}
+            emptyText="Brak wizyt na dzisiaj."
+          />
         </CardContent>
       </Card>
     </Stack>
-  );
-}
-
-function AdminStatisticsSection(): JSX.Element {
-  const today = new Date();
-
-  const [dateFrom, setDateFrom] = React.useState(toYmd(new Date(today.getTime() - 30 * 86400000)));
-  const [dateTo, setDateTo] = React.useState(toYmd(today));
-
-  const [draftFrom, setDraftFrom] = React.useState(dateFrom);
-  const [draftTo, setDraftTo] = React.useState(dateTo);
-
-  const [stats, setStats] = React.useState<StatsState>({ status: "idle" });
-  const [formError, setFormError] = React.useState<string | null>(null);
-  const [snack, setSnack] = React.useState<SnackState>({ open: false, msg: "", severity: "info" });
-
-  const busy = stats.status === "loading";
-
-  const hasUnapplied = draftFrom !== dateFrom || draftTo !== dateTo;
-
-  const applyRange = () => {
-    if (draftFrom && draftTo && draftFrom > draftTo) {
-      setFormError("Sprawdź zakres dat — „Od” nie może być późniejsza niż „Do”.");
-      return;
-    }
-    setFormError(null);
-    setDateFrom(draftFrom);
-    setDateTo(draftTo);
-  };
-
-  const load = async (showSnack = false) => {
-    if (dateFrom && dateTo && dateFrom > dateTo) {
-      setFormError("Sprawdź zakres dat — „Od” nie może być późniejsza niż „Do”.");
-      return;
-    }
-    setFormError(null);
-
-    setStats({ status: "loading" });
-    try {
-      const data = await statisticsApi.get({ date_from: dateFrom, date_to: dateTo });
-      setStats({ status: "success", data });
-      if (showSnack) {
-        setSnack({ open: true, msg: "Statystyki odświeżone.", severity: "info" });
-      }
-    } catch (e: unknown) {
-      const parsed = parseDrfError(e);
-      setStats({ status: "error", message: parsed.message || "Nie udało się pobrać statystyk." });
-    }
-  };
-
-  React.useEffect(() => {
-    void load(false); // bez snacka na mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // po apply (zmianie range) pobierz dane, ale bez snacka (to nie jest "ręczne odświeżenie")
-  React.useEffect(() => {
-    void load(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo]);
-
-  return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack spacing={2}>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: { xs: "flex-start", sm: "center" },
-              gap: 2,
-              flexWrap: "wrap",
-            }}
-          >
-            <Typography variant="h6" fontWeight={900}>
-              Statystyki
-            </Typography>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-              <Button variant="outlined" size="small" onClick={() => void load(true)} disabled={busy}>
-                Odśwież
-              </Button>
-            </Stack>
-          </Box>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <TextField
-              type="date"
-              label="Od"
-              value={draftFrom}
-              onChange={(e) => setDraftFrom(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-              disabled={busy}
-            />
-            <TextField
-              type="date"
-              label="Do"
-              value={draftTo}
-              onChange={(e) => setDraftTo(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              fullWidth
-              disabled={busy}
-            />
-          </Stack>
-
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} justifyContent="flex-end">
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => {
-                setDraftFrom(dateFrom);
-                setDraftTo(dateTo);
-                setFormError(null);
-              }}
-              disabled={busy || !hasUnapplied}
-            >
-              Wyczyść
-            </Button>
-            <Button variant="contained" size="small" onClick={applyRange} disabled={busy || !hasUnapplied}>
-              Zastosuj
-            </Button>
-          </Stack>
-
-          {formError && <Alert severity="warning">{formError}</Alert>}
-
-          {stats.status === "loading" ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CircularProgress size={18} />
-              <Typography>Ładowanie statystyk…</Typography>
-            </Stack>
-          ) : stats.status === "error" ? (
-            <Alert severity="error">{stats.message}</Alert>
-          ) : stats.status === "success" ? (
-            <Stack spacing={2}>
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <Box sx={{ flex: 1 }}>
-                  <StatCard
-                    title="Wizyty w zakresie"
-                    value={stats.data.appointments.count_in_range}
-                    hint={`${stats.data.range.from} → ${stats.data.range.to}`}
-                  />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <StatCard
-                    title="Przychód zakończonych (zakres)"
-                    value={formatMoneyPLN(stats.data.appointments.revenue_completed_in_range)}
-                    hint="Tylko zakończone wizyty"
-                  />
-                </Box>
-                <Box sx={{ flex: 1 }}>
-                  <StatCard title="Wizyty (łącznie)" value={stats.data.appointments.total_all_time} />
-                </Box>
-              </Stack>
-
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle1" fontWeight={900}>
-                    Wizyty wg statusu
-                  </Typography>
-                  <Divider sx={{ my: 1 }} />
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                    {stats.data.appointments.by_status.map((s) => {
-                      const chip = statusChipProps(s.status);
-                      return (
-                        <Chip
-                          key={s.status}
-                          size="small"
-                          label={`${chip.label}: ${s.count}`}
-                          color={chip.color}
-                          variant="outlined"
-                        />
-                      );
-                    })}
-                  </Stack>
-                </CardContent>
-              </Card>
-
-              <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-                <Card variant="outlined" sx={{ flex: 1 }}>
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={900}>
-                      Top usługi (zakres)
-                    </Typography>
-                    <Divider sx={{ my: 1 }} />
-                    {stats.data.top_services_in_range.length === 0 ? (
-                      <Typography color="text.secondary">Brak danych.</Typography>
-                    ) : (
-                      <List disablePadding>
-                        {stats.data.top_services_in_range.map((s) => (
-                          <ListItem key={s.service__id} disableGutters>
-                            <ListItemText primary={s.service__name} secondary={`Liczba wizyt: ${s.count}`} />
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card variant="outlined" sx={{ flex: 1 }}>
-                  <CardContent>
-                    <Typography variant="subtitle1" fontWeight={900}>
-                      Top pracownicy (zakres)
-                    </Typography>
-                    <Divider sx={{ my: 1 }} />
-                    {stats.data.top_employees_in_range.length === 0 ? (
-                      <Typography color="text.secondary">Brak danych.</Typography>
-                    ) : (
-                      <List disablePadding>
-                        {stats.data.top_employees_in_range.map((e) => (
-                          <ListItem key={e.employee__id} disableGutters>
-                            <ListItemText
-                              primary={`Nr: ${e.employee__employee_number}`}
-                              secondary={`Liczba wizyt: ${e.count}`}
-                            />
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-                  </CardContent>
-                </Card>
-              </Stack>
-            </Stack>
-          ) : (
-            <Typography color="text.secondary">Ustaw zakres i kliknij „Odśwież”.</Typography>
-          )}
-        </Stack>
-      </CardContent>
-
-      <Snackbar
-        open={snack.open}
-        autoHideDuration={2500}
-        onClose={() => setSnack((p) => ({ ...p, open: false }))}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert onClose={() => setSnack((p) => ({ ...p, open: false }))} severity={snack.severity} sx={{ width: "100%" }}>
-          {snack.msg}
-        </Alert>
-      </Snackbar>
-    </Card>
   );
 }
 

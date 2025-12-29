@@ -31,6 +31,7 @@ import {
   ContentCut,
   Person,
   Assessment,
+  BarChart, // ✅ DODANE - ikona dla Statystyki
   Settings,
   CalendarMonth,
   Schedule,
@@ -71,6 +72,10 @@ const menuItems: MenuItemDef[] = [
   { text: "Grafiki", icon: <Schedule />, path: "/admin/employees-schedule", roles: ["ADMIN"] },
   { text: "Klienci", icon: <Person />, path: "/admin/clients", roles: ["ADMIN"] },
   { text: "Usługi", icon: <ContentCut />, path: "/admin/services", roles: ["ADMIN"] },
+
+  // ✅ DODANE - STATYSTYKI
+  { text: "Statystyki", icon: <BarChart />, path: "/admin/statistics", roles: ["ADMIN"] },
+
   { text: "Raporty", icon: <Assessment />, path: "/admin/reports", roles: ["ADMIN"] },
   { text: "Ustawienia", icon: <Settings />, path: "/admin/settings", roles: ["ADMIN"] },
   { text: "Logi", icon: <History />, path: "/admin/logs", roles: ["ADMIN"] },

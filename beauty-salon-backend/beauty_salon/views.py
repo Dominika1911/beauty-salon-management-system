@@ -798,69 +798,6 @@ class SystemSettingsView(APIView):
         SystemLog.log(action=SystemLog.Action.SETTINGS_UPDATED, performed_by=request.user)
         return Response(ser.data)
 
-
-# =============================================================================
-# STATISTICS
-# =============================================================================
-
-class StatisticsView(APIView):
-    permission_classes = [IsAdmin]
-
-    def get(self, request):
-        now = timezone.now()
-        date_from = request.query_params.get("date_from")
-        date_to = request.query_params.get("date_to")
-
-        if date_from and date_to:
-            try:
-                start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
-                end_date = datetime.strptime(date_to, "%Y-%m-%d").date()
-            except (ValueError, TypeError):
-                return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
-                                status=status.HTTP_400_BAD_REQUEST)
-
-            since = timezone.make_aware(datetime.combine(start_date, time(0, 0)))
-            until = timezone.make_aware(datetime.combine(end_date, time(23, 59, 59)))
-        else:
-            since = now - timedelta(days=30)
-            until = now
-
-        base = Appointment.objects.filter(start__gte=since, start__lte=until)
-
-        total = Appointment.objects.count()
-        period_count = base.count()
-        by_status = base.values("status").annotate(count=Count("id")).order_by("status")
-
-        top_services = (
-            base.values("service__id", "service__name")
-            .annotate(count=Count("id"))
-            .order_by("-count")[:5]
-        )
-        top_employees = (
-            base.values("employee__id", "employee__employee_number")
-            .annotate(count=Count("id"))
-            .order_by("-count")[:5]
-        )
-
-        revenue = (
-                base.filter(status=Appointment.Status.COMPLETED)
-                .aggregate(total=Sum("service__price"))["total"]
-                or 0
-        )
-
-        return Response({
-            "range": {"from": since.date().isoformat(), "to": until.date().isoformat()},
-            "appointments": {
-                "total_all_time": total,
-                "count_in_range": period_count,
-                "by_status": list(by_status),
-                "revenue_completed_in_range": float(revenue),
-            },
-            "top_services_in_range": list(top_services),
-            "top_employees_in_range": list(top_employees),
-        })
-
-
 # =============================================================================
 # Availability + Booking
 # =============================================================================
@@ -1197,6 +1134,154 @@ class DashboardView(APIView):
                 "total_completed": history_count,
                 "recent": AppointmentSerializer(recent_history, many=True, context={"request": request}).data,
             },
+        })
+
+
+# -----------------------------------------------
+# Statystyki:
+# -----------------------------------------------
+
+class StatisticsView(APIView):
+    """Statystyki salonu - wydzielone z dashboardu"""
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        from django.db.models import Avg
+
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+        now = timezone.now()
+
+        # ============================================================
+        # WIZYTY (APPOINTMENTS)
+        # ============================================================
+
+        total_appointments = Appointment.objects.count()
+
+        # Ostatnie 30 dni
+        recent_appointments = Appointment.objects.filter(start__gte=thirty_days_ago)
+
+        appointments_last_30d = recent_appointments.count()
+        completed_last_30d = recent_appointments.filter(
+            status=Appointment.Status.COMPLETED
+        ).count()
+        cancelled_last_30d = recent_appointments.filter(
+            status=Appointment.Status.CANCELLED
+        ).count()
+        no_shows_last_30d = recent_appointments.filter(
+            status=Appointment.Status.NO_SHOW
+        ).count()
+
+        # Nadchodzące
+        upcoming_appointments = Appointment.objects.filter(
+            start__gte=now,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+        ).count()
+
+        # ============================================================
+        # PRZYCHODY (REVENUE)
+        # ============================================================
+
+        completed_recent = recent_appointments.filter(
+            status=Appointment.Status.COMPLETED
+        )
+
+        revenue_last_30d = completed_recent.aggregate(
+            total=Sum("service__price")
+        )["total"] or Decimal("0")
+
+        avg_appointment_value = completed_recent.aggregate(
+            avg=Avg("service__price")
+        )["avg"] or Decimal("0")
+
+        total_revenue = Appointment.objects.filter(
+            status=Appointment.Status.COMPLETED
+        ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
+
+        # ============================================================
+        # PRACOWNICY (EMPLOYEES)
+        # ============================================================
+
+        total_employees = EmployeeProfile.objects.count()
+        active_employees = EmployeeProfile.objects.filter(is_active=True).count()
+
+        employees_with_appointments = EmployeeProfile.objects.filter(
+            appointments__start__gte=thirty_days_ago
+        ).distinct().count()
+
+        # ============================================================
+        # KLIENCI (CLIENTS)
+        # ============================================================
+
+        total_clients = ClientProfile.objects.count()
+        active_clients = ClientProfile.objects.filter(is_active=True).count()
+
+        clients_with_appointments = ClientProfile.objects.filter(
+            appointments__start__gte=thirty_days_ago
+        ).distinct().count()
+
+        # ============================================================
+        # USŁUGI (SERVICES)
+        # ============================================================
+
+        total_services = Service.objects.count()
+        active_services = Service.objects.filter(is_active=True).count()
+
+        # Top 10 najpopularniejszych usług
+        popular_services = (
+            Service.objects.filter(
+                appointments__start__gte=thirty_days_ago,
+                appointments__status=Appointment.Status.COMPLETED
+            )
+            .annotate(
+                booking_count=Count("appointments"),
+                total_revenue=Sum("price")
+            )
+            .order_by("-booking_count")[:10]
+        )
+
+        # ============================================================
+        # RESPONSE
+        # ============================================================
+
+        return Response({
+            "appointments": {
+                "total_all_time": total_appointments,
+                "last_30_days": appointments_last_30d,
+                "completed_last_30d": completed_last_30d,
+                "cancelled_last_30d": cancelled_last_30d,
+                "no_shows_last_30d": no_shows_last_30d,
+                "upcoming": upcoming_appointments,
+            },
+            "revenue": {
+                "total_all_time": float(total_revenue),
+                "last_30_days": float(revenue_last_30d),
+                "avg_appointment_value": float(avg_appointment_value),
+            },
+            "employees": {
+                "total": total_employees,
+                "active": active_employees,
+                "with_appointments_last_30d": employees_with_appointments,
+            },
+            "clients": {
+                "total": total_clients,
+                "active": active_clients,
+                "with_appointments_last_30d": clients_with_appointments,
+            },
+            "services": {
+                "total": total_services,
+                "active": active_services,
+            },
+            "popular_services": [
+                {
+                    "id": svc.id,
+                    "name": svc.name,
+                    "category": svc.category,
+                    "booking_count": svc.booking_count,
+                    "total_revenue": float(svc.total_revenue or 0),
+                    "price": float(svc.price),
+                }
+                for svc in popular_services
+            ],
         })
 
 
