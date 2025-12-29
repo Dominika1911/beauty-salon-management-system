@@ -1,23 +1,21 @@
-# Backend - Django
-dj-migrate() {
-    python manage.py makemigrations &&
-    python manage.py migrate
+function dj-migrate {
+  py manage.py makemigrations
+  if ($LASTEXITCODE -ne 0) { return }
+  py manage.py migrate
 }
 
-dj() {
-    python manage.py runserver
+function dj-seed {
+  py manage.py seed_database --clear --demo
 }
 
-dj-lint() {
-    mypy . ; pyright
+function dj {
+  py manage.py runserver
 }
 
-# Frontend - React 
-f-lint() {
-    tsc -b ; pnpm lint
+function f {
+  pnpm run dev
 }
 
-f() {
-    # pnpm install
-    pnpm dev
+function f-build {
+  pnpm run build
 }

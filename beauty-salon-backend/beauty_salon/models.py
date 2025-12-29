@@ -372,10 +372,39 @@ class SystemSettings(models.Model):
 
 class SystemLog(models.Model):
     class Action(models.TextChoices):
+        # --- SERVICES ---
         SERVICE_CREATED = "SERVICE_CREATED", _("Utworzono usługę")
         SERVICE_UPDATED = "SERVICE_UPDATED", _("Zaktualizowano usługę")
+        SERVICE_DISABLED = "SERVICE_DISABLED", _("Wyłączono usługę")
+        SERVICE_ENABLED = "SERVICE_ENABLED", _("Włączono usługę")
+
+        # --- EMPLOYEES ---
+        EMPLOYEE_CREATED = "EMPLOYEE_CREATED", _("Utworzono pracownika")
+        EMPLOYEE_UPDATED = "EMPLOYEE_UPDATED", _("Zaktualizowano pracownika")
+
+        # --- CLIENTS ---
+        CLIENT_CREATED = "CLIENT_CREATED", _("Utworzono klienta")
+        CLIENT_UPDATED = "CLIENT_UPDATED", _("Zaktualizowano klienta")
+
+        # --- APPOINTMENTS ---
         APPOINTMENT_CREATED = "APPOINTMENT_CREATED", _("Utworzono wizytę")
-        # Pozostałe akcje zgodnie z wymaganiami biznesowymi
+        APPOINTMENT_UPDATED = "APPOINTMENT_UPDATED", _("Zaktualizowano wizytę")
+        APPOINTMENT_CONFIRMED = "APPOINTMENT_CONFIRMED", _("Potwierdzono wizytę")
+        APPOINTMENT_CANCELLED = "APPOINTMENT_CANCELLED", _("Anulowano wizytę")
+        APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", _("Zakończono wizytę")
+        APPOINTMENT_NO_SHOW = "APPOINTMENT_NO_SHOW", _("Oznaczono wizytę jako no-show")
+
+        # --- TIME OFF ---
+        TIMEOFF_CREATED = "TIMEOFF_CREATED", _("Utworzono wniosek urlopowy")
+        TIMEOFF_APPROVED = "TIMEOFF_APPROVED", _("Zaakceptowano urlop")
+        TIMEOFF_REJECTED = "TIMEOFF_REJECTED", _("Odrzucono urlop")
+        TIMEOFF_CANCELLED = "TIMEOFF_CANCELLED", _("Anulowano wniosek urlopowy")
+
+        # --- AUTH ---
+        AUTH_PASSWORD_CHANGE = "AUTH_PASSWORD_CHANGE", _("Zmieniono/zresetowano hasło")
+
+        # --- SETTINGS ---
+        SETTINGS_UPDATED = "SETTINGS_UPDATED", _("Zaktualizowano ustawienia systemu")
 
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
     performed_by = models.ForeignKey(
@@ -407,5 +436,5 @@ class SystemLog(models.Model):
         raise ValidationError(_("Nie można usuwać wpisów z logu systemowego."))
 
     @classmethod
-    def log(cls, *, action: str, performed_by=None, target_user=None) -> SystemLog:
+    def log(cls, *, action: str, performed_by=None, target_user=None) -> "SystemLog":
         return cls.objects.create(action=action, performed_by=performed_by, target_user=target_user)

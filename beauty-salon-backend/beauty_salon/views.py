@@ -131,7 +131,7 @@ class UserViewSet(viewsets.ModelViewSet):
         target_user.save(update_fields=["password"])
 
         SystemLog.log(
-            action=SystemLog.Action.AUTH_PASSWORD_CHANGE,  # ✅ było AUTH_LOGOUT
+            action=SystemLog.Action.AUTH_PASSWORD_CHANGE,
             performed_by=request.user,
             target_user=target_user,
         )
@@ -555,13 +555,12 @@ class ClientViewSet(viewsets.ModelViewSet):
         obj = self.get_queryset().filter(pk=profile.pk).first()
         return Response(ClientSerializer(obj, context={"request": request}).data)
 
-
 # =============================================================================
 # APPOINTMENTS
 # =============================================================================
 
 class AppointmentViewSet(viewsets.ModelViewSet):
-    queryset = Appointment.objects.select_related("client", "employee", "service").all()
+    queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["status", "employee", "service", "client"]
@@ -583,7 +582,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # select_related tylko tutaj (list/retrieve), nie na klasie
+        qs = super().get_queryset().select_related("client", "employee", "service")
         user = self.request.user
 
         if not (user and user.is_authenticated):
@@ -603,6 +603,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             return qs.filter(employee=employee) if employee else qs.none()
 
         return qs
+
+    def _lock_appt(self, pk):
+        """
+         Lock w DB bez OUTER JOINów (Postgres nie lubi FOR UPDATE + LEFT JOIN).
+         A jednocześnie bierzemy z get_queryset() -> brak IDOR (użytkownik widzi tylko swoje).
+        """
+        base_qs = self.get_queryset().select_related(None)  # usuwa joiny z get_queryset()
+        return base_qs.select_for_update().get(pk=pk)
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -640,8 +648,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="confirm")
     @transaction.atomic
     def confirm(self, request, pk=None):
-        # ✅ kluczowe: bierzemy obiekt z get_queryset() -> znika IDOR
-        appt = Appointment.objects.select_for_update().get(pk=pk)
+        appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
         if appt.status != Appointment.Status.PENDING:
@@ -670,8 +677,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="cancel")
     @transaction.atomic
     def cancel(self, request, pk=None):
-        # Dodaj parametr of=('self',)
-        appt = self.get_queryset().select_for_update(of=('self',)).get(pk=pk)
+        appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
         if appt.status == Appointment.Status.CANCELLED:
@@ -706,7 +712,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="complete")
     @transaction.atomic
     def complete(self, request, pk=None):
-        appt = self.get_queryset().select_for_update().get(pk=pk)
+        appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
         if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
@@ -735,7 +741,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="no-show")
     @transaction.atomic
     def no_show(self, request, pk=None):
-        appt = self.get_queryset().select_for_update().get(pk=pk)
+        appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
         if appt.status != Appointment.Status.CONFIRMED:
@@ -750,7 +756,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # UWAGA: wymaga dodania Appointment.Status.NO_SHOW w models.py + migracja
         appt.status = Appointment.Status.NO_SHOW
         appt.internal_notes = (appt.internal_notes or "") + (
             f"\n[NO_SHOW {timezone.now():%Y-%m-%d %H:%M}] przez {request.user.username}"
@@ -764,7 +769,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
-
 
 # =============================================================================
 # AUDIT LOG
