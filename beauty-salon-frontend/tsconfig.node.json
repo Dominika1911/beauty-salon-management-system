@@ -1,29 +1,29 @@
 {
-  "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "types": ["node"],
-    "skipLibCheck": true,
+    "compilerOptions": {
+        "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+        "target": "ES2023",
+        "lib": ["ES2023"],
+        "module": "ESNext",
+        "types": ["node"],
+        "skipLibCheck": true,
 
-    // Wymagane, gdy ten plik jest referencją
-    "composite": true,
+        // Wymagane, gdy ten plik jest referencją
+        "composite": true,
 
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
+        /* Bundler mode */
+        "moduleResolution": "bundler",
+        "resolveJsonModule": true,
+        "isolatedModules": true,
 
-    // Wymaga usunięcia 'noEmit', jeśli 'composite: true'
-    "noEmit": false,
+        // Wymaga usunięcia 'noEmit', jeśli 'composite: true'
+        "noEmit": false,
 
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  // Ten plik powinien dotyczyć tylko plików konfiguracyjnych poza 'src'
-  "include": ["vite.config.ts"]
+        "jsx": "react-jsx",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true
+    },
+    // Ten plik powinien dotyczyć tylko plików konfiguracyjnych poza 'src'
+    "include": ["vite.config.ts"]
 }

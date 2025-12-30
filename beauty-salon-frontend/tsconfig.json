@@ -1,35 +1,35 @@
 {
-  "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
+    "compilerOptions": {
+        "target": "ES2020",
+        "useDefineForClassFields": true,
+        "lib": ["ES2020", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
 
-    // Ułatwia importy (bez długich ścieżek typu ../../..)
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
+        // Ułatwia importy (bez długich ścieżek typu ../../..)
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["src/*"]
+        },
+
+        "skipLibCheck": true,
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+
+        // Wymagane w Vite, aby kompilator nie generował wyjścia,
+        // które generuje Vite.
+        "noEmit": true,
+
+        "jsx": "react-jsx",
+        "strict": true,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noFallthroughCasesInSwitch": true,
+        "types": ["vite/client"]
     },
+    "include": ["src"],
 
-    "skipLibCheck": true,
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-
-    // Wymagane w Vite, aby kompilator nie generował wyjścia,
-    // które generuje Vite.
-    "noEmit": true,
-
-    "jsx": "react-jsx",
-    "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-    "types": ["vite/client"]
-  },
-  "include": ["src"],
-
-  // REFERENCJE SĄ TU DODANE, ABY 'tsc -b' ZOBACZYŁ PLIKI NODE
-  "references": [{ "path": "./tsconfig.node.json" }]
+    // REFERENCJE SĄ TU DODANE, ABY 'tsc -b' ZOBACZYŁ PLIKI NODE
+    "references": [{ "path": "./tsconfig.node.json" }]
 }

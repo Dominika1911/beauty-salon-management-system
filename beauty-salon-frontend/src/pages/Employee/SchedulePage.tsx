@@ -1,227 +1,236 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  CircularProgress,
-  Paper,
-  Stack,
-  Typography,
-  Grid,
-  Box,
-  Divider,
-  Chip,
-} from "@mui/material";
-import { AccessTime, EventBusy } from "@mui/icons-material";
+    Alert,
+    CircularProgress,
+    Paper,
+    Stack,
+    Typography,
+    Grid,
+    Box,
+    Divider,
+    Chip,
+} from '@mui/material';
+import { AccessTime, EventBusy } from '@mui/icons-material';
 
-import { useAuth } from "@/context/AuthContext";
-import { employeesApi } from "@/api/employees";
+import { useAuth } from '@/context/AuthContext';
+import { employeesApi } from '@/api/employees';
 
 type Period = { start: string; end: string };
-type WeeklyHours = Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", Period[]>;
+type WeeklyHours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', Period[]>;
 
 const DAYS: Array<{ key: keyof WeeklyHours; label: string }> = [
-  { key: "mon", label: "Poniedziałek" },
-  { key: "tue", label: "Wtorek" },
-  { key: "wed", label: "Środa" },
-  { key: "thu", label: "Czwartek" },
-  { key: "fri", label: "Piątek" },
-  { key: "sat", label: "Sobota" },
-  { key: "sun", label: "Niedziela" },
+    { key: 'mon', label: 'Poniedziałek' },
+    { key: 'tue', label: 'Wtorek' },
+    { key: 'wed', label: 'Środa' },
+    { key: 'thu', label: 'Czwartek' },
+    { key: 'fri', label: 'Piątek' },
+    { key: 'sat', label: 'Sobota' },
+    { key: 'sun', label: 'Niedziela' },
 ];
 
 const EMPTY_SCHEDULE: WeeklyHours = {
-  mon: [],
-  tue: [],
-  wed: [],
-  thu: [],
-  fri: [],
-  sat: [],
-  sun: [],
+    mon: [],
+    tue: [],
+    wed: [],
+    thu: [],
+    fri: [],
+    sat: [],
+    sun: [],
 };
 
 function getErrorMessage(err: unknown): string {
-  const e = err as any;
-  const d = e?.response?.data;
+    const e = err as any;
+    const d = e?.response?.data;
 
-  if (typeof d?.detail === "string") return d.detail;
-  if (typeof d?.message === "string") return d.message;
+    if (typeof d?.detail === 'string') return d.detail;
+    if (typeof d?.message === 'string') return d.message;
 
-  // DRF errors: {field: ["msg"]} / {non_field_errors: ["msg"]}
-  if (d && typeof d === "object") {
-    const k = Object.keys(d)[0];
-    const v = d[k];
-    if (Array.isArray(v) && v.length) return String(v[0]);
-    if (typeof v === "string") return v;
-  }
+    // DRF errors: {field: ["msg"]} / {non_field_errors: ["msg"]}
+    if (d && typeof d === 'object') {
+        const k = Object.keys(d)[0];
+        const v = d[k];
+        if (Array.isArray(v) && v.length) return String(v[0]);
+        if (typeof v === 'string') return v;
+    }
 
-  return e?.message || "Wystąpił błąd.";
+    return e?.message || 'Wystąpił błąd.';
 }
 
 function normalizeWeeklyHours(input: unknown): WeeklyHours {
-  // backend: weekly_hours = Record<string, Array<{start,end}>>
-  // UI: mon..sun zawsze jako tablice
-  const out: WeeklyHours = { ...EMPTY_SCHEDULE };
+    // backend: weekly_hours = Record<string, Array<{start,end}>>
+    // UI: mon..sun zawsze jako tablice
+    const out: WeeklyHours = { ...EMPTY_SCHEDULE };
 
-  if (!input || typeof input !== "object") return out;
-  const obj = input as Record<string, any>;
+    if (!input || typeof input !== 'object') return out;
+    const obj = input as Record<string, any>;
 
-  for (const day of DAYS.map((d) => d.key)) {
-    const raw = obj[day];
-    if (!Array.isArray(raw)) {
-      out[day] = [];
-      continue;
+    for (const day of DAYS.map((d) => d.key)) {
+        const raw = obj[day];
+        if (!Array.isArray(raw)) {
+            out[day] = [];
+            continue;
+        }
+
+        out[day] = raw
+            .filter((p: any) => p && typeof p === 'object')
+            .map((p: any) => ({
+                start: String(p.start ?? '').trim(),
+                end: String(p.end ?? '').trim(),
+            }))
+            .filter((p: Period) => Boolean(p.start) && Boolean(p.end));
     }
 
-    out[day] = raw
-      .filter((p: any) => p && typeof p === "object")
-      .map((p: any) => ({
-        start: String(p.start ?? "").trim(),
-        end: String(p.end ?? "").trim(),
-      }))
-      .filter((p: Period) => Boolean(p.start) && Boolean(p.end));
-  }
-
-  return out;
+    return out;
 }
 
 export default function EmployeeSchedulePage(): JSX.Element {
-  const { user } = useAuth();
-  // employee_profile.id z /api/users/me/ -> pk do /employees/{id}/schedule/
-  const employeeId = user?.employee_profile?.id ?? null;
+    const { user } = useAuth();
+    // employee_profile.id z /api/users/me/ -> pk do /employees/{id}/schedule/
+    const employeeId = user?.employee_profile?.id ?? null;
 
-  const [schedule, setSchedule] = useState<WeeklyHours>(EMPTY_SCHEDULE);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
+    const [schedule, setSchedule] = useState<WeeklyHours>(EMPTY_SCHEDULE);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
+    useEffect(() => {
+        const controller = new AbortController();
 
-    async function load() {
-      setErr(null);
-      setLoading(true);
+        async function load() {
+            setErr(null);
+            setLoading(true);
 
-      if (!employeeId) {
-        setSchedule(EMPTY_SCHEDULE);
-        setErr("Brak profilu pracownika (employee_profile).");
-        setLoading(false);
-        return;
-      }
+            if (!employeeId) {
+                setSchedule(EMPTY_SCHEDULE);
+                setErr('Brak profilu pracownika (employee_profile).');
+                setLoading(false);
+                return;
+            }
 
-      try {
-        // jeśli employeesApi nie wspiera signal, axios zignoruje - ale cleanup nadal OK
-        const data = await employeesApi.getSchedule(employeeId /*, { signal: controller.signal } as any */);
-        if (controller.signal.aborted) return;
+            try {
+                // jeśli employeesApi nie wspiera signal, axios zignoruje - ale cleanup nadal OK
+                const data = await employeesApi.getSchedule(
+                    employeeId /*, { signal: controller.signal } as any */,
+                );
+                if (controller.signal.aborted) return;
 
-        setSchedule(normalizeWeeklyHours((data as any)?.weekly_hours));
-      } catch (e: unknown) {
-        if (controller.signal.aborted) return;
-        setSchedule(EMPTY_SCHEDULE);
-        setErr(getErrorMessage(e) || "Nie udało się pobrać grafiku pracy.");
-      } finally {
-        if (controller.signal.aborted) return;
-        setLoading(false);
-      }
+                setSchedule(normalizeWeeklyHours((data as any)?.weekly_hours));
+            } catch (e: unknown) {
+                if (controller.signal.aborted) return;
+                setSchedule(EMPTY_SCHEDULE);
+                setErr(getErrorMessage(e) || 'Nie udało się pobrać grafiku pracy.');
+            } finally {
+                if (controller.signal.aborted) return;
+                setLoading(false);
+            }
+        }
+
+        void load();
+        return () => controller.abort();
+    }, [employeeId]);
+
+    const hasAnyHours = useMemo(
+        () => DAYS.some((d) => schedule[d.key].some((p) => p.start && p.end)),
+        [schedule],
+    );
+
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+                <CircularProgress />
+            </Box>
+        );
     }
 
-    void load();
-    return () => controller.abort();
-  }, [employeeId]);
-
-  const hasAnyHours = useMemo(
-    () => DAYS.some((d) => schedule[d.key].some((p) => p.start && p.end)),
-    [schedule]
-  );
-
-  if (loading) {
     return (
-      <Box sx={{ display: "flex", justifyContent: "center", p: 5 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+        <Stack spacing={3} sx={{ maxWidth: 650, mx: 'auto', mt: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <AccessTime color="primary" />
+                <Typography variant="h5" fontWeight={800}>
+                    Mój grafik pracy
+                </Typography>
+            </Box>
 
-  return (
-    <Stack spacing={3} sx={{ maxWidth: 650, mx: "auto", mt: 2 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <AccessTime color="primary" />
-        <Typography variant="h5" fontWeight={800}>
-          Mój grafik pracy
-        </Typography>
-      </Box>
+            <Alert severity="info" variant="outlined">
+                Poniżej znajdują się Twoje standardowe godziny pracy. Jeśli potrzebujesz zmian,
+                skontaktuj się z administratorem.
+            </Alert>
 
-      <Alert severity="info" variant="outlined">
-        Poniżej znajdują się Twoje standardowe godziny pracy. Jeśli potrzebujesz zmian, skontaktuj się z administratorem.
-      </Alert>
+            {err && <Alert severity="error">{err}</Alert>}
 
-      {err && <Alert severity="error">{err}</Alert>}
+            {!err && !hasAnyHours && (
+                <Alert severity="warning" variant="outlined">
+                    Nie masz ustawionych godzin pracy w grafiku.
+                </Alert>
+            )}
 
-      {!err && !hasAnyHours && (
-        <Alert severity="warning" variant="outlined">
-          Nie masz ustawionych godzin pracy w grafiku.
-        </Alert>
-      )}
+            <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}>
+                <Stack divider={<Divider />}>
+                    {DAYS.map((day) => {
+                        const periods = schedule[day.key];
+                        const isOff = periods.length === 0;
 
-      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
-        <Stack divider={<Divider />}>
-          {DAYS.map((day) => {
-            const periods = schedule[day.key];
-            const isOff = periods.length === 0;
+                        return (
+                            <Box
+                                key={day.key}
+                                sx={{
+                                    p: 2,
+                                    bgcolor: isOff ? 'action.hover' : 'background.paper',
+                                }}
+                            >
+                                <Grid container alignItems="center" spacing={1}>
+                                    <Grid item xs={12} sm={5}>
+                                        <Typography
+                                            variant="body1"
+                                            fontWeight={isOff ? 500 : 800}
+                                            color={isOff ? 'text.secondary' : 'text.primary'}
+                                        >
+                                            {day.label}
+                                        </Typography>
+                                    </Grid>
 
-            return (
-              <Box
-                key={day.key}
-                sx={{
-                  p: 2,
-                  bgcolor: isOff ? "action.hover" : "background.paper",
-                }}
-              >
-                <Grid container alignItems="center" spacing={1}>
-                  <Grid item xs={12} sm={5}>
-                    <Typography
-                      variant="body1"
-                      fontWeight={isOff ? 500 : 800}
-                      color={isOff ? "text.secondary" : "text.primary"}
-                    >
-                      {day.label}
-                    </Typography>
-                  </Grid>
-
-                  <Grid
-                    item
-                    xs={12}
-                    sm={7}
-                    sx={{
-                      display: "flex",
-                      justifyContent: { xs: "flex-start", sm: "flex-end" },
-                      alignItems: "center",
-                      gap: 1,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {isOff ? (
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <EventBusy sx={{ fontSize: 18, color: "text.secondary" }} />
-                        <Typography variant="body2" color="text.secondary" fontWeight={600}>
-                          Wolne
-                        </Typography>
-                      </Stack>
-                    ) : (
-                      periods.map((p, idx) => (
-                        <Chip
-                          key={`${day.key}-${idx}`}
-                          label={`${p.start} — ${p.end}`}
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                        />
-                      ))
-                    )}
-                  </Grid>
-                </Grid>
-              </Box>
-            );
-          })}
+                                    <Grid
+                                        item
+                                        xs={12}
+                                        sm={7}
+                                        sx={{
+                                            display: 'flex',
+                                            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+                                            alignItems: 'center',
+                                            gap: 1,
+                                            flexWrap: 'wrap',
+                                        }}
+                                    >
+                                        {isOff ? (
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <EventBusy
+                                                    sx={{ fontSize: 18, color: 'text.secondary' }}
+                                                />
+                                                <Typography
+                                                    variant="body2"
+                                                    color="text.secondary"
+                                                    fontWeight={600}
+                                                >
+                                                    Wolne
+                                                </Typography>
+                                            </Stack>
+                                        ) : (
+                                            periods.map((p, idx) => (
+                                                <Chip
+                                                    key={`${day.key}-${idx}`}
+                                                    label={`${p.start} — ${p.end}`}
+                                                    size="small"
+                                                    color="primary"
+                                                    variant="outlined"
+                                                />
+                                            ))
+                                        )}
+                                    </Grid>
+                                </Grid>
+                            </Box>
+                        );
+                    })}
+                </Stack>
+            </Paper>
         </Stack>
-      </Paper>
-    </Stack>
-  );
+    );
 }
