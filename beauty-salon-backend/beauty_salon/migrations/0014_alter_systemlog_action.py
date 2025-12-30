@@ -6,13 +6,40 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0013_alter_appointment_options_and_more'),
+        ("beauty_salon", "0013_alter_appointment_options_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='systemlog',
-            name='action',
-            field=models.CharField(choices=[('SERVICE_CREATED', 'Utworzono usługę'), ('SERVICE_UPDATED', 'Zaktualizowano usługę'), ('SERVICE_DISABLED', 'Wyłączono usługę'), ('SERVICE_ENABLED', 'Włączono usługę'), ('EMPLOYEE_CREATED', 'Utworzono pracownika'), ('EMPLOYEE_UPDATED', 'Zaktualizowano pracownika'), ('CLIENT_CREATED', 'Utworzono klienta'), ('CLIENT_UPDATED', 'Zaktualizowano klienta'), ('APPOINTMENT_CREATED', 'Utworzono wizytę'), ('APPOINTMENT_UPDATED', 'Zaktualizowano wizytę'), ('APPOINTMENT_CONFIRMED', 'Potwierdzono wizytę'), ('APPOINTMENT_CANCELLED', 'Anulowano wizytę'), ('APPOINTMENT_COMPLETED', 'Zakończono wizytę'), ('APPOINTMENT_NO_SHOW', 'Oznaczono wizytę jako no-show'), ('TIMEOFF_CREATED', 'Utworzono wniosek urlopowy'), ('TIMEOFF_APPROVED', 'Zaakceptowano urlop'), ('TIMEOFF_REJECTED', 'Odrzucono urlop'), ('TIMEOFF_CANCELLED', 'Anulowano wniosek urlopowy'), ('AUTH_LOGIN', 'Zalogowano pomyślnie'), ('AUTH_LOGOUT', 'Wylogowano pomyślnie'), ('AUTH_PASSWORD_CHANGE', 'Zmieniono/zresetowano hasło'), ('SETTINGS_UPDATED', 'Zaktualizowano ustawienia systemu')], db_index=True, max_length=40),
+            model_name="systemlog",
+            name="action",
+            field=models.CharField(
+                choices=[
+                    ("SERVICE_CREATED", "Utworzono usługę"),
+                    ("SERVICE_UPDATED", "Zaktualizowano usługę"),
+                    ("SERVICE_DISABLED", "Wyłączono usługę"),
+                    ("SERVICE_ENABLED", "Włączono usługę"),
+                    ("EMPLOYEE_CREATED", "Utworzono pracownika"),
+                    ("EMPLOYEE_UPDATED", "Zaktualizowano pracownika"),
+                    ("CLIENT_CREATED", "Utworzono klienta"),
+                    ("CLIENT_UPDATED", "Zaktualizowano klienta"),
+                    ("APPOINTMENT_CREATED", "Utworzono wizytę"),
+                    ("APPOINTMENT_UPDATED", "Zaktualizowano wizytę"),
+                    ("APPOINTMENT_CONFIRMED", "Potwierdzono wizytę"),
+                    ("APPOINTMENT_CANCELLED", "Anulowano wizytę"),
+                    ("APPOINTMENT_COMPLETED", "Zakończono wizytę"),
+                    ("APPOINTMENT_NO_SHOW", "Oznaczono wizytę jako no-show"),
+                    ("TIMEOFF_CREATED", "Utworzono wniosek urlopowy"),
+                    ("TIMEOFF_APPROVED", "Zaakceptowano urlop"),
+                    ("TIMEOFF_REJECTED", "Odrzucono urlop"),
+                    ("TIMEOFF_CANCELLED", "Anulowano wniosek urlopowy"),
+                    ("AUTH_LOGIN", "Zalogowano pomyślnie"),
+                    ("AUTH_LOGOUT", "Wylogowano pomyślnie"),
+                    ("AUTH_PASSWORD_CHANGE", "Zmieniono/zresetowano hasło"),
+                    ("SETTINGS_UPDATED", "Zaktualizowano ustawienia systemu"),
+                ],
+                db_index=True,
+                max_length=40,
+            ),
         ),
     ]

@@ -6,13 +6,43 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0009_alter_appointment_employee_alter_appointment_end_and_more'),
+        (
+            "beauty_salon",
+            "0009_alter_appointment_employee_alter_appointment_end_and_more",
+        ),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='systemlog',
-            name='action',
-            field=models.CharField(choices=[('SERVICE_CREATED', 'Service created'), ('SERVICE_UPDATED', 'Service updated'), ('SERVICE_DISABLED', 'Service disabled'), ('SERVICE_ENABLED', 'Service enabled'), ('EMPLOYEE_CREATED', 'Employee created'), ('EMPLOYEE_UPDATED', 'Employee updated'), ('EMPLOYEE_DEACTIVATED', 'Employee deactivated'), ('CLIENT_CREATED', 'Client created'), ('CLIENT_UPDATED', 'Client updated'), ('CLIENT_DEACTIVATED', 'Client deactivated'), ('APPOINTMENT_CREATED', 'Appointment created'), ('APPOINTMENT_UPDATED', 'Appointment updated'), ('APPOINTMENT_CONFIRMED', 'Appointment confirmed'), ('APPOINTMENT_CANCELLED', 'Appointment cancelled'), ('APPOINTMENT_COMPLETED', 'Appointment completed'), ('TIMEOFF_CREATED', 'Time off created'), ('TIMEOFF_APPROVED', 'Time off approved'), ('TIMEOFF_REJECTED', 'Time off rejected'), ('AUTH_LOGIN', 'User login'), ('AUTH_LOGOUT', 'User logout'), ('AUTH_PASSWORD_CHANGE', 'User password change'), ('SETTINGS_UPDATED', 'Settings updated')], db_index=True, max_length=40),
+            model_name="systemlog",
+            name="action",
+            field=models.CharField(
+                choices=[
+                    ("SERVICE_CREATED", "Service created"),
+                    ("SERVICE_UPDATED", "Service updated"),
+                    ("SERVICE_DISABLED", "Service disabled"),
+                    ("SERVICE_ENABLED", "Service enabled"),
+                    ("EMPLOYEE_CREATED", "Employee created"),
+                    ("EMPLOYEE_UPDATED", "Employee updated"),
+                    ("EMPLOYEE_DEACTIVATED", "Employee deactivated"),
+                    ("CLIENT_CREATED", "Client created"),
+                    ("CLIENT_UPDATED", "Client updated"),
+                    ("CLIENT_DEACTIVATED", "Client deactivated"),
+                    ("APPOINTMENT_CREATED", "Appointment created"),
+                    ("APPOINTMENT_UPDATED", "Appointment updated"),
+                    ("APPOINTMENT_CONFIRMED", "Appointment confirmed"),
+                    ("APPOINTMENT_CANCELLED", "Appointment cancelled"),
+                    ("APPOINTMENT_COMPLETED", "Appointment completed"),
+                    ("TIMEOFF_CREATED", "Time off created"),
+                    ("TIMEOFF_APPROVED", "Time off approved"),
+                    ("TIMEOFF_REJECTED", "Time off rejected"),
+                    ("AUTH_LOGIN", "User login"),
+                    ("AUTH_LOGOUT", "User logout"),
+                    ("AUTH_PASSWORD_CHANGE", "User password change"),
+                    ("SETTINGS_UPDATED", "Settings updated"),
+                ],
+                db_index=True,
+                max_length=40,
+            ),
         ),
     ]

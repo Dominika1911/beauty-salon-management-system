@@ -86,9 +86,14 @@ def clean_text(s):
 # USERS
 # =============================================================================
 
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
     filterset_fields = ["role", "is_active"]
     search_fields = ["username", "first_name", "last_name", "email"]
     ordering_fields = ["id", "username", "role", "date_joined"]
@@ -109,7 +114,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
-        return Response(UserDetailSerializer(request.user, context={"request": request}).data)
+        return Response(
+            UserDetailSerializer(request.user, context={"request": request}).data
+        )
 
     # =========================================================================
     # PASSWORD: ADMIN RESET USER PASSWORD
@@ -137,7 +144,9 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
         return Response(
-            {"detail": f"Hasło użytkownika {target_user.username} zostało zresetowane."},
+            {
+                "detail": f"Hasło użytkownika {target_user.username} zostało zresetowane."
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -146,10 +155,15 @@ class UserViewSet(viewsets.ModelViewSet):
 # SERVICES
 # =============================================================================
 
+
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
     filterset_fields = ["is_active", "category"]
     search_fields = ["name", "category", "description"]
     ordering_fields = ["id", "name", "price", "duration_minutes", "created_at"]
@@ -159,12 +173,24 @@ class ServiceViewSet(viewsets.ModelViewSet):
         user = self.request.user
         # Jeśli intencją jest publiczny odczyt usług aktywnych, to permissiony muszą to dopuścić.
         # W obecnym projekcie read wymaga auth, więc zostawiamy filtr tylko dla CLIENT.
-        if user and user.is_authenticated and hasattr(user, "role") and user.role == "CLIENT":
+        if (
+            user
+            and user.is_authenticated
+            and hasattr(user, "role")
+            and user.role == "CLIENT"
+        ):
             return qs.filter(is_active=True)
         return qs
 
     def get_permissions(self):
-        if self.action in ["create", "update", "partial_update", "destroy", "disable", "enable"]:
+        if self.action in [
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "disable",
+            "enable",
+        ]:
             return [IsAdminOrEmployee()]
         return [permissions.IsAuthenticated()]
 
@@ -187,7 +213,9 @@ class ServiceViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         obj.is_active = False
         obj.save(update_fields=["is_active"])
-        SystemLog.log(action=SystemLog.Action.SERVICE_DISABLED, performed_by=request.user)
+        SystemLog.log(
+            action=SystemLog.Action.SERVICE_DISABLED, performed_by=request.user
+        )
         return Response({"detail": "Usługa została wyłączona."})
 
     @action(detail=True, methods=["post"], url_path="enable")
@@ -195,7 +223,9 @@ class ServiceViewSet(viewsets.ModelViewSet):
         obj = self.get_object()
         obj.is_active = True
         obj.save(update_fields=["is_active"])
-        SystemLog.log(action=SystemLog.Action.SERVICE_ENABLED, performed_by=request.user)
+        SystemLog.log(
+            action=SystemLog.Action.SERVICE_ENABLED, performed_by=request.user
+        )
         return Response({"detail": "Usługa została włączona."})
 
 
@@ -203,17 +233,26 @@ class ServiceViewSet(viewsets.ModelViewSet):
 # EMPLOYEES
 # =============================================================================
 
+
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = EmployeeProfile.objects.all().prefetch_related("skills")
     serializer_class = EmployeeSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
     filterset_fields = ["is_active", "employee_number"]
     search_fields = ["employee_number", "first_name", "last_name"]
     ordering_fields = ["id", "employee_number", "last_name", "created_at"]
 
     def get_serializer_class(self):
         user = getattr(self.request, "user", None)
-        role = user.role if (user and user.is_authenticated and hasattr(user, "role")) else None
+        role = (
+            user.role
+            if (user and user.is_authenticated and hasattr(user, "role"))
+            else None
+        )
 
         if role == "CLIENT" and self.action in ["list", "retrieve"]:
             return EmployeePublicSerializer
@@ -291,7 +330,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         schedule, _ = EmployeeSchedule.objects.get_or_create(employee=employee)
 
         if request.method == "GET":
-            return Response(EmployeeScheduleSerializer(schedule, context={"request": request}).data)
+            return Response(
+                EmployeeScheduleSerializer(schedule, context={"request": request}).data
+            )
 
         ser = EmployeeScheduleSerializer(
             schedule,
@@ -316,7 +357,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 # =============================================================================
 class TimeOffViewSet(viewsets.ModelViewSet):
     serializer_class = TimeOffSerializer
-    filter_backends = [DjangoFilterBackend, filters.OrderingFilter, filters.SearchFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.OrderingFilter,
+        filters.SearchFilter,
+    ]
     filterset_fields = ["status", "employee"]
     ordering_fields = ["created_at", "date_from", "date_to", "status"]
     search_fields = ["reason", "employee__first_name", "employee__last_name"]
@@ -336,17 +381,17 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 
         # blokujemy adminowi edycję/usuwanie (bo ma tylko przeglądać + decydować)
         if self.action in ["update", "partial_update", "destroy"]:
-            raise PermissionDenied("Edycja i usuwanie wniosków urlopowych jest zablokowane.")
+            raise PermissionDenied(
+                "Edycja i usuwanie wniosków urlopowych jest zablokowane."
+            )
 
         # list/retrieve: admin + employee
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        qs = (
-            TimeOff.objects
-            .select_related("employee", "employee__user", "requested_by", "decided_by")
-            .order_by("-created_at")
-        )
+        qs = TimeOff.objects.select_related(
+            "employee", "employee__user", "requested_by", "decided_by"
+        ).order_by("-created_at")
 
         user = self.request.user
 
@@ -374,14 +419,18 @@ class TimeOffViewSet(viewsets.ModelViewSet):
             try:
                 df = datetime.strptime(date_from, "%Y-%m-%d").date()
             except (ValueError, TypeError):
-                raise ValidationError({"date_from": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."})
+                raise ValidationError(
+                    {"date_from": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}
+                )
             qs = qs.filter(date_to__gte=df)
 
         if date_to:
             try:
                 dt = datetime.strptime(date_to, "%Y-%m-%d").date()
             except (ValueError, TypeError):
-                raise ValidationError({"date_to": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."})
+                raise ValidationError(
+                    {"date_to": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}
+                )
             qs = qs.filter(date_from__lte=dt)
 
         return qs
@@ -416,7 +465,10 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj: TimeOff = self.get_object()
 
         if obj.status != TimeOff.Status.PENDING:
-            return Response({"detail": "Można akceptować tylko wnioski PENDING."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Można akceptować tylko wnioski PENDING."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # 🔥 KRYTYCZNA WALIDACJA: Sprawdź czy są wizyty w okresie urlopu
         conflicting_appointments = Appointment.objects.filter(
@@ -431,9 +483,9 @@ class TimeOffViewSet(viewsets.ModelViewSet):
             return Response(
                 {
                     "detail": f"Nie można zaakceptować urlopu. Pracownik ma {count} aktywnych wizyt w tym okresie. "
-                              f"Anuluj najpierw wizyty lub zmień daty urlopu."
+                    f"Anuluj najpierw wizyty lub zmień daty urlopu."
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         obj.status = TimeOff.Status.APPROVED
@@ -457,7 +509,10 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj: TimeOff = self.get_object()
 
         if obj.status != TimeOff.Status.PENDING:
-            return Response({"detail": "Można odrzucać tylko wnioski PENDING."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Można odrzucać tylko wnioski PENDING."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         obj.status = TimeOff.Status.REJECTED
         obj.decided_by = request.user
@@ -489,7 +544,9 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         if not hasattr(user, "role"):
             raise PermissionDenied("Brak roli użytkownika.")
 
-        is_owner_employee = (user.role == "EMPLOYEE") and (obj.employee.user_id == user.id)
+        is_owner_employee = (user.role == "EMPLOYEE") and (
+            obj.employee.user_id == user.id
+        )
         if not is_owner_employee:
             raise PermissionDenied("Brak uprawnień do anulowania tego wniosku.")
 
@@ -511,16 +568,25 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 # CLIENTS
 # =============================================================================
 
+
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = ClientProfile.objects.all()
     serializer_class = ClientSerializer
-    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
     filterset_fields = ["is_active", "client_number"]
     search_fields = ["client_number", "first_name", "last_name", "email", "phone"]
     ordering_fields = ["id", "client_number", "last_name", "created_at"]
 
     def get_queryset(self):
-        return super().get_queryset().annotate(appointments_count=Count("appointments", distinct=True))
+        return (
+            super()
+            .get_queryset()
+            .annotate(appointments_count=Count("appointments", distinct=True))
+        )
 
     def get_permissions(self):
         if self.action == "me":
@@ -555,9 +621,11 @@ class ClientViewSet(viewsets.ModelViewSet):
         obj = self.get_queryset().filter(pk=profile.pk).first()
         return Response(ClientSerializer(obj, context={"request": request}).data)
 
+
 # =============================================================================
 # APPOINTMENTS
 # =============================================================================
+
 
 class AppointmentViewSet(viewsets.ModelViewSet):
     queryset = Appointment.objects.all()
@@ -606,10 +674,12 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
     def _lock_appt(self, pk):
         """
-         Lock w DB bez OUTER JOINów (Postgres nie lubi FOR UPDATE + LEFT JOIN).
-         A jednocześnie bierzemy z get_queryset() -> brak IDOR (użytkownik widzi tylko swoje).
+        Lock w DB bez OUTER JOINów (Postgres nie lubi FOR UPDATE + LEFT JOIN).
+        A jednocześnie bierzemy z get_queryset() -> brak IDOR (użytkownik widzi tylko swoje).
         """
-        base_qs = self.get_queryset().select_related(None)  # usuwa joiny z get_queryset()
+        base_qs = self.get_queryset().select_related(
+            None
+        )  # usuwa joiny z get_queryset()
         return base_qs.select_for_update().get(pk=pk)
 
     def perform_create(self, serializer):
@@ -633,7 +703,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     def my(self, request):
         employee = getattr(request.user, "employee_profile", None)
         if not employee:
-            return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND
+            )
 
         qs = self.filter_queryset(self.get_queryset())
 
@@ -681,13 +753,25 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(request, appt)
 
         if appt.status == Appointment.Status.CANCELLED:
-            return Response({"detail": "Wizyta jest już anulowana."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Wizyta jest już anulowana."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if appt.status == Appointment.Status.COMPLETED:
-            return Response({"detail": "Nie można anulować zakończonej wizyty."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Nie można anulować zakończonej wizyty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
-            return Response({"detail": "Nie można anulować wizyty w tym statusie."}, status=status.HTTP_400_BAD_REQUEST)
+        if appt.status not in [
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+        ]:
+            return Response(
+                {"detail": "Nie można anulować wizyty w tym statusie."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if appt.start <= timezone.now():
             return Response(
@@ -715,7 +799,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
-        if appt.status not in [Appointment.Status.PENDING, Appointment.Status.CONFIRMED]:
+        if appt.status not in [
+            Appointment.Status.PENDING,
+            Appointment.Status.CONFIRMED,
+        ]:
             return Response(
                 {"detail": "Można zakończyć tylko wizyty potwierdzone lub oczekujące."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -770,9 +857,11 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
 
+
 # =============================================================================
 # AUDIT LOG
 # =============================================================================
+
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SystemLog.objects.select_related("performed_by", "target_user").all()
@@ -787,24 +876,33 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 # SYSTEM SETTINGS
 # =============================================================================
 
+
 class SystemSettingsView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
         obj = SystemSettings.get_settings()
-        return Response(SystemSettingsSerializer(obj, context={"request": request}).data)
+        return Response(
+            SystemSettingsSerializer(obj, context={"request": request}).data
+        )
 
     def patch(self, request):
         obj = SystemSettings.get_settings()
-        ser = SystemSettingsSerializer(obj, data=request.data, partial=True, context={"request": request})
+        ser = SystemSettingsSerializer(
+            obj, data=request.data, partial=True, context={"request": request}
+        )
         ser.is_valid(raise_exception=True)
         ser.save(updated_by=request.user)
-        SystemLog.log(action=SystemLog.Action.SETTINGS_UPDATED, performed_by=request.user)
+        SystemLog.log(
+            action=SystemLog.Action.SETTINGS_UPDATED, performed_by=request.user
+        )
         return Response(ser.data)
+
 
 # =============================================================================
 # Availability + Booking
 # =============================================================================
+
 
 def _parse_date(date_str: str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -828,35 +926,47 @@ class AvailabilitySlotsAPIView(APIView):
 
         if not employee_id or not service_id or not date_str:
             return Response(
-                {"detail": "Wymagane parametry: employee_id, service_id, date (YYYY-MM-DD)."},
+                {
+                    "detail": "Wymagane parametry: employee_id, service_id, date (YYYY-MM-DD)."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
             employee = EmployeeProfile.objects.get(pk=int(employee_id), is_active=True)
         except (EmployeeProfile.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "Nie znaleziono pracownika."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Nie znaleziono pracownika."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         try:
             service = Service.objects.get(pk=int(service_id), is_active=True)
         except (Service.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "Nie znaleziono usługi."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Nie znaleziono usługi."}, status=status.HTTP_404_NOT_FOUND
+            )
 
         try:
             day = _parse_date(date_str)
         except (ValueError, TypeError):
-            return Response({"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         today = timezone.now().date()
         if day < today:
-            return Response({"detail": "Nie można rezerwować wizyt w przeszłości."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Nie można rezerwować wizyt w przeszłości."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if TimeOff.objects.filter(
-                employee=employee,
-                status=TimeOff.Status.APPROVED,
-                date_from__lte=day,
-                date_to__gte=day,
+            employee=employee,
+            status=TimeOff.Status.APPROVED,
+            date_from__lte=day,
+            date_to__gte=day,
         ).exists():
             return Response({"date": date_str, "slots": []})
 
@@ -871,29 +981,36 @@ class AvailabilitySlotsAPIView(APIView):
         settings_obj = SystemSettings.get_settings()
         slot_minutes = int(settings_obj.slot_minutes)
         buffer_minutes = int(settings_obj.buffer_minutes)
-        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
+        duration = timedelta(
+            minutes=int(service.duration_minutes) + int(buffer_minutes)
+        )
 
         day_start = timezone.make_aware(datetime.combine(day, time(0, 0)))
         day_end = timezone.make_aware(datetime.combine(day, time(23, 59, 59)))
 
         busy = list(
-            Appointment.objects
-            .filter(
+            Appointment.objects.filter(
                 employee=employee,
                 start__lt=day_end,
                 end__gt=day_start,
                 status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-            )
-            .values_list("start", "end")
+            ).values_list("start", "end")
         )
 
         slots: list[dict] = []
         for p in periods:
             try:
-                p_start = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("start", ""))))
-                p_end = timezone.make_aware(datetime.combine(day, _parse_hhmm(p.get("end", ""))))
+                p_start = timezone.make_aware(
+                    datetime.combine(day, _parse_hhmm(p.get("start", "")))
+                )
+                p_end = timezone.make_aware(
+                    datetime.combine(day, _parse_hhmm(p.get("end", "")))
+                )
             except (ValueError, TypeError, AttributeError):
-                return Response({"detail": "Błędne dane grafiku pracownika."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"detail": "Błędne dane grafiku pracownika."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             cursor = p_start
             while cursor + duration <= p_end:
@@ -904,9 +1021,17 @@ class AvailabilitySlotsAPIView(APIView):
                     cursor += timedelta(minutes=slot_minutes)
                     continue
 
-                overlap = any(b_start < candidate_end and b_end > candidate_start for b_start, b_end in busy)
+                overlap = any(
+                    b_start < candidate_end and b_end > candidate_start
+                    for b_start, b_end in busy
+                )
                 if not overlap:
-                    slots.append({"start": candidate_start.isoformat(), "end": candidate_end.isoformat()})
+                    slots.append(
+                        {
+                            "start": candidate_start.isoformat(),
+                            "end": candidate_end.isoformat(),
+                        }
+                    )
 
                 cursor += timedelta(minutes=slot_minutes)
 
@@ -922,9 +1047,13 @@ class BookingCreateAPIView(APIView):
         ser.is_valid(raise_exception=True)
         appointment = ser.save()
 
-        SystemLog.log(action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user)
-        return Response(AppointmentSerializer(appointment, context={"request": request}).data,
-                        status=status.HTTP_201_CREATED)
+        SystemLog.log(
+            action=SystemLog.Action.APPOINTMENT_CREATED, performed_by=request.user
+        )
+        return Response(
+            AppointmentSerializer(appointment, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CheckAvailabilityView(APIView):
@@ -936,65 +1065,88 @@ class CheckAvailabilityView(APIView):
         start_str = request.data.get("start")
 
         if not all([employee_id, service_id, start_str]):
-            return Response({"detail": "Wymagane pola: employee_id, service_id, start (ISO format)"},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    "detail": "Wymagane pola: employee_id, service_id, start (ISO format)"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             employee = EmployeeProfile.objects.get(pk=int(employee_id), is_active=True)
         except (EmployeeProfile.DoesNotExist, ValueError, TypeError):
-            return Response({"available": False, "reason": "Nie znaleziono pracownika."},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"available": False, "reason": "Nie znaleziono pracownika."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         try:
             service = Service.objects.get(pk=int(service_id), is_active=True)
         except (Service.DoesNotExist, ValueError, TypeError):
-            return Response({"available": False, "reason": "Nie znaleziono usługi."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"available": False, "reason": "Nie znaleziono usługi."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         try:
             start = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             if timezone.is_naive(start):
                 start = timezone.make_aware(start)
         except (ValueError, TypeError, AttributeError):
-            return Response({"available": False, "reason": "Nieprawidłowy format daty. Użyj ISO format."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    "available": False,
+                    "reason": "Nieprawidłowy format daty. Użyj ISO format.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if TimeOff.objects.filter(
-                employee=employee,
-                status=TimeOff.Status.APPROVED,
-                date_from__lte=start.date(),
-                date_to__gte=start.date(),
+            employee=employee,
+            status=TimeOff.Status.APPROVED,
+            date_from__lte=start.date(),
+            date_to__gte=start.date(),
         ).exists():
-            return Response({"available": False, "reason": "Pracownik jest nieobecny w tym dniu."})
+            return Response(
+                {"available": False, "reason": "Pracownik jest nieobecny w tym dniu."}
+            )
 
         settings_obj = SystemSettings.get_settings()
         buffer_minutes = int(settings_obj.buffer_minutes)
-        duration = timedelta(minutes=int(service.duration_minutes) + int(buffer_minutes))
+        duration = timedelta(
+            minutes=int(service.duration_minutes) + int(buffer_minutes)
+        )
         end = start + duration
 
-        conflicts = (
-            Appointment.objects
-            .filter(
-                employee=employee,
-                start__lt=end,
-                end__gt=start,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-            )
+        conflicts = Appointment.objects.filter(
+            employee=employee,
+            start__lt=end,
+            end__gt=start,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         )
 
         if conflicts.exists():
-            return Response({"available": False, "reason": "Pracownik ma już zarezerwowaną wizytę w tym czasie."})
+            return Response(
+                {
+                    "available": False,
+                    "reason": "Pracownik ma już zarezerwowaną wizytę w tym czasie.",
+                }
+            )
 
-        return Response({
-            "available": True,
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-            "duration_minutes": service.duration_minutes + buffer_minutes,
-        })
+        return Response(
+            {
+                "available": True,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "duration_minutes": service.duration_minutes + buffer_minutes,
+            }
+        )
 
 
 # =============================================================================
 # Dashboard
 # =============================================================================
+
 
 class DashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -1003,7 +1155,9 @@ class DashboardView(APIView):
         user = request.user
 
         if not hasattr(user, "role"):
-            return Response({"detail": "Brak roli użytkownika"}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "Brak roli użytkownika"}, status=status.HTTP_403_FORBIDDEN
+            )
 
         role = user.role
 
@@ -1021,49 +1175,53 @@ class DashboardView(APIView):
         now = timezone.now()
 
         today_appointments = Appointment.objects.filter(start__date=today)
-        pending_count = Appointment.objects.filter(status=Appointment.Status.PENDING).count()
+        pending_count = Appointment.objects.filter(
+            status=Appointment.Status.PENDING
+        ).count()
 
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        month_revenue = (
-                Appointment.objects.filter(
-                    status=Appointment.Status.COMPLETED,
-                    start__gte=month_start,
-                ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
-        )
+        month_revenue = Appointment.objects.filter(
+            status=Appointment.Status.COMPLETED,
+            start__gte=month_start,
+        ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
 
         active_employees = EmployeeProfile.objects.filter(is_active=True).count()
         active_clients = ClientProfile.objects.filter(is_active=True).count()
 
-        return Response({
-            "role": "ADMIN",
-            "today": {
-                "date": today.isoformat(),
-                "appointments_count": today_appointments.count(),
-                "appointments": AppointmentSerializer(
-                    today_appointments.order_by("start")[:10],
-                    many=True,
-                    context={"request": request},
-                ).data,
-            },
-            "pending_appointments": pending_count,
-            "current_month": {
-                "revenue": float(month_revenue),
-                "completed_appointments": Appointment.objects.filter(
-                    status=Appointment.Status.COMPLETED,
-                    start__gte=month_start,
-                ).count(),
-            },
-            "system": {
-                "active_employees": active_employees,
-                "active_clients": active_clients,
-                "active_services": Service.objects.filter(is_active=True).count(),
-            },
-        })
+        return Response(
+            {
+                "role": "ADMIN",
+                "today": {
+                    "date": today.isoformat(),
+                    "appointments_count": today_appointments.count(),
+                    "appointments": AppointmentSerializer(
+                        today_appointments.order_by("start")[:10],
+                        many=True,
+                        context={"request": request},
+                    ).data,
+                },
+                "pending_appointments": pending_count,
+                "current_month": {
+                    "revenue": float(month_revenue),
+                    "completed_appointments": Appointment.objects.filter(
+                        status=Appointment.Status.COMPLETED,
+                        start__gte=month_start,
+                    ).count(),
+                },
+                "system": {
+                    "active_employees": active_employees,
+                    "active_clients": active_clients,
+                    "active_services": Service.objects.filter(is_active=True).count(),
+                },
+            }
+        )
 
     def _employee_dashboard(self, request, user):
         employee = getattr(user, "employee_profile", None)
         if not employee:
-            return Response({"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Brak profilu pracownika."}, status=status.HTTP_404_NOT_FOUND
+            )
 
         today = timezone.now()
         today_date = today.date()
@@ -1089,27 +1247,35 @@ class DashboardView(APIView):
             start__gte=month_start,
         ).count()
 
-        return Response({
-            "role": "EMPLOYEE",
-            "employee_number": employee.employee_number,
-            "full_name": employee.get_full_name(),
-            "today": {
-                "date": today_date.isoformat(),
-                "appointments": AppointmentSerializer(today_schedule, many=True, context={"request": request}).data,
-            },
-            "upcoming": {
-                "count": upcoming.count(),
-                "appointments": AppointmentSerializer(upcoming[:5], many=True, context={"request": request}).data,
-            },
-            "this_month": {
-                "completed_appointments": month_completed,
-            },
-        })
+        return Response(
+            {
+                "role": "EMPLOYEE",
+                "employee_number": employee.employee_number,
+                "full_name": employee.get_full_name(),
+                "today": {
+                    "date": today_date.isoformat(),
+                    "appointments": AppointmentSerializer(
+                        today_schedule, many=True, context={"request": request}
+                    ).data,
+                },
+                "upcoming": {
+                    "count": upcoming.count(),
+                    "appointments": AppointmentSerializer(
+                        upcoming[:5], many=True, context={"request": request}
+                    ).data,
+                },
+                "this_month": {
+                    "completed_appointments": month_completed,
+                },
+            }
+        )
 
     def _client_dashboard(self, request, user):
         client = getattr(user, "client_profile", None)
         if not client:
-            return Response({"detail": "Brak profilu klienta."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Brak profilu klienta."}, status=status.HTTP_404_NOT_FOUND
+            )
 
         now = timezone.now()
 
@@ -1119,34 +1285,44 @@ class DashboardView(APIView):
             status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         ).order_by("start")
 
-        history_count = Appointment.objects.filter(client=client, status=Appointment.Status.COMPLETED).count()
+        history_count = Appointment.objects.filter(
+            client=client, status=Appointment.Status.COMPLETED
+        ).count()
 
         recent_history = Appointment.objects.filter(
             client=client,
             status=Appointment.Status.COMPLETED,
         ).order_by("-start")[:3]
 
-        return Response({
-            "role": "CLIENT",
-            "client_number": client.client_number,
-            "full_name": client.get_full_name(),
-            "upcoming_appointments": {
-                "count": upcoming.count(),
-                "appointments": AppointmentSerializer(upcoming[:5], many=True, context={"request": request}).data,
-            },
-            "history": {
-                "total_completed": history_count,
-                "recent": AppointmentSerializer(recent_history, many=True, context={"request": request}).data,
-            },
-        })
+        return Response(
+            {
+                "role": "CLIENT",
+                "client_number": client.client_number,
+                "full_name": client.get_full_name(),
+                "upcoming_appointments": {
+                    "count": upcoming.count(),
+                    "appointments": AppointmentSerializer(
+                        upcoming[:5], many=True, context={"request": request}
+                    ).data,
+                },
+                "history": {
+                    "total_completed": history_count,
+                    "recent": AppointmentSerializer(
+                        recent_history, many=True, context={"request": request}
+                    ).data,
+                },
+            }
+        )
 
 
 # -----------------------------------------------
 # Statystyki:
 # -----------------------------------------------
 
+
 class StatisticsView(APIView):
     """Statystyki salonu - wydzielone z dashboardu"""
+
     permission_classes = [IsAdmin]
 
     def get(self, request):
@@ -1178,7 +1354,7 @@ class StatisticsView(APIView):
         # Nadchodzące
         upcoming_appointments = Appointment.objects.filter(
             start__gte=now,
-            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         ).count()
 
         # ============================================================
@@ -1189,13 +1365,13 @@ class StatisticsView(APIView):
             status=Appointment.Status.COMPLETED
         )
 
-        revenue_last_30d = completed_recent.aggregate(
-            total=Sum("service__price")
-        )["total"] or Decimal("0")
+        revenue_last_30d = completed_recent.aggregate(total=Sum("service__price"))[
+            "total"
+        ] or Decimal("0")
 
-        avg_appointment_value = completed_recent.aggregate(
-            avg=Avg("service__price")
-        )["avg"] or Decimal("0")
+        avg_appointment_value = completed_recent.aggregate(avg=Avg("service__price"))[
+            "avg"
+        ] or Decimal("0")
 
         total_revenue = Appointment.objects.filter(
             status=Appointment.Status.COMPLETED
@@ -1208,9 +1384,11 @@ class StatisticsView(APIView):
         total_employees = EmployeeProfile.objects.count()
         active_employees = EmployeeProfile.objects.filter(is_active=True).count()
 
-        employees_with_appointments = EmployeeProfile.objects.filter(
-            appointments__start__gte=thirty_days_ago
-        ).distinct().count()
+        employees_with_appointments = (
+            EmployeeProfile.objects.filter(appointments__start__gte=thirty_days_ago)
+            .distinct()
+            .count()
+        )
 
         # ============================================================
         # KLIENCI (CLIENTS)
@@ -1219,9 +1397,11 @@ class StatisticsView(APIView):
         total_clients = ClientProfile.objects.count()
         active_clients = ClientProfile.objects.filter(is_active=True).count()
 
-        clients_with_appointments = ClientProfile.objects.filter(
-            appointments__start__gte=thirty_days_ago
-        ).distinct().count()
+        clients_with_appointments = (
+            ClientProfile.objects.filter(appointments__start__gte=thirty_days_ago)
+            .distinct()
+            .count()
+        )
 
         # ============================================================
         # USŁUGI (SERVICES)
@@ -1234,12 +1414,9 @@ class StatisticsView(APIView):
         popular_services = (
             Service.objects.filter(
                 appointments__start__gte=thirty_days_ago,
-                appointments__status=Appointment.Status.COMPLETED
+                appointments__status=Appointment.Status.COMPLETED,
             )
-            .annotate(
-                booking_count=Count("appointments"),
-                total_revenue=Sum("price")
-            )
+            .annotate(booking_count=Count("appointments"), total_revenue=Sum("price"))
             .order_by("-booking_count")[:10]
         )
 
@@ -1247,46 +1424,48 @@ class StatisticsView(APIView):
         # RESPONSE
         # ============================================================
 
-        return Response({
-            "appointments": {
-                "total_all_time": total_appointments,
-                "last_30_days": appointments_last_30d,
-                "completed_last_30d": completed_last_30d,
-                "cancelled_last_30d": cancelled_last_30d,
-                "no_shows_last_30d": no_shows_last_30d,
-                "upcoming": upcoming_appointments,
-            },
-            "revenue": {
-                "total_all_time": float(total_revenue),
-                "last_30_days": float(revenue_last_30d),
-                "avg_appointment_value": float(avg_appointment_value),
-            },
-            "employees": {
-                "total": total_employees,
-                "active": active_employees,
-                "with_appointments_last_30d": employees_with_appointments,
-            },
-            "clients": {
-                "total": total_clients,
-                "active": active_clients,
-                "with_appointments_last_30d": clients_with_appointments,
-            },
-            "services": {
-                "total": total_services,
-                "active": active_services,
-            },
-            "popular_services": [
-                {
-                    "id": svc.id,
-                    "name": svc.name,
-                    "category": svc.category,
-                    "booking_count": svc.booking_count,
-                    "total_revenue": float(svc.total_revenue or 0),
-                    "price": float(svc.price),
-                }
-                for svc in popular_services
-            ],
-        })
+        return Response(
+            {
+                "appointments": {
+                    "total_all_time": total_appointments,
+                    "last_30_days": appointments_last_30d,
+                    "completed_last_30d": completed_last_30d,
+                    "cancelled_last_30d": cancelled_last_30d,
+                    "no_shows_last_30d": no_shows_last_30d,
+                    "upcoming": upcoming_appointments,
+                },
+                "revenue": {
+                    "total_all_time": float(total_revenue),
+                    "last_30_days": float(revenue_last_30d),
+                    "avg_appointment_value": float(avg_appointment_value),
+                },
+                "employees": {
+                    "total": total_employees,
+                    "active": active_employees,
+                    "with_appointments_last_30d": employees_with_appointments,
+                },
+                "clients": {
+                    "total": total_clients,
+                    "active": active_clients,
+                    "with_appointments_last_30d": clients_with_appointments,
+                },
+                "services": {
+                    "total": total_services,
+                    "active": active_services,
+                },
+                "popular_services": [
+                    {
+                        "id": svc.id,
+                        "name": svc.name,
+                        "category": svc.category,
+                        "booking_count": svc.booking_count,
+                        "total_revenue": float(svc.total_revenue or 0),
+                        "price": float(svc.price),
+                    }
+                    for svc in popular_services
+                ],
+            }
+        )
 
 
 # ============================================================================
@@ -1306,15 +1485,29 @@ class ReportView(APIView):
         report_type = kwargs.get("report_type")
 
         if report_type is None:
-            return Response({
-                "available_reports": [
-                    {"type": "employee-performance", "description": "Wydajność pracowników"},
-                    {"type": "revenue-analysis", "description": "Analiza przychodów"},
-                    {"type": "client-analytics", "description": "Analityka klientów"},
-                    {"type": "operations", "description": "Raport operacyjny"},
-                    {"type": "capacity-utilization", "description": "Wykorzystanie mocy"},
-                ]
-            })
+            return Response(
+                {
+                    "available_reports": [
+                        {
+                            "type": "employee-performance",
+                            "description": "Wydajność pracowników",
+                        },
+                        {
+                            "type": "revenue-analysis",
+                            "description": "Analiza przychodów",
+                        },
+                        {
+                            "type": "client-analytics",
+                            "description": "Analityka klientów",
+                        },
+                        {"type": "operations", "description": "Raport operacyjny"},
+                        {
+                            "type": "capacity-utilization",
+                            "description": "Wykorzystanie mocy",
+                        },
+                    ]
+                }
+            )
 
         # Wszystkie raporty od razu zwracają PDF
         if report_type == "employee-performance":
@@ -1328,7 +1521,9 @@ class ReportView(APIView):
         if report_type == "capacity-utilization":
             return self._capacity_utilization_pdf()
 
-        return Response({"error": "Nieznany typ raportu."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Nieznany typ raportu."}, status=status.HTTP_400_BAD_REQUEST
+        )
 
     def _register_fonts(self):
         """Rejestruje font DejaVu (TYLKO JEDEN PLIK - DejaVuSans.ttf)"""
@@ -1337,11 +1532,11 @@ class ReportView(APIView):
         import os
         from django.conf import settings
 
-        font_path = os.path.join(settings.BASE_DIR, 'static', 'fonts', 'DejaVuSans.ttf')
+        font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
 
         try:
             # Rejestruj tylko jeden font
-            pdfmetrics.registerFont(TTFont('DejaVuSans', font_path))
+            pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
             return True
         except Exception as e:
             print(f"Warning: Could not register DejaVu font: {e}")
@@ -1350,7 +1545,13 @@ class ReportView(APIView):
     def _build_pdf_response(self, title_text, data, filename, landscape_mode=False):
         """Wspólna metoda do budowania PDF"""
         from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.platypus import (
+            SimpleDocTemplate,
+            Table,
+            TableStyle,
+            Paragraph,
+            Spacer,
+        )
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER
@@ -1359,7 +1560,7 @@ class ReportView(APIView):
 
         # Rejestruj font
         fonts_ok = self._register_fonts()
-        font_name = 'DejaVuSans' if fonts_ok else 'Helvetica'
+        font_name = "DejaVuSans" if fonts_ok else "Helvetica"
 
         buffer = io.BytesIO()
         pagesize = landscape(A4) if landscape_mode else A4
@@ -1370,7 +1571,7 @@ class ReportView(APIView):
             rightMargin=30,
             leftMargin=30,
             topMargin=30,
-            bottomMargin=18
+            bottomMargin=18,
         )
 
         styles = getSampleStyleSheet()
@@ -1378,11 +1579,11 @@ class ReportView(APIView):
 
         # Tytuł
         title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Title'],
+            "CustomTitle",
+            parent=styles["Title"],
             fontName=font_name,
             fontSize=16,
-            textColor=colors.HexColor('#1976d2'),
+            textColor=colors.HexColor("#1976d2"),
             alignment=TA_CENTER,
         )
 
@@ -1391,25 +1592,34 @@ class ReportView(APIView):
 
         # Tabela
         table = Table(data, repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976d2')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), font_name),  # Wszędzie ten sam font
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-            ('TOPPADDING', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f5f5')]),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ]))
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1976d2")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("FONTNAME", (0, 0), (-1, -1), font_name),  # Wszędzie ten sam font
+                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+                    ("TOPPADDING", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 1), (-1, -1), 9),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f5f5f5")],
+                    ),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ]
+            )
+        )
 
         elements.append(table)
         doc.build(elements)
 
         buffer.seek(0)
-        response = HttpResponse(buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 
     def _employee_performance_pdf(self):
@@ -1421,34 +1631,57 @@ class ReportView(APIView):
 
         employees = EmployeeProfile.objects.filter(is_active=True)
 
-        data = [['Pracownik', 'Nr', 'Wizyty', 'Ukończone', 'No-show', 'Przychód', 'No-show %', 'Completion %']]
+        data = [
+            [
+                "Pracownik",
+                "Nr",
+                "Wizyty",
+                "Ukończone",
+                "No-show",
+                "Przychód",
+                "No-show %",
+                "Completion %",
+            ]
+        ]
 
         for emp in employees:
-            appointments = Appointment.objects.filter(employee=emp, start__gte=since, start__lte=until)
+            appointments = Appointment.objects.filter(
+                employee=emp, start__gte=since, start__lte=until
+            )
 
             total = appointments.count()
             completed = appointments.filter(status=Appointment.Status.COMPLETED)
             completed_count = completed.count()
             no_shows = appointments.filter(status=Appointment.Status.NO_SHOW).count()
 
-            revenue = completed.aggregate(total=Sum("service__price"))["total"] or Decimal("0")
+            revenue = completed.aggregate(total=Sum("service__price"))[
+                "total"
+            ] or Decimal("0")
 
             confirmed_total = appointments.filter(
-                status__in=[Appointment.Status.CONFIRMED, Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW]
+                status__in=[
+                    Appointment.Status.CONFIRMED,
+                    Appointment.Status.COMPLETED,
+                    Appointment.Status.NO_SHOW,
+                ]
             ).count()
-            no_show_rate = (no_shows / confirmed_total * 100) if confirmed_total > 0 else 0
+            no_show_rate = (
+                (no_shows / confirmed_total * 100) if confirmed_total > 0 else 0
+            )
             completion_rate = (completed_count / total * 100) if total > 0 else 0
 
-            data.append([
-                emp.get_full_name()[:25],
-                emp.employee_number,
-                str(total),
-                str(completed_count),
-                str(no_shows),
-                f"{float(revenue):.0f} zł",
-                f"{no_show_rate:.1f}%",
-                f"{completion_rate:.1f}%",
-            ])
+            data.append(
+                [
+                    emp.get_full_name()[:25],
+                    emp.employee_number,
+                    str(total),
+                    str(completed_count),
+                    str(no_shows),
+                    f"{float(revenue):.0f} zł",
+                    f"{no_show_rate:.1f}%",
+                    f"{completion_rate:.1f}%",
+                ]
+            )
 
         return self._build_pdf_response(
             title_text="Raport wydajności pracowników (ostatnie 30 dni)",
@@ -1477,15 +1710,17 @@ class ReportView(APIView):
             .order_by("-revenue")[:10]
         )
 
-        data = [['Usługa', 'Kategoria', 'Przychód', 'Liczba wizyt']]
+        data = [["Usługa", "Kategoria", "Przychód", "Liczba wizyt"]]
 
         for svc in top_services:
-            data.append([
-                (svc['service__name'] or '-')[:40],
-                (svc['service__category'] or '-')[:20],
-                f"{float(svc['revenue'] or 0):.2f} zł",
-                str(svc['count']),
-            ])
+            data.append(
+                [
+                    (svc["service__name"] or "-")[:40],
+                    (svc["service__category"] or "-")[:20],
+                    f"{float(svc['revenue'] or 0):.2f} zł",
+                    str(svc["count"]),
+                ]
+            )
 
         return self._build_pdf_response(
             title_text="Analiza przychodów - Top 10 usług (ostatnie 30 dni)",
@@ -1512,19 +1747,25 @@ class ReportView(APIView):
             .order_by("-revenue")[:20]
         )
 
-        data = [['Klient', 'Numer', 'Przychód', 'Liczba wizyt', 'Średnia na wizytę']]
+        data = [["Klient", "Numer", "Przychód", "Liczba wizyt", "Średnia na wizytę"]]
 
         for client in top_clients:
             full_name = f"{client['client__first_name']} {client['client__last_name']}"
-            avg = (client['revenue'] or 0) / client['visits'] if client['visits'] > 0 else 0
+            avg = (
+                (client["revenue"] or 0) / client["visits"]
+                if client["visits"] > 0
+                else 0
+            )
 
-            data.append([
-                full_name[:30],
-                client['client__client_number'] or '-',
-                f"{float(client['revenue'] or 0):.2f} zł",
-                str(client['visits']),
-                f"{float(avg):.2f} zł",
-            ])
+            data.append(
+                [
+                    full_name[:30],
+                    client["client__client_number"] or "-",
+                    f"{float(client['revenue'] or 0):.2f} zł",
+                    str(client["visits"]),
+                    f"{float(avg):.2f} zł",
+                ]
+            )
 
         return self._build_pdf_response(
             title_text="Top 20 klientów (ostatnie 30 dni)",
@@ -1557,24 +1798,26 @@ class ReportView(APIView):
         cancelled = appointments.filter(status=Appointment.Status.CANCELLED).count()
         no_shows = appointments.filter(status=Appointment.Status.NO_SHOW).count()
 
-        data = [['Status', 'Liczba', 'Procent']]
+        data = [["Status", "Liczba", "Procent"]]
 
         # POLSKIE NAZWY STATUSÓW
         status_list = [
-            ('Oczekujące', pending),  # PENDING
-            ('Potwierdzone', confirmed),  # CONFIRMED
-            ('Ukończone', completed),  # COMPLETED
-            ('Anulowane', cancelled),  # CANCELLED
-            ('Nieobecność', no_shows),  # NO_SHOW
+            ("Oczekujące", pending),  # PENDING
+            ("Potwierdzone", confirmed),  # CONFIRMED
+            ("Ukończone", completed),  # COMPLETED
+            ("Anulowane", cancelled),  # CANCELLED
+            ("Nieobecność", no_shows),  # NO_SHOW
         ]
 
         for status_name, count in status_list:
             percentage = (count / total * 100) if total > 0 else 0
-            data.append([
-                status_name,
-                str(count),
-                f"{percentage:.1f}%",
-            ])
+            data.append(
+                [
+                    status_name,
+                    str(count),
+                    f"{percentage:.1f}%",
+                ]
+            )
 
         return self._build_pdf_response(
             title_text="Raport operacyjny - Breakdown statusów (ostatnie 30 dni)",
@@ -1594,7 +1837,11 @@ class ReportView(APIView):
         appointments = Appointment.objects.filter(
             start__gte=since,
             start__lte=until,
-            status__in=[Appointment.Status.CONFIRMED, Appointment.Status.COMPLETED, Appointment.Status.NO_SHOW],
+            status__in=[
+                Appointment.Status.CONFIRMED,
+                Appointment.Status.COMPLETED,
+                Appointment.Status.NO_SHOW,
+            ],
         )
 
         # Według dnia tygodnia
@@ -1605,13 +1852,21 @@ class ReportView(APIView):
             .order_by("day")
         )
 
-        day_names = ["Niedziela", "Poniedziałek", "Wtorek", "Środa", "Czwartek", "Piątek", "Sobota"]
+        day_names = [
+            "Niedziela",
+            "Poniedziałek",
+            "Wtorek",
+            "Środa",
+            "Czwartek",
+            "Piątek",
+            "Sobota",
+        ]
 
-        data = [['Dzień tygodnia', 'Liczba wizyt']]
+        data = [["Dzień tygodnia", "Liczba wizyt"]]
 
         for item in by_day:
-            day_name = day_names[item['day'] - 1]
-            data.append([day_name, str(item['count'])])
+            day_name = day_names[item["day"] - 1]
+            data.append([day_name, str(item["count"])])
 
         return self._build_pdf_response(
             title_text="Wykorzystanie mocy - Według dnia tygodnia (ostatnie 7 dni)",
@@ -1619,4 +1874,3 @@ class ReportView(APIView):
             filename="wykorzystanie_mocy.pdf",
             landscape_mode=False,
         )
-

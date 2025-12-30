@@ -7,6 +7,7 @@ class RoleBasedPermission(permissions.BasePermission):
     Bazowa klasa uprawnień oparta na rolach użytkowników.
     Wymaga zdefiniowania listy 'required_roles' w klasach dziedziczących.
     """
+
     required_roles: List[str] = []
 
     def has_permission(self, request, view):
@@ -14,29 +15,32 @@ class RoleBasedPermission(permissions.BasePermission):
             return False
 
         return any(
-            getattr(request.user, f'is_{role}', False)
-            for role in self.required_roles
+            getattr(request.user, f"is_{role}", False) for role in self.required_roles
         )
 
 
 class IsAdmin(RoleBasedPermission):
     """Dostęp tylko dla użytkowników z rolą administratora."""
-    required_roles = ['admin']
+
+    required_roles = ["admin"]
 
 
 class IsAdminOrEmployee(RoleBasedPermission):
     """Dostęp dla administratorów oraz pracowników."""
-    required_roles = ['admin', 'employee']
+
+    required_roles = ["admin", "employee"]
 
 
 class IsEmployee(RoleBasedPermission):
     """Dostęp tylko dla pracowników."""
-    required_roles = ['employee']
+
+    required_roles = ["employee"]
 
 
 class IsClient(RoleBasedPermission):
     """Dostęp tylko dla klientów."""
-    required_roles = ['client']
+
+    required_roles = ["client"]
 
 
 class IsReadOnly(permissions.BasePermission):
@@ -159,10 +163,7 @@ class CanDecideTimeOff(permissions.BasePermission):
     """Zezwala administratorowi na akceptację lub odrzucenie wniosku urlopowego."""
 
     def has_permission(self, request, view):
-        return (
-                request.user.is_authenticated
-                and request.user.is_admin
-        )
+        return request.user.is_authenticated and request.user.is_admin
 
 
 class CanCancelOwnTimeOff(permissions.BasePermission):

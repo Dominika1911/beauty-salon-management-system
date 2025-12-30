@@ -8,50 +8,74 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0005_alter_customuser_username'),
+        ("beauty_salon", "0005_alter_customuser_username"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='timeoff',
+            name="timeoff",
             options={},
         ),
         migrations.RemoveConstraint(
-            model_name='timeoff',
-            name='timeoff_date_range_valid',
+            model_name="timeoff",
+            name="timeoff_date_range_valid",
         ),
         migrations.RemoveIndex(
-            model_name='timeoff',
-            name='beauty_salo_employe_90ba65_idx',
+            model_name="timeoff",
+            name="beauty_salo_employe_90ba65_idx",
         ),
         migrations.AddField(
-            model_name='timeoff',
-            name='decided_at',
+            model_name="timeoff",
+            name="decided_at",
             field=models.DateTimeField(blank=True, null=True),
         ),
         migrations.AddField(
-            model_name='timeoff',
-            name='decided_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeoff_decisions', to=settings.AUTH_USER_MODEL),
+            model_name="timeoff",
+            name="decided_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="timeoff_decisions",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='timeoff',
-            name='requested_by',
-            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='timeoff_requests', to=settings.AUTH_USER_MODEL),
+            model_name="timeoff",
+            name="requested_by",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="timeoff_requests",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AddField(
-            model_name='timeoff',
-            name='status',
-            field=models.CharField(choices=[('PENDING', 'Oczekuje'), ('APPROVED', 'Zaakceptowany'), ('REJECTED', 'Odrzucony')], default='PENDING', max_length=20),
+            model_name="timeoff",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "Oczekuje"),
+                    ("APPROVED", "Zaakceptowany"),
+                    ("REJECTED", "Odrzucony"),
+                ],
+                default="PENDING",
+                max_length=20,
+            ),
         ),
         migrations.AlterField(
-            model_name='timeoff',
-            name='employee',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='timeoffs', to='beauty_salon.employeeprofile'),
+            model_name="timeoff",
+            name="employee",
+            field=models.ForeignKey(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="timeoffs",
+                to="beauty_salon.employeeprofile",
+            ),
         ),
         migrations.AlterField(
-            model_name='timeoff',
-            name='reason',
-            field=models.CharField(blank=True, default='', max_length=255),
+            model_name="timeoff",
+            name="reason",
+            field=models.CharField(blank=True, default="", max_length=255),
         ),
     ]

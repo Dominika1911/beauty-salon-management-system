@@ -13,213 +13,592 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
+        ("auth", "0012_alter_user_first_name_max_length"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='CustomUser',
+            name="CustomUser",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('password', models.CharField(max_length=128, verbose_name='password')),
-                ('last_login', models.DateTimeField(blank=True, null=True, verbose_name='last login')),
-                ('is_superuser', models.BooleanField(default=False, help_text='Designates that this user has all permissions without explicitly assigning them.', verbose_name='superuser status')),
-                ('first_name', models.CharField(blank=True, max_length=150, verbose_name='first name')),
-                ('last_name', models.CharField(blank=True, max_length=150, verbose_name='last name')),
-                ('email', models.EmailField(blank=True, max_length=254, verbose_name='email address')),
-                ('is_staff', models.BooleanField(default=False, help_text='Designates whether the user can log into this admin site.', verbose_name='staff status')),
-                ('is_active', models.BooleanField(default=True, help_text='Designates whether this user should be treated as active. Unselect this instead of deleting accounts.', verbose_name='active')),
-                ('date_joined', models.DateTimeField(default=django.utils.timezone.now, verbose_name='date joined')),
-                ('username', models.CharField(blank=True, max_length=30, unique=True)),
-                ('role', models.CharField(choices=[('ADMIN', 'Administrator'), ('EMPLOYEE', 'Pracownik'), ('CLIENT', 'Klient')], default='CLIENT', max_length=20)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('groups', models.ManyToManyField(blank=True, help_text='The groups this user belongs to. A user will get all permissions granted to each of their groups.', related_name='user_set', related_query_name='user', to='auth.group', verbose_name='groups')),
-                ('user_permissions', models.ManyToManyField(blank=True, help_text='Specific permissions for this user.', related_name='user_set', related_query_name='user', to='auth.permission', verbose_name='user permissions')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("password", models.CharField(max_length=128, verbose_name="password")),
+                (
+                    "last_login",
+                    models.DateTimeField(
+                        blank=True, null=True, verbose_name="last login"
+                    ),
+                ),
+                (
+                    "is_superuser",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Designates that this user has all permissions without explicitly assigning them.",
+                        verbose_name="superuser status",
+                    ),
+                ),
+                (
+                    "first_name",
+                    models.CharField(
+                        blank=True, max_length=150, verbose_name="first name"
+                    ),
+                ),
+                (
+                    "last_name",
+                    models.CharField(
+                        blank=True, max_length=150, verbose_name="last name"
+                    ),
+                ),
+                (
+                    "email",
+                    models.EmailField(
+                        blank=True, max_length=254, verbose_name="email address"
+                    ),
+                ),
+                (
+                    "is_staff",
+                    models.BooleanField(
+                        default=False,
+                        help_text="Designates whether the user can log into this admin site.",
+                        verbose_name="staff status",
+                    ),
+                ),
+                (
+                    "is_active",
+                    models.BooleanField(
+                        default=True,
+                        help_text="Designates whether this user should be treated as active. Unselect this instead of deleting accounts.",
+                        verbose_name="active",
+                    ),
+                ),
+                (
+                    "date_joined",
+                    models.DateTimeField(
+                        default=django.utils.timezone.now, verbose_name="date joined"
+                    ),
+                ),
+                ("username", models.CharField(blank=True, max_length=30, unique=True)),
+                (
+                    "role",
+                    models.CharField(
+                        choices=[
+                            ("ADMIN", "Administrator"),
+                            ("EMPLOYEE", "Pracownik"),
+                            ("CLIENT", "Klient"),
+                        ],
+                        default="CLIENT",
+                        max_length=20,
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "groups",
+                    models.ManyToManyField(
+                        blank=True,
+                        help_text="The groups this user belongs to. A user will get all permissions granted to each of their groups.",
+                        related_name="user_set",
+                        related_query_name="user",
+                        to="auth.group",
+                        verbose_name="groups",
+                    ),
+                ),
+                (
+                    "user_permissions",
+                    models.ManyToManyField(
+                        blank=True,
+                        help_text="Specific permissions for this user.",
+                        related_name="user_set",
+                        related_query_name="user",
+                        to="auth.permission",
+                        verbose_name="user permissions",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['pk'],
+                "ordering": ["pk"],
             },
             managers=[
-                ('objects', django.contrib.auth.models.UserManager()),
+                ("objects", django.contrib.auth.models.UserManager()),
             ],
         ),
         migrations.CreateModel(
-            name='ClientProfile',
+            name="ClientProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('client_number', models.CharField(max_length=8, unique=True, validators=[django.core.validators.RegexValidator(message='Client number must be exactly 8 digits (e.g. 00000001).', regex='^\\d{8}$')])),
-                ('first_name', models.CharField(max_length=150)),
-                ('last_name', models.CharField(max_length=150)),
-                ('email', models.EmailField(blank=True, max_length=254, null=True)),
-                ('phone', models.CharField(blank=True, max_length=16, validators=[django.core.validators.RegexValidator(message='Phone must be 9–15 digits, optional leading +.', regex='^\\+?\\d{9,15}$')])),
-                ('internal_notes', models.TextField(blank=True)),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='client_profile', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "client_number",
+                    models.CharField(
+                        max_length=8,
+                        unique=True,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Client number must be exactly 8 digits (e.g. 00000001).",
+                                regex="^\\d{8}$",
+                            )
+                        ],
+                    ),
+                ),
+                ("first_name", models.CharField(max_length=150)),
+                ("last_name", models.CharField(max_length=150)),
+                ("email", models.EmailField(blank=True, max_length=254, null=True)),
+                (
+                    "phone",
+                    models.CharField(
+                        blank=True,
+                        max_length=16,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Phone must be 9–15 digits, optional leading +.",
+                                regex="^\\+?\\d{9,15}$",
+                            )
+                        ],
+                    ),
+                ),
+                ("internal_notes", models.TextField(blank=True)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="client_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['pk'],
+                "ordering": ["pk"],
             },
         ),
         migrations.CreateModel(
-            name='EmployeeProfile',
+            name="EmployeeProfile",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('employee_number', models.CharField(max_length=8, unique=True, validators=[django.core.validators.RegexValidator(message='Employee number must be exactly 8 digits (e.g. 00000001).', regex='^\\d{8}$')])),
-                ('first_name', models.CharField(blank=True, max_length=150)),
-                ('last_name', models.CharField(blank=True, max_length=150)),
-                ('phone', models.CharField(blank=True, max_length=16, validators=[django.core.validators.RegexValidator(message='Phone must be 9–15 digits, optional leading +.', regex='^\\+?\\d{9,15}$')])),
-                ('is_active', models.BooleanField(default=True)),
-                ('hired_at', models.DateField(default=django.utils.timezone.now)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='employee_profile', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "employee_number",
+                    models.CharField(
+                        max_length=8,
+                        unique=True,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Employee number must be exactly 8 digits (e.g. 00000001).",
+                                regex="^\\d{8}$",
+                            )
+                        ],
+                    ),
+                ),
+                ("first_name", models.CharField(blank=True, max_length=150)),
+                ("last_name", models.CharField(blank=True, max_length=150)),
+                (
+                    "phone",
+                    models.CharField(
+                        blank=True,
+                        max_length=16,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Phone must be 9–15 digits, optional leading +.",
+                                regex="^\\+?\\d{9,15}$",
+                            )
+                        ],
+                    ),
+                ),
+                ("is_active", models.BooleanField(default=True)),
+                ("hired_at", models.DateField(default=django.utils.timezone.now)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "user",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="employee_profile",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['pk'],
+                "ordering": ["pk"],
             },
         ),
         migrations.CreateModel(
-            name='EmployeeSchedule',
+            name="EmployeeSchedule",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('weekly_hours', models.JSONField(blank=True, default=dict)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('employee', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='schedule', to='beauty_salon.employeeprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("weekly_hours", models.JSONField(blank=True, default=dict)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "employee",
+                    models.OneToOneField(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="schedule",
+                        to="beauty_salon.employeeprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['pk'],
+                "ordering": ["pk"],
             },
         ),
         migrations.CreateModel(
-            name='Service',
+            name="Service",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('name', models.CharField(max_length=255, unique=True)),
-                ('category', models.CharField(blank=True, db_index=True, max_length=100)),
-                ('description', models.TextField(blank=True)),
-                ('price', models.DecimalField(decimal_places=2, max_digits=10, validators=[django.core.validators.MinValueValidator(0)])),
-                ('duration_minutes', models.PositiveIntegerField(validators=[django.core.validators.MinValueValidator(5)])),
-                ('is_active', models.BooleanField(default=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("name", models.CharField(max_length=255, unique=True)),
+                (
+                    "category",
+                    models.CharField(blank=True, db_index=True, max_length=100),
+                ),
+                ("description", models.TextField(blank=True)),
+                (
+                    "price",
+                    models.DecimalField(
+                        decimal_places=2,
+                        max_digits=10,
+                        validators=[django.core.validators.MinValueValidator(0)],
+                    ),
+                ),
+                (
+                    "duration_minutes",
+                    models.PositiveIntegerField(
+                        validators=[django.core.validators.MinValueValidator(5)]
+                    ),
+                ),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
             ],
             options={
-                'ordering': ['pk'],
-                'indexes': [models.Index(fields=['category', 'name'], name='beauty_salo_categor_1b0ba0_idx')],
+                "ordering": ["pk"],
+                "indexes": [
+                    models.Index(
+                        fields=["category", "name"],
+                        name="beauty_salo_categor_1b0ba0_idx",
+                    )
+                ],
             },
         ),
         migrations.AddField(
-            model_name='employeeprofile',
-            name='skills',
-            field=models.ManyToManyField(blank=True, related_name='employees', to='beauty_salon.service'),
+            model_name="employeeprofile",
+            name="skills",
+            field=models.ManyToManyField(
+                blank=True, related_name="employees", to="beauty_salon.service"
+            ),
         ),
         migrations.CreateModel(
-            name='Appointment',
+            name="Appointment",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('start', models.DateTimeField(db_index=True)),
-                ('end', models.DateTimeField(db_index=True)),
-                ('status', models.CharField(choices=[('PENDING', 'Oczekująca'), ('CONFIRMED', 'Potwierdzona'), ('COMPLETED', 'Zakończona'), ('CANCELLED', 'Anulowana')], db_index=True, default='PENDING', max_length=12)),
-                ('internal_notes', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('client', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='appointments', to='beauty_salon.clientprofile')),
-                ('employee', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='appointments', to='beauty_salon.employeeprofile')),
-                ('service', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='appointments', to='beauty_salon.service')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("start", models.DateTimeField(db_index=True)),
+                ("end", models.DateTimeField(db_index=True)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("PENDING", "Oczekująca"),
+                            ("CONFIRMED", "Potwierdzona"),
+                            ("COMPLETED", "Zakończona"),
+                            ("CANCELLED", "Anulowana"),
+                        ],
+                        db_index=True,
+                        default="PENDING",
+                        max_length=12,
+                    ),
+                ),
+                ("internal_notes", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "client",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="appointments",
+                        to="beauty_salon.clientprofile",
+                    ),
+                ),
+                (
+                    "employee",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="appointments",
+                        to="beauty_salon.employeeprofile",
+                    ),
+                ),
+                (
+                    "service",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="appointments",
+                        to="beauty_salon.service",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['start'],
+                "ordering": ["start"],
             },
         ),
         migrations.CreateModel(
-            name='SystemLog',
+            name="SystemLog",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('action', models.CharField(choices=[('SERVICE_CREATED', 'Service created'), ('SERVICE_UPDATED', 'Service updated'), ('SERVICE_DISABLED', 'Service disabled'), ('EMPLOYEE_CREATED', 'Employee created'), ('EMPLOYEE_UPDATED', 'Employee updated'), ('EMPLOYEE_DEACTIVATED', 'Employee deactivated'), ('CLIENT_CREATED', 'Client created'), ('CLIENT_UPDATED', 'Client updated'), ('CLIENT_DEACTIVATED', 'Client deactivated'), ('APPOINTMENT_CREATED', 'Appointment created'), ('APPOINTMENT_CONFIRMED', 'Appointment confirmed'), ('APPOINTMENT_CANCELLED', 'Appointment cancelled'), ('APPOINTMENT_COMPLETED', 'Appointment completed'), ('AUTH_LOGIN', 'User login'), ('AUTH_LOGOUT', 'User logout'), ('SETTINGS_UPDATED', 'Settings updated')], db_index=True, max_length=40)),
-                ('timestamp', models.DateTimeField(auto_now_add=True, db_index=True)),
-                ('performed_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='system_logs', to=settings.AUTH_USER_MODEL)),
-                ('target_user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='system_logs_as_target', to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "action",
+                    models.CharField(
+                        choices=[
+                            ("SERVICE_CREATED", "Service created"),
+                            ("SERVICE_UPDATED", "Service updated"),
+                            ("SERVICE_DISABLED", "Service disabled"),
+                            ("EMPLOYEE_CREATED", "Employee created"),
+                            ("EMPLOYEE_UPDATED", "Employee updated"),
+                            ("EMPLOYEE_DEACTIVATED", "Employee deactivated"),
+                            ("CLIENT_CREATED", "Client created"),
+                            ("CLIENT_UPDATED", "Client updated"),
+                            ("CLIENT_DEACTIVATED", "Client deactivated"),
+                            ("APPOINTMENT_CREATED", "Appointment created"),
+                            ("APPOINTMENT_CONFIRMED", "Appointment confirmed"),
+                            ("APPOINTMENT_CANCELLED", "Appointment cancelled"),
+                            ("APPOINTMENT_COMPLETED", "Appointment completed"),
+                            ("AUTH_LOGIN", "User login"),
+                            ("AUTH_LOGOUT", "User logout"),
+                            ("SETTINGS_UPDATED", "Settings updated"),
+                        ],
+                        db_index=True,
+                        max_length=40,
+                    ),
+                ),
+                ("timestamp", models.DateTimeField(auto_now_add=True, db_index=True)),
+                (
+                    "performed_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="system_logs",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "target_user",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        related_name="system_logs_as_target",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-timestamp'],
+                "ordering": ["-timestamp"],
             },
         ),
         migrations.CreateModel(
-            name='SystemSettings',
+            name="SystemSettings",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('salon_name', models.CharField(default='Salon Kosmetyczny', max_length=255)),
-                ('slot_minutes', models.IntegerField(default=15, validators=[django.core.validators.MinValueValidator(5)])),
-                ('buffer_minutes', models.IntegerField(default=0, validators=[django.core.validators.MinValueValidator(0)])),
-                ('opening_hours', models.JSONField(blank=True, default=dict)),
-                ('updated_at', models.DateTimeField(auto_now=True)),
-                ('updated_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                (
+                    "salon_name",
+                    models.CharField(default="Salon Kosmetyczny", max_length=255),
+                ),
+                (
+                    "slot_minutes",
+                    models.IntegerField(
+                        default=15,
+                        validators=[django.core.validators.MinValueValidator(5)],
+                    ),
+                ),
+                (
+                    "buffer_minutes",
+                    models.IntegerField(
+                        default=0,
+                        validators=[django.core.validators.MinValueValidator(0)],
+                    ),
+                ),
+                ("opening_hours", models.JSONField(blank=True, default=dict)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                (
+                    "updated_by",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.SET_NULL,
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
             ],
         ),
         migrations.CreateModel(
-            name='TimeOff',
+            name="TimeOff",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('date_from', models.DateField()),
-                ('date_to', models.DateField()),
-                ('reason', models.TextField(blank=True)),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('employee', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='time_offs', to='beauty_salon.employeeprofile')),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("date_from", models.DateField()),
+                ("date_to", models.DateField()),
+                ("reason", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "employee",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="time_offs",
+                        to="beauty_salon.employeeprofile",
+                    ),
+                ),
             ],
             options={
-                'ordering': ['-date_from'],
+                "ordering": ["-date_from"],
             },
         ),
         migrations.AddIndex(
-            model_name='clientprofile',
-            index=models.Index(fields=['client_number'], name='beauty_salo_client__10b931_idx'),
+            model_name="clientprofile",
+            index=models.Index(
+                fields=["client_number"], name="beauty_salo_client__10b931_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='clientprofile',
-            index=models.Index(fields=['last_name', 'first_name'], name='beauty_salo_last_na_acaa14_idx'),
+            model_name="clientprofile",
+            index=models.Index(
+                fields=["last_name", "first_name"],
+                name="beauty_salo_last_na_acaa14_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='employeeprofile',
-            index=models.Index(fields=['employee_number'], name='beauty_salo_employe_b1c20d_idx'),
+            model_name="employeeprofile",
+            index=models.Index(
+                fields=["employee_number"], name="beauty_salo_employe_b1c20d_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='employeeprofile',
-            index=models.Index(fields=['last_name', 'first_name'], name='beauty_salo_last_na_0e0818_idx'),
+            model_name="employeeprofile",
+            index=models.Index(
+                fields=["last_name", "first_name"],
+                name="beauty_salo_last_na_0e0818_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='appointment',
-            index=models.Index(fields=['employee', 'start'], name='beauty_salo_employe_a52646_idx'),
+            model_name="appointment",
+            index=models.Index(
+                fields=["employee", "start"], name="beauty_salo_employe_a52646_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='appointment',
-            index=models.Index(fields=['status', 'start'], name='beauty_salo_status_0b9e83_idx'),
+            model_name="appointment",
+            index=models.Index(
+                fields=["status", "start"], name="beauty_salo_status_0b9e83_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='appointment',
-            constraint=models.CheckConstraint(condition=models.Q(('end__gt', models.F('start'))), name='appointment_end_after_start'),
+            model_name="appointment",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("end__gt", models.F("start"))),
+                name="appointment_end_after_start",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='appointment',
-            constraint=models.UniqueConstraint(fields=('employee', 'start'), name='unique_employee_start'),
+            model_name="appointment",
+            constraint=models.UniqueConstraint(
+                fields=("employee", "start"), name="unique_employee_start"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='appointment',
-            constraint=models.UniqueConstraint(fields=('employee', 'end'), name='unique_employee_end'),
+            model_name="appointment",
+            constraint=models.UniqueConstraint(
+                fields=("employee", "end"), name="unique_employee_end"
+            ),
         ),
         migrations.AddIndex(
-            model_name='systemlog',
-            index=models.Index(fields=['action', 'timestamp'], name='beauty_salo_action_ba29d0_idx'),
+            model_name="systemlog",
+            index=models.Index(
+                fields=["action", "timestamp"], name="beauty_salo_action_ba29d0_idx"
+            ),
         ),
         migrations.AddIndex(
-            model_name='timeoff',
-            index=models.Index(fields=['employee', 'date_from', 'date_to'], name='beauty_salo_employe_90ba65_idx'),
+            model_name="timeoff",
+            index=models.Index(
+                fields=["employee", "date_from", "date_to"],
+                name="beauty_salo_employe_90ba65_idx",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='timeoff',
-            constraint=models.CheckConstraint(condition=models.Q(('date_to__gte', models.F('date_from'))), name='timeoff_date_range_valid'),
+            model_name="timeoff",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("date_to__gte", models.F("date_from"))),
+                name="timeoff_date_range_valid",
+            ),
         ),
     ]

@@ -72,7 +72,11 @@ def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> 
         admin.full_clean()
         admin.save()
     else:
-        if not admin.is_staff or not admin.is_superuser or admin.role != CustomUser.Role.ADMIN:
+        if (
+            not admin.is_staff
+            or not admin.is_superuser
+            or admin.role != CustomUser.Role.ADMIN
+        ):
             admin.is_staff = True
             admin.is_superuser = True
             admin.role = CustomUser.Role.ADMIN
@@ -147,26 +151,96 @@ def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> 
         employee_profiles.append(profile)
 
     services_data = [
-        {"name": "Manicure klasyczny", "category": "Paznokcie", "price": 50, "duration": 45},
-        {"name": "Manicure hybrydowy", "category": "Paznokcie", "price": 80, "duration": 60},
-        {"name": "Manicure żelowy", "category": "Paznokcie", "price": 100, "duration": 90},
-        {"name": "Pedicure klasyczny", "category": "Paznokcie", "price": 60, "duration": 60},
-        {"name": "Pedicure hybrydowy", "category": "Paznokcie", "price": 90, "duration": 75},
-        {"name": "Przedłużanie rzęs 1:1", "category": "Rzęsy", "price": 120, "duration": 90},
-        {"name": "Przedłużanie rzęs 2D-3D", "category": "Rzęsy", "price": 150, "duration": 120},
+        {
+            "name": "Manicure klasyczny",
+            "category": "Paznokcie",
+            "price": 50,
+            "duration": 45,
+        },
+        {
+            "name": "Manicure hybrydowy",
+            "category": "Paznokcie",
+            "price": 80,
+            "duration": 60,
+        },
+        {
+            "name": "Manicure żelowy",
+            "category": "Paznokcie",
+            "price": 100,
+            "duration": 90,
+        },
+        {
+            "name": "Pedicure klasyczny",
+            "category": "Paznokcie",
+            "price": 60,
+            "duration": 60,
+        },
+        {
+            "name": "Pedicure hybrydowy",
+            "category": "Paznokcie",
+            "price": 90,
+            "duration": 75,
+        },
+        {
+            "name": "Przedłużanie rzęs 1:1",
+            "category": "Rzęsy",
+            "price": 120,
+            "duration": 90,
+        },
+        {
+            "name": "Przedłużanie rzęs 2D-3D",
+            "category": "Rzęsy",
+            "price": 150,
+            "duration": 120,
+        },
         {"name": "Lifting rzęs", "category": "Rzęsy", "price": 100, "duration": 60},
         {"name": "Uzupełnienie rzęs", "category": "Rzęsy", "price": 80, "duration": 60},
         {"name": "Stylizacja brwi", "category": "Brwi", "price": 40, "duration": 30},
         {"name": "Henna brwi", "category": "Brwi", "price": 50, "duration": 45},
         {"name": "Microblading", "category": "Brwi", "price": 400, "duration": 120},
-        {"name": "Oczyszczanie wodorowe", "category": "Twarz", "price": 120, "duration": 60},
-        {"name": "Mezoterapia igłowa", "category": "Twarz", "price": 200, "duration": 45},
-        {"name": "Peeling kawitacyjny", "category": "Twarz", "price": 100, "duration": 45},
+        {
+            "name": "Oczyszczanie wodorowe",
+            "category": "Twarz",
+            "price": 120,
+            "duration": 60,
+        },
+        {
+            "name": "Mezoterapia igłowa",
+            "category": "Twarz",
+            "price": 200,
+            "duration": 45,
+        },
+        {
+            "name": "Peeling kawitacyjny",
+            "category": "Twarz",
+            "price": 100,
+            "duration": 45,
+        },
         {"name": "Masaż twarzy", "category": "Twarz", "price": 80, "duration": 45},
-        {"name": "Depilacja woskiem - nogi", "category": "Depilacja", "price": 80, "duration": 45},
-        {"name": "Depilacja woskiem - pachy", "category": "Depilacja", "price": 40, "duration": 20},
-        {"name": "Depilacja laserowa - nogi", "category": "Depilacja", "price": 300, "duration": 60},
-        {"name": "Masaż relaksacyjny", "category": "Masaż", "price": 150, "duration": 60},
+        {
+            "name": "Depilacja woskiem - nogi",
+            "category": "Depilacja",
+            "price": 80,
+            "duration": 45,
+        },
+        {
+            "name": "Depilacja woskiem - pachy",
+            "category": "Depilacja",
+            "price": 40,
+            "duration": 20,
+        },
+        {
+            "name": "Depilacja laserowa - nogi",
+            "category": "Depilacja",
+            "price": 300,
+            "duration": 60,
+        },
+        {
+            "name": "Masaż relaksacyjny",
+            "category": "Masaż",
+            "price": 150,
+            "duration": 60,
+        },
     ]
 
     services = []
@@ -188,7 +262,9 @@ def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> 
     if len(employee_profiles) > 1:
         employee_profiles[1].skills.set(services[12:19])
     if len(employee_profiles) > 2:
-        employee_profiles[2].skills.set([services[5], services[6], services[7], services[8], services[19]])
+        employee_profiles[2].skills.set(
+            [services[5], services[6], services[7], services[8], services[19]]
+        )
 
     schedule = {
         "mon": [{"start": "09:00", "end": "17:00"}],
@@ -200,19 +276,46 @@ def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> 
         "sun": [],
     }
     for emp in employee_profiles:
-        EmployeeSchedule.objects.get_or_create(employee=emp, defaults={"weekly_hours": schedule})
+        EmployeeSchedule.objects.get_or_create(
+            employee=emp, defaults={"weekly_hours": schedule}
+        )
 
     clients_data = [
-        {"num": "00000001", "first_name": "Katarzyna", "last_name": "Zielińska",
-         "email": "katarzyna.zielinska@gmail.com", "phone": "+48601234567"},
-        {"num": "00000002", "first_name": "Magdalena", "last_name": "Lewandowska",
-         "email": "magdalena.lewandowska@gmail.com", "phone": "+48602345678"},
-        {"num": "00000003", "first_name": "Agnieszka", "last_name": "Kamińska",
-         "email": "agnieszka.kaminska@gmail.com", "phone": "+48603456789"},
-        {"num": "00000004", "first_name": "Julia", "last_name": "Kowalczyk",
-         "email": "julia.kowalczyk@gmail.com", "phone": "+48604567890"},
-        {"num": "00000005", "first_name": "Natalia", "last_name": "Wójcik",
-         "email": "natalia.wojcik@gmail.com", "phone": "+48605678901"},
+        {
+            "num": "00000001",
+            "first_name": "Katarzyna",
+            "last_name": "Zielińska",
+            "email": "katarzyna.zielinska@gmail.com",
+            "phone": "+48601234567",
+        },
+        {
+            "num": "00000002",
+            "first_name": "Magdalena",
+            "last_name": "Lewandowska",
+            "email": "magdalena.lewandowska@gmail.com",
+            "phone": "+48602345678",
+        },
+        {
+            "num": "00000003",
+            "first_name": "Agnieszka",
+            "last_name": "Kamińska",
+            "email": "agnieszka.kaminska@gmail.com",
+            "phone": "+48603456789",
+        },
+        {
+            "num": "00000004",
+            "first_name": "Julia",
+            "last_name": "Kowalczyk",
+            "email": "julia.kowalczyk@gmail.com",
+            "phone": "+48604567890",
+        },
+        {
+            "num": "00000005",
+            "first_name": "Natalia",
+            "last_name": "Wójcik",
+            "email": "natalia.wojcik@gmail.com",
+            "phone": "+48605678901",
+        },
     ]
 
     client_profiles = []
@@ -259,21 +362,111 @@ def seed(clear: bool = False, demo: bool = False, password: str = "demo123") -> 
         client_profiles.append(profile)
 
     def calc_end(start_dt, service_obj):
-        return start_dt + timedelta(minutes=int(service_obj.duration_minutes) + buffer_minutes)
+        return start_dt + timedelta(
+            minutes=int(service_obj.duration_minutes) + buffer_minutes
+        )
 
     if client_profiles and employee_profiles and services:
         appointments = [
-            (client_profiles[0], employee_profiles[0], services[1], -7, 10, 0, Appointment.Status.COMPLETED),
-            (client_profiles[1], employee_profiles[1], services[13], -5, 14, 0, Appointment.Status.COMPLETED),
-            (client_profiles[2], employee_profiles[2], services[5], -3, 11, 0, Appointment.Status.COMPLETED),
-            (client_profiles[0], employee_profiles[0], services[3], -10, 15, 0, Appointment.Status.COMPLETED),
-            (client_profiles[3], employee_profiles[0], services[0], -2, 16, 0, Appointment.Status.CANCELLED),
-            (client_profiles[4], employee_profiles[1], services[12], -1, 14, 0, Appointment.Status.NO_SHOW),
-            (client_profiles[0], employee_profiles[0], services[2], 2, 10, 0, Appointment.Status.CONFIRMED),
-            (client_profiles[1], employee_profiles[1], services[14], 3, 15, 0, Appointment.Status.CONFIRMED),
-            (client_profiles[2], employee_profiles[2], services[7], 4, 12, 0, Appointment.Status.CONFIRMED),
-            (client_profiles[3], employee_profiles[0], services[4], 5, 14, 0, Appointment.Status.PENDING),
-            (client_profiles[4], employee_profiles[1], services[16], 7, 11, 0, Appointment.Status.PENDING),
+            (
+                client_profiles[0],
+                employee_profiles[0],
+                services[1],
+                -7,
+                10,
+                0,
+                Appointment.Status.COMPLETED,
+            ),
+            (
+                client_profiles[1],
+                employee_profiles[1],
+                services[13],
+                -5,
+                14,
+                0,
+                Appointment.Status.COMPLETED,
+            ),
+            (
+                client_profiles[2],
+                employee_profiles[2],
+                services[5],
+                -3,
+                11,
+                0,
+                Appointment.Status.COMPLETED,
+            ),
+            (
+                client_profiles[0],
+                employee_profiles[0],
+                services[3],
+                -10,
+                15,
+                0,
+                Appointment.Status.COMPLETED,
+            ),
+            (
+                client_profiles[3],
+                employee_profiles[0],
+                services[0],
+                -2,
+                16,
+                0,
+                Appointment.Status.CANCELLED,
+            ),
+            (
+                client_profiles[4],
+                employee_profiles[1],
+                services[12],
+                -1,
+                14,
+                0,
+                Appointment.Status.NO_SHOW,
+            ),
+            (
+                client_profiles[0],
+                employee_profiles[0],
+                services[2],
+                2,
+                10,
+                0,
+                Appointment.Status.CONFIRMED,
+            ),
+            (
+                client_profiles[1],
+                employee_profiles[1],
+                services[14],
+                3,
+                15,
+                0,
+                Appointment.Status.CONFIRMED,
+            ),
+            (
+                client_profiles[2],
+                employee_profiles[2],
+                services[7],
+                4,
+                12,
+                0,
+                Appointment.Status.CONFIRMED,
+            ),
+            (
+                client_profiles[3],
+                employee_profiles[0],
+                services[4],
+                5,
+                14,
+                0,
+                Appointment.Status.PENDING,
+            ),
+            (
+                client_profiles[4],
+                employee_profiles[1],
+                services[16],
+                7,
+                11,
+                0,
+                Appointment.Status.PENDING,
+            ),
         ]
 
         for client, emp, svc, days, hour, minute, appt_status in appointments:
@@ -355,14 +548,16 @@ class Command(BaseCommand):
     help = "Seed initial data for the beauty salon system"
 
     def add_arguments(self, parser):
-        parser.add_argument("--clear", action="store_true", help="Clear existing data before seeding")
-        parser.add_argument("--demo", action="store_true", help="Include additional demo data")
-        parser.add_argument("--password", type=str, default="demo123", help="Password for all users")
+        parser.add_argument(
+            "--clear", action="store_true", help="Clear existing data before seeding"
+        )
+        parser.add_argument(
+            "--demo", action="store_true", help="Include additional demo data"
+        )
+        parser.add_argument(
+            "--password", type=str, default="demo123", help="Password for all users"
+        )
 
     def handle(self, *args, **options):
-        seed(
-            clear=options["clear"],
-            demo=options["demo"],
-            password=options["password"]
-        )
+        seed(clear=options["clear"], demo=options["demo"], password=options["password"])
         self.stdout.write(self.style.SUCCESS("Data seeding completed."))

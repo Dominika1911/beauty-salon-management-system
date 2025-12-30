@@ -6,12 +6,12 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0002_alter_employeeprofile_hired_at'),
+        ("beauty_salon", "0002_alter_employeeprofile_hired_at"),
     ]
 
     operations = [
         migrations.RemoveConstraint(
-            model_name='appointment',
-            name='unique_employee_end',
+            model_name="appointment",
+            name="unique_employee_end",
         ),
     ]

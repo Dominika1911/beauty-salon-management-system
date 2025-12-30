@@ -42,24 +42,27 @@ urlpatterns = [
     path("auth/logout/", SessionLogoutView.as_view(), name="logout"),
     path("auth/status/", AuthStatusView.as_view(), name="auth-status"),
     path("auth/change-password/", ChangePasswordView.as_view(), name="change-password"),
-
     # Dostępność + rezerwacje
-    path("availability/slots/", AvailabilitySlotsAPIView.as_view(), name="availability-slots"),
+    path(
+        "availability/slots/",
+        AvailabilitySlotsAPIView.as_view(),
+        name="availability-slots",
+    ),
     path("appointments/book/", BookingCreateAPIView.as_view(), name="appointment-book"),
-    path("appointments/check-availability/", CheckAvailabilityView.as_view(), name="check-availability"),
-
+    path(
+        "appointments/check-availability/",
+        CheckAvailabilityView.as_view(),
+        name="check-availability",
+    ),
     # Ustawienia + statystyki
     path("system-settings/", SystemSettingsView.as_view(), name="system-settings"),
     path("statistics/", StatisticsView.as_view(), name="statistics"),
-
     # Dashboard
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
-
     # Raporty
     path("reports/", ReportView.as_view(), name="reports-list"),
     path("reports/<str:report_type>/", ReportView.as_view(), name="report-json"),
     path("reports/<str:report_type>/pdf/", ReportView.as_view(), name="report-pdf"),
-
     # CRUD - ROUTER NA KOŃCU
     path("", include(router.urls)),
 ]

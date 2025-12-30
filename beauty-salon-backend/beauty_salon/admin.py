@@ -66,7 +66,14 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "price", "duration_minutes", "is_active", "created_at")
+    list_display = (
+        "name",
+        "category",
+        "price",
+        "duration_minutes",
+        "is_active",
+        "created_at",
+    )
     list_filter = ("is_active", "category", "created_at")
     search_fields = ("name", "category", "description")
     readonly_fields = ("created_at", "updated_at")
@@ -75,13 +82,23 @@ class ServiceAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Podstawowe informacje", {"fields": ("name", "category", "description")}),
         ("Parametry usługi", {"fields": ("price", "duration_minutes", "is_active")}),
-        ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        (
+            "Metadata",
+            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
-    list_display = ("employee_number", "first_name", "last_name", "phone", "is_active", "hired_at")
+    list_display = (
+        "employee_number",
+        "first_name",
+        "last_name",
+        "phone",
+        "is_active",
+        "hired_at",
+    )
     list_filter = ("is_active", "hired_at")
     search_fields = ("employee_number", "first_name", "last_name", "phone")
     filter_horizontal = ("skills",)
@@ -107,7 +124,14 @@ class EmployeeProfileAdmin(admin.ModelAdmin):
 
 @admin.register(ClientProfile)
 class ClientProfileAdmin(admin.ModelAdmin):
-    list_display = ("client_number", "first_name", "last_name", "email", "phone", "is_active")
+    list_display = (
+        "client_number",
+        "first_name",
+        "last_name",
+        "email",
+        "phone",
+        "is_active",
+    )
     list_filter = ("is_active", "created_at")
     search_fields = ("client_number", "first_name", "last_name", "email", "phone")
     readonly_fields = ("created_at", "updated_at")
@@ -116,18 +140,34 @@ class ClientProfileAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Dane klienta",
-            {"fields": ("user", "client_number", "first_name", "last_name", "email", "phone")},
+            {
+                "fields": (
+                    "user",
+                    "client_number",
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "phone",
+                )
+            },
         ),
         ("Notatki wewnętrzne", {"fields": ("internal_notes",)}),
         ("Status", {"fields": ("is_active",)}),
-        ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        (
+            "Metadata",
+            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
 
 @admin.register(EmployeeSchedule)
 class EmployeeScheduleAdmin(admin.ModelAdmin):
     list_display = ("employee", "created_at", "updated_at")
-    search_fields = ("employee__employee_number", "employee__first_name", "employee__last_name")
+    search_fields = (
+        "employee__employee_number",
+        "employee__first_name",
+        "employee__last_name",
+    )
     readonly_fields = ("created_at", "updated_at")
 
 
@@ -135,7 +175,12 @@ class EmployeeScheduleAdmin(admin.ModelAdmin):
 class TimeOffAdmin(admin.ModelAdmin):
     list_display = ("employee", "date_from", "date_to", "reason", "created_at")
     list_filter = ("date_from", "date_to", "created_at")
-    search_fields = ("employee__employee_number", "employee__first_name", "employee__last_name", "reason")
+    search_fields = (
+        "employee__employee_number",
+        "employee__first_name",
+        "employee__last_name",
+        "reason",
+    )
     readonly_fields = ("created_at",)
     ordering = ("-date_from",)
 
@@ -148,7 +193,15 @@ class TimeOffAdmin(admin.ModelAdmin):
 
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ("id", "client", "employee", "service", "start", "status", "created_at")
+    list_display = (
+        "id",
+        "client",
+        "employee",
+        "service",
+        "start",
+        "status",
+        "created_at",
+    )
     list_filter = ("status", "start", "created_at")
     search_fields = (
         "client__client_number",
@@ -166,20 +219,32 @@ class AppointmentAdmin(admin.ModelAdmin):
         ("Uczestnicy wizyty", {"fields": ("client", "employee", "service")}),
         ("Termin", {"fields": ("start", "end", "status")}),
         ("Notatki", {"fields": ("internal_notes",)}),
-        ("Metadata", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+        (
+            "Metadata",
+            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+        ),
     )
 
 
 @admin.register(SystemSettings)
 class SystemSettingsAdmin(admin.ModelAdmin):
-    list_display = ("salon_name", "slot_minutes", "buffer_minutes", "updated_at", "updated_by")
+    list_display = (
+        "salon_name",
+        "slot_minutes",
+        "buffer_minutes",
+        "updated_at",
+        "updated_by",
+    )
     readonly_fields = ("updated_at",)
 
     fieldsets = (
         ("Podstawowe ustawienia", {"fields": ("salon_name",)}),
         ("Ustawienia rezerwacji", {"fields": ("slot_minutes", "buffer_minutes")}),
         ("Godziny otwarcia", {"fields": ("opening_hours",)}),
-        ("Metadata", {"fields": ("updated_at", "updated_by"), "classes": ("collapse",)}),
+        (
+            "Metadata",
+            {"fields": ("updated_at", "updated_by"), "classes": ("collapse",)},
+        ),
     )
 
 

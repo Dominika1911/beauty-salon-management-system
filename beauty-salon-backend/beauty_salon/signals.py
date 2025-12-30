@@ -13,7 +13,7 @@ def _get_next_number(model_class, field_name: str, max_retries: int = 3) -> str:
     Funkcja pomocnicza generująca sekwencyjne numery identyfikacyjne.
 
     Wykorzystuje agregację Max() w celu optymalizacji wydajności bazy danych.
-    Zastosowano mechanizm powtórzeń (retry logic) oraz blokowanie rekordów 
+    Zastosowano mechanizm powtórzeń (retry logic) oraz blokowanie rekordów
     (select_for_update) w celu uniknięcia problemów z wyścigiem (race conditions).
 
     Args:
@@ -28,13 +28,11 @@ def _get_next_number(model_class, field_name: str, max_retries: int = 3) -> str:
         try:
             with transaction.atomic():
                 # Pobranie najwyższego aktualnego numeru z blokadą wierszy
-                result = (
-                    model_class.objects
-                    .select_for_update()
-                    .aggregate(max_num=Max(field_name))
+                result = model_class.objects.select_for_update().aggregate(
+                    max_num=Max(field_name)
                 )
 
-                max_num = result.get('max_num')
+                max_num = result.get("max_num")
 
                 # Walidacja formatu i konwersja na typ całkowity
                 if max_num and max_num.isdigit():
@@ -49,11 +47,17 @@ def _get_next_number(model_class, field_name: str, max_retries: int = 3) -> str:
 
         except Exception as e:
             if attempt < max_retries - 1:
-                logger.warning(f"Próba {attempt + 1}/{max_retries} nieudana dla {field_name}: {e}")
+                logger.warning(
+                    f"Próba {attempt + 1}/{max_retries} nieudana dla {field_name}: {e}"
+                )
                 continue
             else:
-                logger.error(f"Błąd generowania numeru {field_name} po {max_retries} próbach: {e}")
-                raise ValueError(f"Nie można wygenerować unikalnego numeru {field_name}") from e
+                logger.error(
+                    f"Błąd generowania numeru {field_name} po {max_retries} próbach: {e}"
+                )
+                raise ValueError(
+                    f"Nie można wygenerować unikalnego numeru {field_name}"
+                ) from e
 
     return "00000001"
 
@@ -68,10 +72,7 @@ def generate_employee_number(sender, instance: EmployeeProfile, **kwargs):
         return
 
     try:
-        instance.employee_number = _get_next_number(
-            EmployeeProfile,
-            'employee_number'
-        )
+        instance.employee_number = _get_next_number(EmployeeProfile, "employee_number")
     except ValueError:
         raise
 
@@ -86,9 +87,6 @@ def generate_client_number(sender, instance: ClientProfile, **kwargs):
         return
 
     try:
-        instance.client_number = _get_next_number(
-            ClientProfile,
-            'client_number'
-        )
+        instance.client_number = _get_next_number(ClientProfile, "client_number")
     except ValueError:
         raise

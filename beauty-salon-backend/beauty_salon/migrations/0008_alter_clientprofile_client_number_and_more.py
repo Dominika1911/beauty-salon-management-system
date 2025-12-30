@@ -7,18 +7,40 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0007_alter_timeoff_options_alter_timeoff_status_and_more'),
+        ("beauty_salon", "0007_alter_timeoff_options_alter_timeoff_status_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='clientprofile',
-            name='client_number',
-            field=models.CharField(blank=True, max_length=8, null=True, unique=True, validators=[django.core.validators.RegexValidator(message='Client number must be exactly 8 digits (e.g. 00000001).', regex='^\\d{8}$')]),
+            model_name="clientprofile",
+            name="client_number",
+            field=models.CharField(
+                blank=True,
+                max_length=8,
+                null=True,
+                unique=True,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Client number must be exactly 8 digits (e.g. 00000001).",
+                        regex="^\\d{8}$",
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='employeeprofile',
-            name='employee_number',
-            field=models.CharField(blank=True, max_length=8, null=True, unique=True, validators=[django.core.validators.RegexValidator(message='Employee number must be exactly 8 digits (e.g. 00000001).', regex='^\\d{8}$')]),
+            model_name="employeeprofile",
+            name="employee_number",
+            field=models.CharField(
+                blank=True,
+                max_length=8,
+                null=True,
+                unique=True,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Employee number must be exactly 8 digits (e.g. 00000001).",
+                        regex="^\\d{8}$",
+                    )
+                ],
+            ),
         ),
     ]

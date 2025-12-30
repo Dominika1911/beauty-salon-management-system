@@ -6,29 +6,46 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0006_alter_timeoff_options_and_more'),
+        ("beauty_salon", "0006_alter_timeoff_options_and_more"),
     ]
 
     operations = [
         migrations.AlterModelOptions(
-            name='timeoff',
-            options={'ordering': ['-created_at']},
+            name="timeoff",
+            options={"ordering": ["-created_at"]},
         ),
         migrations.AlterField(
-            model_name='timeoff',
-            name='status',
-            field=models.CharField(choices=[('PENDING', 'Oczekuje'), ('APPROVED', 'Zaakceptowany'), ('REJECTED', 'Odrzucony')], db_index=True, default='PENDING', max_length=20),
+            model_name="timeoff",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "Oczekuje"),
+                    ("APPROVED", "Zaakceptowany"),
+                    ("REJECTED", "Odrzucony"),
+                ],
+                db_index=True,
+                default="PENDING",
+                max_length=20,
+            ),
         ),
         migrations.AddIndex(
-            model_name='timeoff',
-            index=models.Index(fields=['employee', 'status', 'date_from'], name='beauty_salo_employe_dbfbd8_idx'),
+            model_name="timeoff",
+            index=models.Index(
+                fields=["employee", "status", "date_from"],
+                name="beauty_salo_employe_dbfbd8_idx",
+            ),
         ),
         migrations.AddIndex(
-            model_name='timeoff',
-            index=models.Index(fields=['employee', 'date_to'], name='beauty_salo_employe_8044f4_idx'),
+            model_name="timeoff",
+            index=models.Index(
+                fields=["employee", "date_to"], name="beauty_salo_employe_8044f4_idx"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='timeoff',
-            constraint=models.CheckConstraint(condition=models.Q(('date_to__gte', models.F('date_from'))), name='timeoff_to_gte_from'),
+            model_name="timeoff",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("date_to__gte", models.F("date_from"))),
+                name="timeoff_to_gte_from",
+            ),
         ),
     ]

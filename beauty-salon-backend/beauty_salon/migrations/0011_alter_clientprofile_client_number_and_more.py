@@ -9,43 +9,126 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('beauty_salon', '0010_alter_systemlog_action'),
+        ("beauty_salon", "0010_alter_systemlog_action"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='clientprofile',
-            name='client_number',
-            field=models.CharField(blank=True, max_length=8, null=True, unique=True, validators=[django.core.validators.RegexValidator(message='Numer klienta musi mieć dokładnie 8 cyfr (np. 00000001).', regex='^\\d{8}$')]),
+            model_name="clientprofile",
+            name="client_number",
+            field=models.CharField(
+                blank=True,
+                max_length=8,
+                null=True,
+                unique=True,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Numer klienta musi mieć dokładnie 8 cyfr (np. 00000001).",
+                        regex="^\\d{8}$",
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='clientprofile',
-            name='phone',
-            field=models.CharField(blank=True, max_length=16, validators=[django.core.validators.RegexValidator(message='Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +.', regex='^\\+?\\d{9,15}$')]),
+            model_name="clientprofile",
+            name="phone",
+            field=models.CharField(
+                blank=True,
+                max_length=16,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +.",
+                        regex="^\\+?\\d{9,15}$",
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='clientprofile',
-            name='user',
-            field=models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='client_profile', to=settings.AUTH_USER_MODEL),
+            model_name="clientprofile",
+            name="user",
+            field=models.OneToOneField(
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name="client_profile",
+                to=settings.AUTH_USER_MODEL,
+            ),
         ),
         migrations.AlterField(
-            model_name='employeeprofile',
-            name='employee_number',
-            field=models.CharField(blank=True, max_length=8, null=True, unique=True, validators=[django.core.validators.RegexValidator(message='Numer pracownika musi mieć dokładnie 8 cyfr (np. 00000001).', regex='^\\d{8}$')]),
+            model_name="employeeprofile",
+            name="employee_number",
+            field=models.CharField(
+                blank=True,
+                max_length=8,
+                null=True,
+                unique=True,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Numer pracownika musi mieć dokładnie 8 cyfr (np. 00000001).",
+                        regex="^\\d{8}$",
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='employeeprofile',
-            name='phone',
-            field=models.CharField(blank=True, max_length=16, validators=[django.core.validators.RegexValidator(message='Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +.', regex='^\\+?\\d{9,15}$')]),
+            model_name="employeeprofile",
+            name="phone",
+            field=models.CharField(
+                blank=True,
+                max_length=16,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +.",
+                        regex="^\\+?\\d{9,15}$",
+                    )
+                ],
+            ),
         ),
         migrations.AlterField(
-            model_name='systemlog',
-            name='action',
-            field=models.CharField(choices=[('SERVICE_CREATED', 'Service created'), ('SERVICE_UPDATED', 'Service updated'), ('SERVICE_DISABLED', 'Service disabled'), ('SERVICE_ENABLED', 'Service enabled'), ('EMPLOYEE_CREATED', 'Employee created'), ('EMPLOYEE_UPDATED', 'Employee updated'), ('EMPLOYEE_DEACTIVATED', 'Employee deactivated'), ('CLIENT_CREATED', 'Client created'), ('CLIENT_UPDATED', 'Client updated'), ('CLIENT_DEACTIVATED', 'Client deactivated'), ('APPOINTMENT_CREATED', 'Appointment created'), ('APPOINTMENT_UPDATED', 'Appointment updated'), ('APPOINTMENT_CONFIRMED', 'Appointment confirmed'), ('APPOINTMENT_CANCELLED', 'Appointment cancelled'), ('APPOINTMENT_COMPLETED', 'Appointment completed'), ('TIMEOFF_CREATED', 'Time off created'), ('TIMEOFF_APPROVED', 'Time off approved'), ('TIMEOFF_REJECTED', 'Time off rejected'), ('TIMEOFF_CANCELLED', 'Time off cancelled'), ('AUTH_LOGIN', 'User login'), ('AUTH_LOGOUT', 'User logout'), ('AUTH_PASSWORD_CHANGE', 'User password change'), ('SETTINGS_UPDATED', 'Settings updated')], db_index=True, max_length=40),
+            model_name="systemlog",
+            name="action",
+            field=models.CharField(
+                choices=[
+                    ("SERVICE_CREATED", "Service created"),
+                    ("SERVICE_UPDATED", "Service updated"),
+                    ("SERVICE_DISABLED", "Service disabled"),
+                    ("SERVICE_ENABLED", "Service enabled"),
+                    ("EMPLOYEE_CREATED", "Employee created"),
+                    ("EMPLOYEE_UPDATED", "Employee updated"),
+                    ("EMPLOYEE_DEACTIVATED", "Employee deactivated"),
+                    ("CLIENT_CREATED", "Client created"),
+                    ("CLIENT_UPDATED", "Client updated"),
+                    ("CLIENT_DEACTIVATED", "Client deactivated"),
+                    ("APPOINTMENT_CREATED", "Appointment created"),
+                    ("APPOINTMENT_UPDATED", "Appointment updated"),
+                    ("APPOINTMENT_CONFIRMED", "Appointment confirmed"),
+                    ("APPOINTMENT_CANCELLED", "Appointment cancelled"),
+                    ("APPOINTMENT_COMPLETED", "Appointment completed"),
+                    ("TIMEOFF_CREATED", "Time off created"),
+                    ("TIMEOFF_APPROVED", "Time off approved"),
+                    ("TIMEOFF_REJECTED", "Time off rejected"),
+                    ("TIMEOFF_CANCELLED", "Time off cancelled"),
+                    ("AUTH_LOGIN", "User login"),
+                    ("AUTH_LOGOUT", "User logout"),
+                    ("AUTH_PASSWORD_CHANGE", "User password change"),
+                    ("SETTINGS_UPDATED", "Settings updated"),
+                ],
+                db_index=True,
+                max_length=40,
+            ),
         ),
         migrations.AlterField(
-            model_name='timeoff',
-            name='status',
-            field=models.CharField(choices=[('PENDING', 'Oczekuje'), ('APPROVED', 'Zaakceptowany'), ('REJECTED', 'Odrzucony'), ('CANCELLED', 'Anulowany'), ('NO_SHOW', 'Nieobecność (no-show)')], db_index=True, default='PENDING', max_length=20),
+            model_name="timeoff",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("PENDING", "Oczekuje"),
+                    ("APPROVED", "Zaakceptowany"),
+                    ("REJECTED", "Odrzucony"),
+                    ("CANCELLED", "Anulowany"),
+                    ("NO_SHOW", "Nieobecność (no-show)"),
+                ],
+                db_index=True,
+                default="PENDING",
+                max_length=20,
+            ),
         ),
     ]

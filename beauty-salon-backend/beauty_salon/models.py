@@ -73,18 +73,24 @@ class CustomUser(AbstractUser):
         username = self.username.strip().lower()
 
         if not USERNAME_PATTERN.match(username):
-            raise ValidationError({
-                "username": _(
-                    "Nazwa użytkownika musi mieć format: 'imie.nazwisko' lub "
-                    "'pracownik-00000001', 'admin-00000001', 'klient-00000001'."
-                )
-            })
+            raise ValidationError(
+                {
+                    "username": _(
+                        "Nazwa użytkownika musi mieć format: 'imie.nazwisko' lub "
+                        "'pracownik-00000001', 'admin-00000001', 'klient-00000001'."
+                    )
+                }
+            )
 
         if self.role == self.Role.CLIENT and not username.startswith("klient-"):
-            raise ValidationError({"username": _("Login klienta musi zaczynać się od 'klient-'.")})
+            raise ValidationError(
+                {"username": _("Login klienta musi zaczynać się od 'klient-'.")}
+            )
 
         if self.role == self.Role.ADMIN and not username.startswith("admin-"):
-            raise ValidationError({"username": _("Login administratora musi zaczynać się od 'admin-'.")})
+            raise ValidationError(
+                {"username": _("Login administratora musi zaczynać się od 'admin-'.")}
+            )
 
         if self.role == self.Role.EMPLOYEE:
             ok = bool(
@@ -92,9 +98,13 @@ class CustomUser(AbstractUser):
                 or re.match(r"^pracownik-\d{8}$", username)
             )
             if not ok:
-                raise ValidationError({
-                    "username": _("Login pracownika musi mieć format 'imie.nazwisko' lub 'pracownik-00000001'.")
-                })
+                raise ValidationError(
+                    {
+                        "username": _(
+                            "Login pracownika musi mieć format 'imie.nazwisko' lub 'pracownik-00000001'."
+                        )
+                    }
+                )
 
         self.username = username
 
@@ -103,7 +113,9 @@ class Service(models.Model):
     name = models.CharField(max_length=255, unique=True)
     category = models.CharField(max_length=100, blank=True, db_index=True)
     description = models.TextField(blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2, validators=[MinValueValidator(0)]
+    )
     duration_minutes = models.PositiveIntegerField(validators=[MinValueValidator(5)])
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -124,9 +136,17 @@ class Service(models.Model):
 
 
 class EmployeeProfile(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="employee_profile")
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="employee_profile",
+    )
     employee_number = models.CharField(
-        max_length=8, unique=True, validators=[employee_number_validator], blank=True, null=True
+        max_length=8,
+        unique=True,
+        validators=[employee_number_validator],
+        blank=True,
+        null=True,
     )
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
@@ -159,13 +179,25 @@ class EmployeeProfile(models.Model):
             self.employee_number = None
 
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.EMPLOYEE:
-            raise ValidationError(_("Profil pracownika może być przypisany tylko do użytkownika z rolą PRACOWNIK."))
+            raise ValidationError(
+                _(
+                    "Profil pracownika może być przypisany tylko do użytkownika z rolą PRACOWNIK."
+                )
+            )
 
 
 class ClientProfile(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="client_profile")
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="client_profile",
+    )
     client_number = models.CharField(
-        max_length=8, unique=True, validators=[client_number_validator], blank=True, null=True
+        max_length=8,
+        unique=True,
+        validators=[client_number_validator],
+        blank=True,
+        null=True,
     )
     first_name = models.CharField(max_length=150)
     last_name = models.CharField(max_length=150)
@@ -198,11 +230,17 @@ class ClientProfile(models.Model):
             self.client_number = None
 
         if self.user and getattr(self.user, "role", None) != CustomUser.Role.CLIENT:
-            raise ValidationError(_("Profil klienta może być przypisany tylko do użytkownika z rolą KLIENT."))
+            raise ValidationError(
+                _(
+                    "Profil klienta może być przypisany tylko do użytkownika z rolą KLIENT."
+                )
+            )
 
 
 class EmployeeSchedule(models.Model):
-    employee = models.OneToOneField(EmployeeProfile, on_delete=models.CASCADE, related_name="schedule")
+    employee = models.OneToOneField(
+        EmployeeProfile, on_delete=models.CASCADE, related_name="schedule"
+    )
     weekly_hours = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -229,7 +267,7 @@ class EmployeeSchedule(models.Model):
             "thu": "Czwartek",
             "fri": "Piątek",
             "sat": "Sobota",
-            "sun": "Niedziela"
+            "sun": "Niedziela",
         }
 
         if not self.weekly_hours:
@@ -245,18 +283,21 @@ class EmployeeSchedule(models.Model):
 
             if not salon_day_periods:
                 raise ValidationError(
-                    {f"weekly_hours": f"Nie można przypisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty."}
+                    {
+                        f"weekly_hours": f"Nie można przypisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty."
+                    }
                 )
 
             for p in periods:
-                emp_start = p.get('start')
-                emp_end = p.get('end')
-                if not emp_start or not emp_end: continue
+                emp_start = p.get("start")
+                emp_end = p.get("end")
+                if not emp_start or not emp_end:
+                    continue
 
                 is_within_salon_hours = False
                 for s_period in salon_day_periods:
-                    s_start = s_period.get('start')
-                    s_end = s_period.get('end')
+                    s_start = s_period.get("start")
+                    s_end = s_period.get("end")
                     if s_start and s_end:
                         if emp_start >= s_start and emp_end <= s_end:
                             is_within_salon_hours = True
@@ -265,8 +306,11 @@ class EmployeeSchedule(models.Model):
                 if not is_within_salon_hours:
                     # TUTAJ ZMIENIAMY KOMUNIKAT - używamy pretty_day zamiast day
                     raise ValidationError(
-                        {f"weekly_hours": f"Godziny {emp_start}-{emp_end} w dniu: {pretty_day} wykraczają poza godziny otwarcia salonu."}
+                        {
+                            f"weekly_hours": f"Godziny {emp_start}-{emp_end} w dniu: {pretty_day} wykraczają poza godziny otwarcia salonu."
+                        }
                     )
+
 
 class TimeOff(models.Model):
     class Status(models.TextChoices):
@@ -275,16 +319,28 @@ class TimeOff(models.Model):
         REJECTED = "REJECTED", _("Odrzucony")
         CANCELLED = "CANCELLED", _("Anulowany")
 
-    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs")
+    employee = models.ForeignKey(
+        EmployeeProfile, on_delete=models.CASCADE, related_name="timeoffs"
+    )
     date_from = models.DateField()
     date_to = models.DateField()
     reason = models.CharField(max_length=255, blank=True, default="")
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
     requested_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="timeoff_requests"
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="timeoff_requests",
     )
     decided_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="timeoff_decisions"
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="timeoff_decisions",
     )
     decided_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -296,7 +352,9 @@ class TimeOff(models.Model):
             models.Index(fields=["employee", "date_to"]),
         ]
         constraints = [
-            models.CheckConstraint(check=Q(date_to__gte=F("date_from")), name="timeoff_to_gte_from"),
+            models.CheckConstraint(
+                check=Q(date_to__gte=F("date_from")), name="timeoff_to_gte_from"
+            ),
         ]
         verbose_name = _("Urlop/Nieobecność")
         verbose_name_plural = _("Urlopy/Nieobecności")
@@ -307,18 +365,32 @@ class TimeOff(models.Model):
     def clean(self) -> None:
         super().clean()
         if self.date_to and self.date_from and self.date_to < self.date_from:
-            raise ValidationError({"date_to": _("date_to nie może być wcześniejsze niż date_from.")})
+            raise ValidationError(
+                {"date_to": _("date_to nie może być wcześniejsze niż date_from.")}
+            )
 
-        if self.employee_id and self.date_from and self.date_to and self.status == self.Status.APPROVED:
-            overlap = TimeOff.objects.filter(
-                employee_id=self.employee_id,
-                status=self.Status.APPROVED,
-                date_from__lte=self.date_to,
-                date_to__gte=self.date_from,
-            ).exclude(pk=self.pk).only('id').exists()
+        if (
+            self.employee_id
+            and self.date_from
+            and self.date_to
+            and self.status == self.Status.APPROVED
+        ):
+            overlap = (
+                TimeOff.objects.filter(
+                    employee_id=self.employee_id,
+                    status=self.Status.APPROVED,
+                    date_from__lte=self.date_to,
+                    date_to__gte=self.date_from,
+                )
+                .exclude(pk=self.pk)
+                .only("id")
+                .exists()
+            )
 
             if overlap:
-                raise ValidationError(_("Ten urlop nakłada się na inny zaakceptowany urlop."))
+                raise ValidationError(
+                    _("Ten urlop nakłada się na inny zaakceptowany urlop.")
+                )
 
 
 class Appointment(models.Model):
@@ -330,13 +402,23 @@ class Appointment(models.Model):
         NO_SHOW = "NO_SHOW", _("Nieobecność (no-show)")
 
     client = models.ForeignKey(
-        ClientProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name="appointments"
+        ClientProfile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appointments",
     )
-    employee = models.ForeignKey(EmployeeProfile, on_delete=models.CASCADE, related_name="appointments")
-    service = models.ForeignKey(Service, on_delete=models.SET_NULL, null=True, related_name="appointments")
+    employee = models.ForeignKey(
+        EmployeeProfile, on_delete=models.CASCADE, related_name="appointments"
+    )
+    service = models.ForeignKey(
+        Service, on_delete=models.SET_NULL, null=True, related_name="appointments"
+    )
     start = models.DateTimeField()
     end = models.DateTimeField()
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True
+    )
     internal_notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -344,8 +426,12 @@ class Appointment(models.Model):
     class Meta:
         ordering = ["start"]
         constraints = [
-            models.CheckConstraint(check=Q(end__gt=F("start")), name="appointment_end_after_start"),
-            UniqueConstraint(fields=["employee", "start"], name="unique_employee_start"),
+            models.CheckConstraint(
+                check=Q(end__gt=F("start")), name="appointment_end_after_start"
+            ),
+            UniqueConstraint(
+                fields=["employee", "start"], name="unique_employee_start"
+            ),
         ]
         indexes = [
             models.Index(fields=["employee", "start"]),
@@ -362,35 +448,55 @@ class Appointment(models.Model):
     def clean(self) -> None:
         super().clean()
         if self.start and timezone.is_naive(self.start):
-            raise ValidationError({"start": _("Data rozpoczęcia musi zawierać strefę czasową.")})
+            raise ValidationError(
+                {"start": _("Data rozpoczęcia musi zawierać strefę czasową.")}
+            )
         if self.end and timezone.is_naive(self.end):
-            raise ValidationError({"end": _("Data zakończenia musi zawierać strefę czasową.")})
+            raise ValidationError(
+                {"end": _("Data zakończenia musi zawierać strefę czasową.")}
+            )
         if self.end and self.start and self.end <= self.start:
-            raise ValidationError({"end": _("Zakończenie wizyty musi być później niż rozpoczęcie.")})
+            raise ValidationError(
+                {"end": _("Zakończenie wizyty musi być później niż rozpoczęcie.")}
+            )
 
         if not self.employee_id or not self.start or not self.end:
             return
 
-        emp_conflicts = Appointment.objects.filter(
-            employee_id=self.employee_id,
-            status__in=[self.Status.PENDING, self.Status.CONFIRMED],
-            start__lt=self.end,
-            end__gt=self.start,
-        ).exclude(pk=self.pk).only('id').exists()
-
-        if emp_conflicts:
-            raise ValidationError(_("Pracownik nie jest dostępny w wybranym przedziale czasu."))
-
-        if self.client_id:
-            client_conflicts = Appointment.objects.filter(
-                client_id=self.client_id,
+        emp_conflicts = (
+            Appointment.objects.filter(
+                employee_id=self.employee_id,
                 status__in=[self.Status.PENDING, self.Status.CONFIRMED],
                 start__lt=self.end,
                 end__gt=self.start,
-            ).exclude(pk=self.pk).only('id').exists()
+            )
+            .exclude(pk=self.pk)
+            .only("id")
+            .exists()
+        )
+
+        if emp_conflicts:
+            raise ValidationError(
+                _("Pracownik nie jest dostępny w wybranym przedziale czasu.")
+            )
+
+        if self.client_id:
+            client_conflicts = (
+                Appointment.objects.filter(
+                    client_id=self.client_id,
+                    status__in=[self.Status.PENDING, self.Status.CONFIRMED],
+                    start__lt=self.end,
+                    end__gt=self.start,
+                )
+                .exclude(pk=self.pk)
+                .only("id")
+                .exists()
+            )
 
             if client_conflicts:
-                raise ValidationError(_("Klient ma już inną wizytę w wybranym przedziale czasu."))
+                raise ValidationError(
+                    _("Klient ma już inną wizytę w wybranym przedziale czasu.")
+                )
 
 
 class SystemSettings(models.Model):
@@ -399,7 +505,9 @@ class SystemSettings(models.Model):
     buffer_minutes = models.IntegerField(default=0, validators=[MinValueValidator(0)])
     opening_hours = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True
+    )
 
     class Meta:
         verbose_name = _("Ustawienia systemu")
@@ -461,10 +569,18 @@ class SystemLog(models.Model):
 
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
     performed_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="system_logs"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="system_logs",
     )
     target_user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, blank=True, null=True, related_name="system_logs_as_target"
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="system_logs_as_target",
     )
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
 
@@ -482,7 +598,9 @@ class SystemLog(models.Model):
 
     def save(self, *args, **kwargs) -> None:
         if self.pk is not None:
-            raise ValidationError(_("Wpisy w logu systemowym nie podlegają modyfikacji."))
+            raise ValidationError(
+                _("Wpisy w logu systemowym nie podlegają modyfikacji.")
+            )
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -490,4 +608,6 @@ class SystemLog(models.Model):
 
     @classmethod
     def log(cls, *, action: str, performed_by=None, target_user=None) -> "SystemLog":
-        return cls.objects.create(action=action, performed_by=performed_by, target_user=target_user)
+        return cls.objects.create(
+            action=action, performed_by=performed_by, target_user=target_user
+        )

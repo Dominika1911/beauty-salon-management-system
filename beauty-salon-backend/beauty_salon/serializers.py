@@ -38,7 +38,9 @@ def _humanize_password_errors(exc: DjangoValidationError) -> list[str]:
         elif "This password is entirely numeric" in s_norm:
             out.append("Hasło nie może składać się wyłącznie z cyfr.")
         elif "is too similar to the" in s_norm:
-            out.append("Hasło jest zbyt podobne do danych użytkownika (np. login/e-mail).")
+            out.append(
+                "Hasło jest zbyt podobne do danych użytkownika (np. login/e-mail)."
+            )
         else:
             out.append(s_norm)
 
@@ -56,14 +58,22 @@ def _validate_password_or_raise(value: str, *, user=None, field_name: str = "pas
 # USER SERIALIZERS
 # =============================================================================
 
+
 class UserListSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source="get_role_display", read_only=True)
 
     class Meta:
         model = User
         fields = [
-            "id", "username", "first_name", "last_name", "email",
-            "role", "role_display", "is_active", "created_at"
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "role_display",
+            "is_active",
+            "created_at",
         ]
         read_only_fields = ["id", "username", "created_at"]
 
@@ -76,10 +86,18 @@ class UserDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "first_name", "last_name", "email",
-            "role", "role_display", "is_active",
-            "employee_profile", "client_profile",
-            "created_at", "updated_at"
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "role_display",
+            "is_active",
+            "employee_profile",
+            "client_profile",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "username", "created_at", "updated_at"]
 
@@ -109,7 +127,15 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "username", "password", "first_name", "last_name", "email", "role"]
+        fields = [
+            "id",
+            "username",
+            "password",
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+        ]
         read_only_fields = ["id"]
 
     def validate_password(self, value):
@@ -145,6 +171,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 # PASSWORDS
 # =============================================================================
 
+
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
@@ -158,13 +185,19 @@ class PasswordChangeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["new_password"] != attrs["new_password2"]:
-            raise serializers.ValidationError({"new_password2": "Hasła nie są identyczne."})
+            raise serializers.ValidationError(
+                {"new_password2": "Hasła nie są identyczne."}
+            )
 
         if attrs["new_password"] == attrs["old_password"]:
-            raise serializers.ValidationError({"new_password": "Nowe hasło musi różnić się od aktualnego."})
+            raise serializers.ValidationError(
+                {"new_password": "Nowe hasło musi różnić się od aktualnego."}
+            )
 
         user = self.context["request"].user
-        _validate_password_or_raise(attrs["new_password"], user=user, field_name="new_password")
+        _validate_password_or_raise(
+            attrs["new_password"], user=user, field_name="new_password"
+        )
         return attrs
 
 
@@ -174,7 +207,9 @@ class PasswordResetSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if attrs["new_password"] != attrs["new_password2"]:
-            raise serializers.ValidationError({"new_password2": "Hasła nie są identyczne."})
+            raise serializers.ValidationError(
+                {"new_password2": "Hasła nie są identyczne."}
+            )
 
         _validate_password_or_raise(attrs["new_password"], field_name="new_password")
         return attrs
@@ -184,15 +219,23 @@ class PasswordResetSerializer(serializers.Serializer):
 # SERVICE SERIALIZERS
 # =============================================================================
 
+
 class ServiceSerializer(serializers.ModelSerializer):
     duration_display = serializers.SerializerMethodField()
 
     class Meta:
         model = Service
         fields = [
-            "id", "name", "category", "description",
-            "price", "duration_minutes", "duration_display",
-            "is_active", "created_at", "updated_at"
+            "id",
+            "name",
+            "category",
+            "description",
+            "price",
+            "duration_minutes",
+            "duration_display",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -210,6 +253,7 @@ class ServiceSerializer(serializers.ModelSerializer):
 # EMPLOYEE SERIALIZERS
 # =============================================================================
 
+
 class EmployeeSerializer(serializers.ModelSerializer):
     user_username = serializers.CharField(source="user.username", read_only=True)
     user_email = serializers.CharField(source="user.email", read_only=True)
@@ -218,7 +262,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     appointments_count = serializers.IntegerField(read_only=True)
     completed_appointments_count = serializers.IntegerField(read_only=True)
-    revenue_completed_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    revenue_completed_total = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
 
     skills = ServiceSerializer(many=True, read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
@@ -226,7 +272,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         queryset=Service.objects.filter(is_active=True),
         write_only=True,
         required=False,
-        source="skills"
+        source="skills",
     )
 
     email = serializers.EmailField(write_only=True, required=False)
@@ -235,14 +281,26 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeProfile
         fields = [
-            "id", "user", "user_username", "user_email",
-            "employee_number", "first_name", "last_name", "full_name", "phone",
-            "skills", "skill_ids",
-            "email", "password",
+            "id",
+            "user",
+            "user_username",
+            "user_email",
+            "employee_number",
+            "first_name",
+            "last_name",
+            "full_name",
+            "phone",
+            "skills",
+            "skill_ids",
+            "email",
+            "password",
             "is_active",
-            "appointments_count", "completed_appointments_count", "revenue_completed_total",
+            "appointments_count",
+            "completed_appointments_count",
+            "revenue_completed_total",
             "hired_at",
-            "created_at", "updated_at"
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "employee_number", "created_at", "updated_at"]
         extra_kwargs = {"user": {"required": False}}
@@ -253,12 +311,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if not self.instance:
             if not data.get("email") or not data.get("password"):
-                raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu pracownika.")
+                raise serializers.ValidationError(
+                    "Email i hasło są wymagane przy tworzeniu pracownika."
+                )
             _validate_password_or_raise(data["password"], field_name="password")
 
         password = data.get("password")
         if self.instance and password:
-            _validate_password_or_raise(password, user=self.instance.user, field_name="password")
+            _validate_password_or_raise(
+                password, user=self.instance.user, field_name="password"
+            )
 
         user = data.get("user")
         if user and not user.is_employee:
@@ -281,7 +343,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
                         tmp_username = candidate
                         break
                 if not tmp_username:
-                    raise serializers.ValidationError("Nie można wygenerować unikalnego loginu pracownika.")
+                    raise serializers.ValidationError(
+                        "Nie można wygenerować unikalnego loginu pracownika."
+                    )
 
                 user = User(
                     username=tmp_username,
@@ -302,11 +366,17 @@ class EmployeeSerializer(serializers.ModelSerializer):
             employee = EmployeeProfile.objects.create(user=user, **validated_data)
 
             if not employee.employee_number:
-                raise serializers.ValidationError("Nie nadano employee_number (sprawdź signals.py).")
+                raise serializers.ValidationError(
+                    "Nie nadano employee_number (sprawdź signals.py)."
+                )
 
             final_username = f"pracownik-{employee.employee_number}"
             if user.username != final_username:
-                if User.objects.filter(username=final_username).exclude(pk=user.pk).exists():
+                if (
+                    User.objects.filter(username=final_username)
+                    .exclude(pk=user.pk)
+                    .exists()
+                ):
                     base = int(employee.employee_number)
                     picked = None
                     for _ in range(1000):
@@ -314,14 +384,20 @@ class EmployeeSerializer(serializers.ModelSerializer):
                         candidate_num = f"{base:08d}"
                         candidate_username = f"pracownik-{candidate_num}"
                         if (
-                            not EmployeeProfile.objects.filter(employee_number=candidate_num).exists()
-                            and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
+                            not EmployeeProfile.objects.filter(
+                                employee_number=candidate_num
+                            ).exists()
+                            and not User.objects.filter(username=candidate_username)
+                            .exclude(pk=user.pk)
+                            .exists()
                         ):
                             picked = (candidate_num, candidate_username)
                             break
 
                     if not picked:
-                        raise serializers.ValidationError("Nie można wygenerować unikalnego loginu pracownika.")
+                        raise serializers.ValidationError(
+                            "Nie można wygenerować unikalnego loginu pracownika."
+                        )
 
                     employee.employee_number = picked[0]
                     employee.save(update_fields=["employee_number"])
@@ -411,7 +487,7 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
             "thu": "Czwartek",
             "fri": "Piątek",
             "sat": "Sobota",
-            "sun": "Niedziela"
+            "sun": "Niedziela",
         }
 
         if not value:
@@ -427,21 +503,23 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
                 # 1. Sprawdzenie czy salon jest otwarty
                 if not salon_day_periods:
                     raise serializers.ValidationError(
-                        _(f"Nie można zapisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty.")
+                        _(
+                            f"Nie można zapisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty."
+                        )
                     )
 
                 # 2. Sprawdzenie zakresu godzin
                 for p in periods:
-                    emp_start = p.get('start')
-                    emp_end = p.get('end')
+                    emp_start = p.get("start")
+                    emp_end = p.get("end")
 
                     if not emp_start or not emp_end:
                         continue
 
                     is_within_salon = False
                     for s_period in salon_day_periods:
-                        s_start = s_period.get('start')
-                        s_end = s_period.get('end')
+                        s_start = s_period.get("start")
+                        s_end = s_period.get("end")
 
                         if s_start and s_end:
                             if emp_start >= s_start and emp_end <= s_end:
@@ -451,16 +529,23 @@ class EmployeeScheduleSerializer(serializers.ModelSerializer):
                     if not is_within_salon:
                         # Używamy pretty_day w komunikacie
                         raise serializers.ValidationError(
-                            _(f"W dniu: {pretty_day} godziny {emp_start}-{emp_end} wykraczają poza czas pracy salonu.")
+                            _(
+                                f"W dniu: {pretty_day} godziny {emp_start}-{emp_end} wykraczają poza czas pracy salonu."
+                            )
                         )
 
         return value
+
+
 # =============================================================================
 # TIME OFF SERIALIZER
 # =============================================================================
 
+
 class TimeOffSerializer(serializers.ModelSerializer):
-    employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
+    employee_name = serializers.CharField(
+        source="employee.get_full_name", read_only=True
+    )
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     can_cancel = serializers.SerializerMethodField()
@@ -537,11 +622,16 @@ class TimeOffSerializer(serializers.ModelSerializer):
 # CLIENT SERIALIZERS
 # =============================================================================
 
+
 class ClientSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source="user.id", read_only=True)
 
-    user_username = serializers.CharField(source="user.username", read_only=True, allow_null=True)
-    user_email = serializers.CharField(source="user.email", read_only=True, allow_null=True)
+    user_username = serializers.CharField(
+        source="user.username", read_only=True, allow_null=True
+    )
+    user_email = serializers.CharField(
+        source="user.email", read_only=True, allow_null=True
+    )
 
     appointments_count = serializers.IntegerField(read_only=True)
 
@@ -578,12 +668,16 @@ class ClientSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if not self.instance:
             if "email" not in data or "password" not in data:
-                raise serializers.ValidationError("Email i hasło są wymagane przy tworzeniu klienta.")
+                raise serializers.ValidationError(
+                    "Email i hasło są wymagane przy tworzeniu klienta."
+                )
             _validate_password_or_raise(data["password"], field_name="password")
 
         password = data.get("password")
         if self.instance and password and self.instance.user:
-            _validate_password_or_raise(password, user=self.instance.user, field_name="password")
+            _validate_password_or_raise(
+                password, user=self.instance.user, field_name="password"
+            )
 
         user = data.get("user")
         if user and not user.is_client:
@@ -603,7 +697,9 @@ class ClientSerializer(serializers.ModelSerializer):
                     tmp_username = candidate
                     break
             if not tmp_username:
-                raise serializers.ValidationError("Nie można wygenerować unikalnego loginu klienta.")
+                raise serializers.ValidationError(
+                    "Nie można wygenerować unikalnego loginu klienta."
+                )
 
             user = User(
                 username=tmp_username,
@@ -624,12 +720,18 @@ class ClientSerializer(serializers.ModelSerializer):
             client = ClientProfile.objects.create(user=user, **validated_data)
 
             if not client.client_number:
-                raise serializers.ValidationError("Nie nadano client_number (sprawdź signals.py).")
+                raise serializers.ValidationError(
+                    "Nie nadano client_number (sprawdź signals.py)."
+                )
 
             final_username = f"klient-{client.client_number}"
 
             if user.username != final_username:
-                if User.objects.filter(username=final_username).exclude(pk=user.pk).exists():
+                if (
+                    User.objects.filter(username=final_username)
+                    .exclude(pk=user.pk)
+                    .exists()
+                ):
                     base = int(client.client_number)
                     picked = None
                     for _ in range(1000):
@@ -637,14 +739,20 @@ class ClientSerializer(serializers.ModelSerializer):
                         candidate_num = f"{base:08d}"
                         candidate_username = f"klient-{candidate_num}"
                         if (
-                            not ClientProfile.objects.filter(client_number=candidate_num).exists()
-                            and not User.objects.filter(username=candidate_username).exclude(pk=user.pk).exists()
+                            not ClientProfile.objects.filter(
+                                client_number=candidate_num
+                            ).exists()
+                            and not User.objects.filter(username=candidate_username)
+                            .exclude(pk=user.pk)
+                            .exists()
                         ):
                             picked = (candidate_num, candidate_username)
                             break
 
                     if not picked:
-                        raise serializers.ValidationError("Nie można wygenerować unikalnego loginu klienta.")
+                        raise serializers.ValidationError(
+                            "Nie można wygenerować unikalnego loginu klienta."
+                        )
 
                     client.client_number = picked[0]
                     client.save(update_fields=["client_number"])
@@ -693,8 +801,15 @@ class ClientPublicSerializer(serializers.ModelSerializer):
     class Meta:
         model = ClientProfile
         fields = [
-            "id", "client_number", "first_name", "last_name",
-            "email", "phone", "is_active", "created_at", "updated_at"
+            "id",
+            "client_number",
+            "first_name",
+            "last_name",
+            "email",
+            "phone",
+            "is_active",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = fields
 
@@ -703,11 +818,18 @@ class ClientPublicSerializer(serializers.ModelSerializer):
 # APPOINTMENT SERIALIZERS
 # =============================================================================
 
+
 class AppointmentSerializer(serializers.ModelSerializer):
-    client_name = serializers.CharField(source="client.get_full_name", read_only=True, allow_null=True)
-    employee_name = serializers.CharField(source="employee.get_full_name", read_only=True)
+    client_name = serializers.CharField(
+        source="client.get_full_name", read_only=True, allow_null=True
+    )
+    employee_name = serializers.CharField(
+        source="employee.get_full_name", read_only=True
+    )
     service_name = serializers.CharField(source="service.name", read_only=True)
-    service_price = serializers.DecimalField(source="service.price", max_digits=10, decimal_places=2, read_only=True)
+    service_price = serializers.DecimalField(
+        source="service.price", max_digits=10, decimal_places=2, read_only=True
+    )
     status_display = serializers.CharField(source="get_status_display", read_only=True)
 
     can_confirm = serializers.SerializerMethodField()
@@ -719,14 +841,24 @@ class AppointmentSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = [
             "id",
-            "client", "client_name",
-            "employee", "employee_name",
-            "service", "service_name", "service_price",
-            "start", "end",
-            "status", "status_display",
-            "can_confirm", "can_cancel", "can_complete", "can_no_show",
+            "client",
+            "client_name",
+            "employee",
+            "employee_name",
+            "service",
+            "service_name",
+            "service_price",
+            "start",
+            "end",
+            "status",
+            "status_display",
+            "can_confirm",
+            "can_cancel",
+            "can_complete",
+            "can_no_show",
             "internal_notes",
-            "created_at", "updated_at",
+            "created_at",
+            "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
@@ -799,14 +931,23 @@ class AppointmentSerializer(serializers.ModelSerializer):
 # SYSTEM SETTINGS SERIALIZERS
 # =============================================================================
 
+
 class SystemSettingsSerializer(serializers.ModelSerializer):
-    updated_by_username = serializers.CharField(source="updated_by.username", read_only=True, allow_null=True)
+    updated_by_username = serializers.CharField(
+        source="updated_by.username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = SystemSettings
         fields = [
-            "id", "salon_name", "slot_minutes", "buffer_minutes",
-            "opening_hours", "updated_at", "updated_by", "updated_by_username"
+            "id",
+            "salon_name",
+            "slot_minutes",
+            "buffer_minutes",
+            "opening_hours",
+            "updated_at",
+            "updated_by",
+            "updated_by_username",
         ]
         read_only_fields = ["id", "updated_at", "updated_by"]
 
@@ -815,18 +956,27 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
 # SYSTEM LOG SERIALIZERS
 # =============================================================================
 
+
 class SystemLogSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source="get_action_display", read_only=True)
-    performed_by_username = serializers.CharField(source="performed_by.username", read_only=True, allow_null=True)
-    target_user_username = serializers.CharField(source="target_user.username", read_only=True, allow_null=True)
+    performed_by_username = serializers.CharField(
+        source="performed_by.username", read_only=True, allow_null=True
+    )
+    target_user_username = serializers.CharField(
+        source="target_user.username", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = SystemLog
         fields = [
-            "id", "action", "action_display",
-            "performed_by", "performed_by_username",
-            "target_user", "target_user_username",
-            "timestamp"
+            "id",
+            "action",
+            "action_display",
+            "performed_by",
+            "performed_by_username",
+            "target_user",
+            "target_user_username",
+            "timestamp",
         ]
         read_only_fields = fields
 
@@ -834,6 +984,7 @@ class SystemLogSerializer(serializers.ModelSerializer):
 # =============================================================================
 # BOOKING SERIALIZER
 # =============================================================================
+
 
 class BookingCreateSerializer(serializers.Serializer):
     service_id = serializers.IntegerField(required=True)
@@ -845,23 +996,35 @@ class BookingCreateSerializer(serializers.Serializer):
     def validate(self, data):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
-            raise serializers.ValidationError({"detail": "Musisz być zalogowany aby zarezerwować wizytę."})
+            raise serializers.ValidationError(
+                {"detail": "Musisz być zalogowany aby zarezerwować wizytę."}
+            )
 
         user = request.user
 
         if user.is_client:
             client = getattr(user, "client_profile", None)
             if not client:
-                raise serializers.ValidationError({"client_id": "Użytkownik nie ma profilu klienta."})
+                raise serializers.ValidationError(
+                    {"client_id": "Użytkownik nie ma profilu klienta."}
+                )
         elif user.is_admin or user.is_employee:
             if not data.get("client_id"):
-                raise serializers.ValidationError({"client_id": "Wymagane dla ADMIN/EMPLOYEE."})
+                raise serializers.ValidationError(
+                    {"client_id": "Wymagane dla ADMIN/EMPLOYEE."}
+                )
             try:
-                client = ClientProfile.objects.get(pk=int(data["client_id"]), is_active=True)
+                client = ClientProfile.objects.get(
+                    pk=int(data["client_id"]), is_active=True
+                )
             except (ClientProfile.DoesNotExist, ValueError, TypeError):
-                raise serializers.ValidationError({"client_id": "Nie znaleziono aktywnego klienta."})
+                raise serializers.ValidationError(
+                    {"client_id": "Nie znaleziono aktywnego klienta."}
+                )
         else:
-            raise serializers.ValidationError({"detail": "Brak uprawnień do rezerwacji."})
+            raise serializers.ValidationError(
+                {"detail": "Brak uprawnień do rezerwacji."}
+            )
 
         try:
             service = Service.objects.get(id=data["service_id"], is_active=True)
@@ -869,19 +1032,27 @@ class BookingCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({"service_id": "Nie znaleziono usługi."})
 
         try:
-            employee = EmployeeProfile.objects.get(id=data["employee_id"], is_active=True)
+            employee = EmployeeProfile.objects.get(
+                id=data["employee_id"], is_active=True
+            )
         except EmployeeProfile.DoesNotExist:
-            raise serializers.ValidationError({"employee_id": "Nie znaleziono pracownika."})
+            raise serializers.ValidationError(
+                {"employee_id": "Nie znaleziono pracownika."}
+            )
 
         start = data.get("start")
         if timezone.is_naive(start):
             start = timezone.make_aware(start)
 
         if start < timezone.now():
-            raise serializers.ValidationError({"start": "Nie można rezerwować wizyt w przeszłości."})
+            raise serializers.ValidationError(
+                {"start": "Nie można rezerwować wizyt w przeszłości."}
+            )
 
         if not employee.skills.filter(id=service.id).exists():
-            raise serializers.ValidationError({"employee_id": "Ten pracownik nie wykonuje wybranej usługi."})
+            raise serializers.ValidationError(
+                {"employee_id": "Ten pracownik nie wykonuje wybranej usługi."}
+            )
 
         settings = SystemSettings.get_settings()
         buffer_minutes = int(settings.buffer_minutes or 0)
@@ -892,76 +1063,91 @@ class BookingCreateSerializer(serializers.Serializer):
             employee=employee,
             status=TimeOff.Status.APPROVED,
             date_from__lte=start.date(),
-            date_to__gte=start.date()
+            date_to__gte=start.date(),
         ).exists():
-            raise serializers.ValidationError({"start": "Pracownik jest nieobecny w tym dniu."})
+            raise serializers.ValidationError(
+                {"start": "Pracownik jest nieobecny w tym dniu."}
+            )
 
         if Appointment.objects.filter(
             employee=employee,
             start__lt=end,
             end__gt=start,
-            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         ).exists():
-            raise serializers.ValidationError({"start": "Ten pracownik ma już zajęty termin."})
+            raise serializers.ValidationError(
+                {"start": "Ten pracownik ma już zajęty termin."}
+            )
 
         if Appointment.objects.filter(
             client=client,
             start__lt=end,
             end__gt=start,
-            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED]
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         ).exists():
-            raise serializers.ValidationError({"start": "Masz już zarezerwowaną wizytę w tym czasie."})
+            raise serializers.ValidationError(
+                {"start": "Masz już zarezerwowaną wizytę w tym czasie."}
+            )
 
-        data.update({
-            "start": start,
-            "end": end,
-            "client": client,
-            "service": service,
-            "employee": employee,
-        })
+        data.update(
+            {
+                "start": start,
+                "end": end,
+                "client": client,
+                "service": service,
+                "employee": employee,
+            }
+        )
         return data
 
     def create(self, validated_data):
         start = validated_data["start"]
         end = validated_data["end"]
 
-        employee = EmployeeProfile.objects.select_for_update().get(pk=validated_data["employee"].pk, is_active=True)
-        client = ClientProfile.objects.select_for_update().get(pk=validated_data["client"].pk, is_active=True)
+        employee = EmployeeProfile.objects.select_for_update().get(
+            pk=validated_data["employee"].pk, is_active=True
+        )
+        client = ClientProfile.objects.select_for_update().get(
+            pk=validated_data["client"].pk, is_active=True
+        )
 
-        if TimeOff.objects.select_for_update().filter(
-            employee=employee,
-            status=TimeOff.Status.APPROVED,
-            date_from__lte=start.date(),
-            date_to__gte=start.date(),
-        ).exists():
-            raise serializers.ValidationError({"start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."})
-
-
-        emp_conflicts = (
-            Appointment.objects
-            .select_for_update()
+        if (
+            TimeOff.objects.select_for_update()
             .filter(
                 employee=employee,
-                start__lt=end,
-                end__gt=start,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+                status=TimeOff.Status.APPROVED,
+                date_from__lte=start.date(),
+                date_to__gte=start.date(),
             )
+            .exists()
+        ):
+            raise serializers.ValidationError(
+                {
+                    "start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."
+                }
+            )
+
+        emp_conflicts = Appointment.objects.select_for_update().filter(
+            employee=employee,
+            start__lt=end,
+            end__gt=start,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         )
         if emp_conflicts.exists():
-            raise serializers.ValidationError({"start": "Niestety, ten termin został właśnie zarezerwowany."})
-
-        client_conflicts = (
-            Appointment.objects
-            .select_for_update()
-            .filter(
-                client=client,
-                start__lt=end,
-                end__gt=start,
-                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+            raise serializers.ValidationError(
+                {"start": "Niestety, ten termin został właśnie zarezerwowany."}
             )
+
+        client_conflicts = Appointment.objects.select_for_update().filter(
+            client=client,
+            start__lt=end,
+            end__gt=start,
+            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         )
         if client_conflicts.exists():
-            raise serializers.ValidationError({"start": "Masz już wizytę w tym czasie (równoległa rezerwacja)."})
+            raise serializers.ValidationError(
+                {"start": "Masz już wizytę w tym czasie (równoległa rezerwacja)."}
+            )
 
         return Appointment.objects.create(
             client=client,
