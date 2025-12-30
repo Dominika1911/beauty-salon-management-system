@@ -401,6 +401,8 @@ class SystemLog(models.Model):
         TIMEOFF_CANCELLED = "TIMEOFF_CANCELLED", _("Anulowano wniosek urlopowy")
 
         # --- AUTH ---
+        AUTH_LOGIN = "AUTH_LOGIN", _("Zalogowano pomyślnie")
+        AUTH_LOGOUT = "AUTH_LOGOUT", _("Wylogowano pomyślnie")
         AUTH_PASSWORD_CHANGE = "AUTH_PASSWORD_CHANGE", _("Zmieniono/zresetowano hasło")
 
         # --- SETTINGS ---
