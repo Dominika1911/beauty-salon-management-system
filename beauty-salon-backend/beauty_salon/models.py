@@ -216,6 +216,57 @@ class EmployeeSchedule(models.Model):
         num = self.employee.employee_number or "N/A"
         return f"Schedule - {num}"
 
+    def clean(self) -> None:
+        super().clean()
+        settings = SystemSettings.get_settings()
+        salon_hours = settings.opening_hours or {}
+
+        # Słownik musi być wewnątrz metody clean
+        day_names_pl = {
+            "mon": "Poniedziałek",
+            "tue": "Wtorek",
+            "wed": "Środa",
+            "thu": "Czwartek",
+            "fri": "Piątek",
+            "sat": "Sobota",
+            "sun": "Niedziela"
+        }
+
+        if not self.weekly_hours:
+            return
+
+        for day, periods in self.weekly_hours.items():
+            if not periods:
+                continue
+
+            # Pobieramy ładną nazwę
+            pretty_day = day_names_pl.get(day, day)
+            salon_day_periods = salon_hours.get(day)
+
+            if not salon_day_periods:
+                raise ValidationError(
+                    {f"weekly_hours": f"Nie można przypisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty."}
+                )
+
+            for p in periods:
+                emp_start = p.get('start')
+                emp_end = p.get('end')
+                if not emp_start or not emp_end: continue
+
+                is_within_salon_hours = False
+                for s_period in salon_day_periods:
+                    s_start = s_period.get('start')
+                    s_end = s_period.get('end')
+                    if s_start and s_end:
+                        if emp_start >= s_start and emp_end <= s_end:
+                            is_within_salon_hours = True
+                            break
+
+                if not is_within_salon_hours:
+                    # TUTAJ ZMIENIAMY KOMUNIKAT - używamy pretty_day zamiast day
+                    raise ValidationError(
+                        {f"weekly_hours": f"Godziny {emp_start}-{emp_end} w dniu: {pretty_day} wykraczają poza godziny otwarcia salonu."}
+                    )
 
 class TimeOff(models.Model):
     class Status(models.TextChoices):

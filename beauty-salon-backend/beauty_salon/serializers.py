@@ -385,13 +385,76 @@ class EmployeePublicSerializer(serializers.ModelSerializer):
         return obj.get_full_name()
 
 
+from rest_framework import serializers
+from .models import EmployeeSchedule, SystemSettings
+from django.utils.translation import gettext_lazy as _
+
+
 class EmployeeScheduleSerializer(serializers.ModelSerializer):
     class Meta:
         model = EmployeeSchedule
         fields = ["id", "employee", "weekly_hours", "created_at", "updated_at"]
         read_only_fields = ["id", "employee", "created_at", "updated_at"]
 
+    def validate_weekly_hours(self, value):
+        """
+        Walidacja grafiku pracownika względem globalnych ustawień salonu z polskimi nazwami dni.
+        """
+        settings = SystemSettings.get_settings()
+        salon_hours = settings.opening_hours or {}
 
+        # Słownik mapujący techniczne klucze na ładne polskie nazwy
+        day_names_pl = {
+            "mon": "Poniedziałek",
+            "tue": "Wtorek",
+            "wed": "Środa",
+            "thu": "Czwartek",
+            "fri": "Piątek",
+            "sat": "Sobota",
+            "sun": "Niedziela"
+        }
+
+        if not value:
+            return value
+
+        for day, periods in value.items():
+            if periods:
+                salon_day_periods = salon_hours.get(day)
+
+                # Pobieramy ładną nazwę dnia (np. "Poniedziałek" zamiast "mon")
+                pretty_day = day_names_pl.get(day, day)
+
+                # 1. Sprawdzenie czy salon jest otwarty
+                if not salon_day_periods:
+                    raise serializers.ValidationError(
+                        _(f"Nie można zapisać grafiku na dzień: {pretty_day}, ponieważ salon jest wtedy zamknięty.")
+                    )
+
+                # 2. Sprawdzenie zakresu godzin
+                for p in periods:
+                    emp_start = p.get('start')
+                    emp_end = p.get('end')
+
+                    if not emp_start or not emp_end:
+                        continue
+
+                    is_within_salon = False
+                    for s_period in salon_day_periods:
+                        s_start = s_period.get('start')
+                        s_end = s_period.get('end')
+
+                        if s_start and s_end:
+                            if emp_start >= s_start and emp_end <= s_end:
+                                is_within_salon = True
+                                break
+
+                    if not is_within_salon:
+                        # Używamy pretty_day w komunikacie
+                        raise serializers.ValidationError(
+                            _(f"W dniu: {pretty_day} godziny {emp_start}-{emp_end} wykraczają poza czas pracy salonu.")
+                        )
+
+        return value
 # =============================================================================
 # TIME OFF SERIALIZER
 # =============================================================================

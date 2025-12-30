@@ -215,7 +215,15 @@ export default function EmployeesSchedulePage(): JSX.Element {
       setSnack({ open: true, msg: "Grafik zapisany.", severity: "success" });
     } catch (e: unknown) {
       const parsed = parseDrfError(e);
-      setFormError(parsed.message || "Nie udało się zapisać grafiku.");
+
+      // POPRAWKA: Wyciąganie szczegółowego błędu z pola weekly_hours
+      if (parsed.fieldErrors && parsed.fieldErrors.weekly_hours) {
+        const error = parsed.fieldErrors.weekly_hours;
+        // Jeśli błąd jest tablicą, bierzemy pierwszy element, w przeciwnym razie cały string
+        setFormError(Array.isArray(error) ? error[0] : error);
+      } else {
+        setFormError(parsed.message || "Nie udało się zapisać grafiku.");
+      }
     } finally {
       setSaving(false);
     }
