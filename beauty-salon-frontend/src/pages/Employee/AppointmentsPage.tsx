@@ -162,6 +162,12 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
     const busy = loading || busyId != null;
     const hasUnappliedFilters = draftOrdering !== ordering;
 
+    const isPastEdit = useMemo(() => {
+        if (!editMode) return false;
+        if (!formData.start) return false;
+        return formData.start.getTime() <= Date.now();
+    }, [editMode, formData.start]);
+
     useEffect(() => {
         setPage(1);
     }, [ordering]);
@@ -320,10 +326,31 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
             return;
         }
 
-        // 🔥 WALIDACJA: Nie można ustawiać wizyt w przeszłości
+        // 🔥 WALIDACJA: Nie można ustawiać wizyt w przeszłości (TYLKO CREATE)
         const now = new Date();
-        if (formData.start < now) {
+        if (!editMode && formData.start < now) {
             setFormError('Nie można umówić wizyty w przeszłości.');
+            return;
+        }
+
+        // ✅ EDYCJA PRZESZŁEJ/ROZPOCZĘTEJ WIZYTY: tylko notatki
+        if (editMode && editId && isPastEdit) {
+            setSubmitting(true);
+            try {
+                const patchPayload = {
+                    internal_notes: formData.internal_notes.trim() || '',
+                };
+
+                const updated = await appointmentsApi.partialUpdate(editId, patchPayload);
+                patchRow(updated);
+                setSnack({ open: true, msg: 'Notatki zapisane.', severity: 'success' });
+                closeDialog();
+            } catch (e: unknown) {
+                const parsed = parseDrfError(e);
+                setFormError(parsed.message || 'Nie udało się zapisać notatek.');
+            } finally {
+                setSubmitting(false);
+            }
             return;
         }
 
@@ -592,9 +619,13 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                             const isBusy = busyId === a.id;
 
                             const canConfirm = a.can_confirm;
-                            const canCancel = a.can_cancel;
                             const canComplete = a.can_complete;
                             const canNoShow = a.can_no_show;
+
+                            // ✅ backend blokuje anulowanie COMPLETED / CANCELLED
+                            const statusBlockedForCancel =
+                                a.status === 'COMPLETED' || a.status === 'CANCELLED';
+                            const canCancelUi = a.can_cancel && !statusBlockedForCancel;
 
                             return (
                                 <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
@@ -632,7 +663,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                             </Stack>
                                         </Stack>
 
-                                        {(canConfirm || canCancel || canComplete || canNoShow) && (
+                                        {(canConfirm || canCancelUi || canComplete || canNoShow) && (
                                             <>
                                                 <Divider />
                                                 <Stack
@@ -641,7 +672,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                     flexWrap="wrap"
                                                     useFlexGap
                                                 >
-                                                    {/* 🔥 PRZYCISK "EDYTUJ" */}
+                                                    {/*  PRZYCISK "EDYTUJ" */}
                                                     <Button
                                                         size="small"
                                                         variant="outlined"
@@ -673,7 +704,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                         </Button>
                                                     )}
 
-                                                    {canCancel && (
+                                                    {canCancelUi && (
                                                         <Button
                                                             size="small"
                                                             color="error"
@@ -776,7 +807,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                 client: Number(e.target.value),
                                             }))
                                         }
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         {clients.map((c) => (
                                             <MenuItem key={c.id} value={c.id}>
@@ -800,7 +831,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                 service: null, // 🔥 Reset service
                                             }));
                                         }}
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         {employees.map((e) => (
                                             <MenuItem key={e.id} value={e.id}>
@@ -839,7 +870,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                 return newData;
                                             });
                                         }}
-                                        disabled={submitting || !formData.employee}
+                                        disabled={submitting || !formData.employee || isPastEdit}
                                     >
                                         {!formData.employee ? (
                                             <MenuItem disabled>
@@ -925,7 +956,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                             return newData;
                                         });
                                     }}
-                                    disabled={submitting}
+                                    disabled={submitting || isPastEdit}
                                     minDateTime={new Date()} // 🔥 Nie można wybrać przeszłości!
                                     slotProps={{
                                         textField: {
@@ -967,7 +998,7 @@ export default function EmployeeAppointmentsPage(): JSX.Element {
                                                 status: e.target.value as AppointmentStatus,
                                             }))
                                         }
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         <MenuItem value="PENDING">Oczekuje</MenuItem>
                                         <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>

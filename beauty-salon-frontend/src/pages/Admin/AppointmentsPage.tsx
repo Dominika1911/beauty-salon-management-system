@@ -144,7 +144,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
     const [pageError, setPageError] = useState<string | null>(null);
     const [snack, setSnack] = useState<SnackState>({ open: false, msg: '', severity: 'info' });
 
-    // 🔥 CREATE/UPDATE DIALOG STATE
+    // CREATE/UPDATE DIALOG STATE
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [editId, setEditId] = useState<number | null>(null);
@@ -152,19 +152,25 @@ export default function AdminAppointmentsPage(): JSX.Element {
     const [formError, setFormError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    // 🔥 LOOKUP DATA
+    // LOOKUP DATA
     const [clients, setClients] = useState<Client[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [services, setServices] = useState<Service[]>([]);
     const [loadingLookups, setLoadingLookups] = useState(false);
 
-    // 🔥 SYSTEM SETTINGS (opening_hours)
+    // SYSTEM SETTINGS (opening_hours)
     const [openingHours, setOpeningHours] = useState<any>(null);
 
     const rows = useMemo(() => data.results ?? [], [data.results]);
 
     const initialLoading = loading && rows.length === 0;
     const busy = loading || busyId !== null;
+
+    const isPastEdit = useMemo(() => {
+        if (!editMode) return false;
+        if (!formData.start) return false;
+        return formData.start.getTime() <= Date.now();
+    }, [editMode, formData.start]);
 
     // reset page when applied filter changes
     useEffect(() => {
@@ -266,13 +272,17 @@ export default function AdminAppointmentsPage(): JSX.Element {
             setSnack({ open: true, msg: successMsg, severity: 'success' });
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
-            setPageError(parsed.message || 'Nie udało się wykonać operacji. Spróbuj ponownie.');
+            setSnack({
+                open: true,
+                msg: parsed.message || 'Nie udało się wykonać operacji. Spróbuj ponownie.',
+                severity: 'error',
+            });
         } finally {
             setBusyId(null);
         }
     };
 
-    // 🔥 LOAD LOOKUPS (clients, employees, services)
+    // LOAD LOOKUPS (clients, employees, services)
     const loadLookups = useCallback(async () => {
         setLoadingLookups(true);
         try {
@@ -280,13 +290,12 @@ export default function AdminAppointmentsPage(): JSX.Element {
                 clientsApi.list({ is_active: true }),
                 employeesApi.list({ is_active: true }),
                 servicesApi.list({ is_active: true }),
-                systemSettingsApi.get(), // 🔥 Pobierz opening_hours
+                systemSettingsApi.get(), // opening_hours
             ]);
             setClients(clientsRes.results);
-            // Admin zawsze dostaje pełny Employee type (z employee_number)
             setEmployees(employeesRes.results as Employee[]);
             setServices(servicesRes.results);
-            setOpeningHours(settingsRes.opening_hours || {}); // 🔥 Zapisz opening_hours
+            setOpeningHours(settingsRes.opening_hours || {});
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
             setFormError(parsed.message || 'Nie udało się załadować danych.');
@@ -295,7 +304,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
         }
     }, []);
 
-    // 🔥 OPEN CREATE DIALOG
+    // OPEN CREATE DIALOG
     const openCreateDialog = () => {
         setEditMode(false);
         setEditId(null);
@@ -305,7 +314,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
         void loadLookups();
     };
 
-    // 🔥 OPEN EDIT DIALOG
+    // OPEN EDIT DIALOG
     const openEditDialog = (appointment: Appointment) => {
         setEditMode(true);
         setEditId(appointment.id);
@@ -323,7 +332,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
         void loadLookups();
     };
 
-    // 🔥 CLOSE DIALOG
+    // CLOSE DIALOG
     const closeDialog = () => {
         if (submitting) return;
         setDialogOpen(false);
@@ -331,7 +340,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
         setFormError(null);
     };
 
-    // 🔥 HANDLE SAVE (CREATE or UPDATE)
+    // HANDLE SAVE (CREATE or UPDATE)
     const handleSave = async () => {
         setFormError(null);
 
@@ -357,19 +366,39 @@ export default function AdminAppointmentsPage(): JSX.Element {
             return;
         }
 
-        // 🔥 WALIDACJA: Nie można ustawiać wizyt w przeszłości
+        // WALIDACJA: Nie można ustawiać wizyt w przeszłości (tylko CREATE)
         const now = new Date();
-        if (formData.start < now) {
+        if (!editMode && formData.start < now) {
             setFormError('Nie można umówić wizyty w przeszłości.');
             return;
         }
 
-        // 🔥 WALIDACJA: Godziny otwarcia salonu (z SystemSettings)
+        // ✅ EDYCJA PRZESZŁEJ/ROZPOCZĘTEJ WIZYTY: tylko notatki (PATCH przez update())
+        if (editMode && editId && isPastEdit) {
+            setSubmitting(true);
+            try {
+                const patchPayload = {
+                    internal_notes: formData.internal_notes.trim() || '',
+                };
+
+                const updated = await appointmentsApi.update(editId, patchPayload);
+                patchRowAndCount(updated);
+                setSnack({ open: true, msg: 'Notatki zapisane.', severity: 'success' });
+                closeDialog();
+            } catch (e: unknown) {
+                const parsed = parseDrfError(e);
+                setFormError(parsed.message || 'Nie udało się zapisać notatek.');
+            } finally {
+                setSubmitting(false);
+            }
+            return;
+        }
+
+        // WALIDACJA: Godziny otwarcia salonu (z SystemSettings)
         if (openingHours && Object.keys(openingHours).length > 0) {
             const startDate = formData.start;
             const endDate = formData.end;
 
-            // Mapuj day of week (0=Sunday, 1=Monday) na klucze opening_hours
             const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
             const startDayKey = dayNames[startDate.getDay()];
             const endDayKey = dayNames[endDate.getDay()];
@@ -377,13 +406,11 @@ export default function AdminAppointmentsPage(): JSX.Element {
             const startDayHours = openingHours[startDayKey] || [];
             const endDayHours = openingHours[endDayKey] || [];
 
-            // Sprawdź czy są godziny otwarcia w tym dniu
             if (startDayHours.length === 0) {
                 setFormError(`Salon jest zamknięty w tym dniu (${startDayKey.toUpperCase()}).`);
                 return;
             }
 
-            // Format czasu wizyty jako "HH:MM"
             const formatTime = (date: Date) => {
                 const h = date.getHours().toString().padStart(2, '0');
                 const m = date.getMinutes().toString().padStart(2, '0');
@@ -393,7 +420,6 @@ export default function AdminAppointmentsPage(): JSX.Element {
             const startTime = formatTime(startDate);
             const endTime = formatTime(endDate);
 
-            // Sprawdź czy wizyta mieści się w godzinach otwarcia
             let isStartValid = false;
             let isEndValid = false;
 
@@ -423,13 +449,13 @@ export default function AdminAppointmentsPage(): JSX.Element {
             }
         }
 
-        // 🔥 WALIDACJA: Data zakończenia > rozpoczęcia
+        // WALIDACJA: Data zakończenia > rozpoczęcia
         if (formData.end <= formData.start) {
             setFormError('Data zakończenia musi być późniejsza niż rozpoczęcia.');
             return;
         }
 
-        // 🔥 WALIDACJA: Maksymalny czas wizyty (np. 8 godzin)
+        // WALIDACJA: Maksymalny czas wizyty (np. 8 godzin)
         const durationMs = formData.end.getTime() - formData.start.getTime();
         const durationHours = durationMs / (1000 * 60 * 60);
         if (durationHours > 8) {
@@ -437,12 +463,11 @@ export default function AdminAppointmentsPage(): JSX.Element {
             return;
         }
 
-        // 🔥 WALIDACJA: Sprawdź czy pracownik ma skill dla wybranej usługi
+        // WALIDACJA: Sprawdź czy pracownik ma skill dla wybranej usługi
         const selectedEmployee = employees.find((e) => e.id === formData.employee);
         const selectedService = services.find((s) => s.id === formData.service);
 
         if (selectedEmployee && selectedService) {
-            // Backend zwraca skills (Service[]), nie skill_ids
             const employeeSkillIds = (selectedEmployee.skills || []).map((skill: any) => skill.id);
             if (!employeeSkillIds.includes(selectedService.id)) {
                 setFormError(
@@ -467,7 +492,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
             };
 
             if (editMode && editId) {
-                // UPDATE
+                // UPDATE (PATCH)
                 const updated = await appointmentsApi.update(editId, payload);
                 patchRowAndCount(updated);
                 setSnack({ open: true, msg: 'Wizyta zaktualizowana.', severity: 'success' });
@@ -526,7 +551,6 @@ export default function AdminAppointmentsPage(): JSX.Element {
                     </Box>
 
                     <Stack direction="row" spacing={1} alignItems="center">
-                        {/* 🔥 PRZYCISK "UTWÓRZ WIZYTĘ" */}
                         <Button variant="contained" onClick={openCreateDialog} disabled={busy}>
                             + Utwórz wizytę
                         </Button>
@@ -582,9 +606,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                 <Button
                                     variant="outlined"
                                     onClick={resetFilters}
-                                    disabled={
-                                        busy || (!hasActiveFiltersApplied && !hasUnappliedChanges)
-                                    }
+                                    disabled={busy || (!hasActiveFiltersApplied && !hasUnappliedChanges)}
                                 >
                                     Wyczyść filtry
                                 </Button>
@@ -595,11 +617,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                 >
                                     Zastosuj
                                 </Button>
-                                <Button
-                                    variant="outlined"
-                                    onClick={() => void load()}
-                                    disabled={busy}
-                                >
+                                <Button variant="outlined" onClick={() => void load()} disabled={busy}>
                                     Odśwież
                                 </Button>
                             </Stack>
@@ -620,9 +638,12 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                     const isBusy = busyId === a.id;
 
                                     const canConfirm = a.can_confirm;
-                                    const canCancel = a.can_cancel;
                                     const canComplete = a.can_complete;
                                     const canNoShow = a.can_no_show;
+
+                                    const statusBlockedForCancel =
+                                        a.status === 'COMPLETED' || a.status === 'CANCELLED';
+                                    const canCancelUi = a.can_cancel && !statusBlockedForCancel;
 
                                     return (
                                         <Paper key={a.id} variant="outlined" sx={{ p: 2 }}>
@@ -637,27 +658,18 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                         <Typography fontWeight={800}>
                                                             {a.service_name}
                                                         </Typography>
-                                                        <Typography
-                                                            variant="body2"
-                                                            color="text.secondary"
-                                                        >
+                                                        <Typography variant="body2" color="text.secondary">
                                                             Pracownik: {a.employee_name} • Klient:{' '}
                                                             {a.client_name ?? '—'}
                                                         </Typography>
                                                     </Box>
 
                                                     <Stack
-                                                        alignItems={{
-                                                            xs: 'flex-start',
-                                                            sm: 'flex-end',
-                                                        }}
+                                                        alignItems={{ xs: 'flex-start', sm: 'flex-end' }}
                                                         spacing={0.5}
                                                     >
                                                         <Chip
-                                                            label={
-                                                                a.status_display ||
-                                                                statusLabel(a.status)
-                                                            }
+                                                            label={a.status_display || statusLabel(a.status)}
                                                             color={statusColor(a.status)}
                                                             size="small"
                                                         />
@@ -668,8 +680,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                 </Stack>
 
                                                 <Typography variant="body2">
-                                                    {formatDateTimePL(a.start)} —{' '}
-                                                    {formatDateTimePL(a.end)}
+                                                    {formatDateTimePL(a.start)} — {formatDateTimePL(a.end)}
                                                 </Typography>
 
                                                 {a.internal_notes ? (
@@ -682,18 +693,11 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                     </Typography>
                                                 ) : null}
 
-                                                {(canConfirm ||
-                                                    canCancel ||
-                                                    canComplete ||
-                                                    canNoShow) && <Divider />}
+                                                {(canConfirm || canCancelUi || canComplete || canNoShow) && (
+                                                    <Divider />
+                                                )}
 
-                                                <Stack
-                                                    direction="row"
-                                                    spacing={1}
-                                                    flexWrap="wrap"
-                                                    useFlexGap
-                                                >
-                                                    {/* 🔥 PRZYCISK "EDYTUJ" */}
+                                                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                                                     <Button
                                                         size="small"
                                                         variant="outlined"
@@ -720,7 +724,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                         </Button>
                                                     )}
 
-                                                    {canCancel && (
+                                                    {canCancelUi && (
                                                         <Button
                                                             size="small"
                                                             variant="outlined"
@@ -803,7 +807,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                     </Stack>
                 </Paper>
 
-                {/* 🔥 CREATE/UPDATE DIALOG */}
+                {/* CREATE/UPDATE DIALOG */}
                 <Dialog open={dialogOpen} onClose={closeDialog} maxWidth="sm" fullWidth>
                     <DialogTitle>{editMode ? 'Edytuj wizytę' : 'Utwórz wizytę'}</DialogTitle>
 
@@ -814,6 +818,12 @@ export default function AdminAppointmentsPage(): JSX.Element {
                             </Box>
                         ) : (
                             <Stack spacing={2.5} sx={{ mt: 1 }}>
+                                {isPastEdit && (
+                                    <Alert severity="info">
+                                        Wizyta jest w przeszłości/już się rozpoczęła — można edytować tylko notatki.
+                                    </Alert>
+                                )}
+
                                 {formError && <Alert severity="error">{formError}</Alert>}
 
                                 {/* Client */}
@@ -828,7 +838,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                 client: Number(e.target.value),
                                             }))
                                         }
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         {clients.map((c) => (
                                             <MenuItem key={c.id} value={c.id}>
@@ -849,11 +859,10 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                             setFormData((prev) => ({
                                                 ...prev,
                                                 employee: newEmployeeId,
-                                                // 🔥 Reset service gdy zmieniamy pracownika
                                                 service: null,
                                             }));
                                         }}
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         {employees.map((e) => (
                                             <MenuItem key={e.id} value={e.id}>
@@ -863,7 +872,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                     </Select>
                                 </FormControl>
 
-                                {/* Service - 🔥 FILTROWANE po skillach pracownika */}
+                                {/* Service - filtered by employee skills */}
                                 <FormControl fullWidth required disabled={!formData.employee}>
                                     <InputLabel>Usługa</InputLabel>
                                     <Select
@@ -871,82 +880,51 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                         value={formData.service || ''}
                                         onChange={(e) => {
                                             const serviceId = Number(e.target.value);
-                                            const selectedService = services.find(
-                                                (s) => s.id === serviceId,
-                                            );
+                                            const selectedService = services.find((s) => s.id === serviceId);
 
                                             setFormData((prev) => {
                                                 const newData = { ...prev, service: serviceId };
 
-                                                // 🔥 Auto-calculate end date bazując na duration
                                                 if (selectedService && prev.start) {
-                                                    const durationMs =
-                                                        selectedService.duration_minutes *
-                                                        60 *
-                                                        1000;
-                                                    newData.end = new Date(
-                                                        prev.start.getTime() + durationMs,
-                                                    );
+                                                    const durationMs = selectedService.duration_minutes * 60 * 1000;
+                                                    newData.end = new Date(prev.start.getTime() + durationMs);
                                                 }
 
                                                 return newData;
                                             });
                                         }}
-                                        disabled={submitting || !formData.employee}
+                                        disabled={submitting || !formData.employee || isPastEdit}
                                     >
                                         {!formData.employee ? (
-                                            <MenuItem disabled>
-                                                Najpierw wybierz pracownika
-                                            </MenuItem>
+                                            <MenuItem disabled>Najpierw wybierz pracownika</MenuItem>
                                         ) : (
                                             (() => {
-                                                const selectedEmp = employees.find(
-                                                    (e) => e.id === formData.employee,
-                                                );
-                                                // Backend zwraca skills (Service[]), nie skill_ids
-                                                const empSkillIds = (selectedEmp?.skills || []).map(
-                                                    (skill: any) => skill.id,
-                                                );
-                                                const availableServices = services.filter((s) =>
-                                                    empSkillIds.includes(s.id),
-                                                );
+                                                const selectedEmp = employees.find((e) => e.id === formData.employee);
+                                                const empSkillIds = (selectedEmp?.skills || []).map((skill: any) => skill.id);
+                                                const availableServices = services.filter((s) => empSkillIds.includes(s.id));
 
                                                 if (availableServices.length === 0) {
-                                                    return (
-                                                        <MenuItem disabled>
-                                                            Pracownik nie obsługuje żadnych usług
-                                                        </MenuItem>
-                                                    );
+                                                    return <MenuItem disabled>Pracownik nie obsługuje żadnych usług</MenuItem>;
                                                 }
 
                                                 return availableServices.map((s) => (
                                                     <MenuItem key={s.id} value={s.id}>
-                                                        {s.name} — {s.price} zł,{' '}
-                                                        {s.duration_minutes} min
+                                                        {s.name} — {s.price} zł, {s.duration_minutes} min
                                                     </MenuItem>
                                                 ));
                                             })()
                                         )}
                                     </Select>
+
                                     {formData.employee &&
                                         (() => {
-                                            const selectedEmp = employees.find(
-                                                (e) => e.id === formData.employee,
-                                            );
-                                            const empSkillIds = (selectedEmp?.skills || []).map(
-                                                (skill: any) => skill.id,
-                                            );
-                                            const availableCount = services.filter((s) =>
-                                                empSkillIds.includes(s.id),
-                                            ).length;
+                                            const selectedEmp = employees.find((e) => e.id === formData.employee);
+                                            const empSkillIds = (selectedEmp?.skills || []).map((skill: any) => skill.id);
+                                            const availableCount = services.filter((s) => empSkillIds.includes(s.id)).length;
+
                                             return (
-                                                <Typography
-                                                    variant="caption"
-                                                    color="text.secondary"
-                                                    sx={{ mt: 0.5 }}
-                                                >
-                                                    Dostępne usługi: {availableCount} /{' '}
-                                                    {services.length}
+                                                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                    Dostępne usługi: {availableCount} / {services.length}
                                                 </Typography>
                                             );
                                         })()}
@@ -960,27 +938,19 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                         setFormData((prev) => {
                                             const newData = { ...prev, start: date };
 
-                                            // 🔥 Auto-update end gdy zmieniamy start
                                             if (date && prev.service) {
-                                                const selectedService = services.find(
-                                                    (s) => s.id === prev.service,
-                                                );
+                                                const selectedService = services.find((s) => s.id === prev.service);
                                                 if (selectedService) {
-                                                    const durationMs =
-                                                        selectedService.duration_minutes *
-                                                        60 *
-                                                        1000;
-                                                    newData.end = new Date(
-                                                        date.getTime() + durationMs,
-                                                    );
+                                                    const durationMs = selectedService.duration_minutes * 60 * 1000;
+                                                    newData.end = new Date(date.getTime() + durationMs);
                                                 }
                                             }
 
                                             return newData;
                                         });
                                     }}
-                                    disabled={submitting}
-                                    minDateTime={new Date()} // 🔥 Nie można wybrać przeszłości!
+                                    disabled={submitting || isPastEdit}
+                                    minDateTime={new Date()}
                                     slotProps={{
                                         textField: {
                                             fullWidth: true,
@@ -989,14 +959,12 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                     }}
                                 />
 
-                                {/* End DateTime - 🔥 READ-ONLY, auto-calculated */}
+                                {/* End DateTime - READ-ONLY */}
                                 <DateTimePicker
                                     label="Zakończenie (automatyczne)"
                                     value={formData.end}
-                                    onChange={(date) =>
-                                        setFormData((prev) => ({ ...prev, end: date }))
-                                    }
-                                    disabled={true} // 🔥 Zawsze disabled - auto-calculate!
+                                    onChange={(date) => setFormData((prev) => ({ ...prev, end: date }))}
+                                    disabled={true}
                                     slotProps={{
                                         textField: {
                                             fullWidth: true,
@@ -1021,7 +989,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                                                 status: e.target.value as AppointmentStatus,
                                             }))
                                         }
-                                        disabled={submitting}
+                                        disabled={submitting || isPastEdit}
                                     >
                                         <MenuItem value="PENDING">Oczekuje</MenuItem>
                                         <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>
@@ -1051,11 +1019,7 @@ export default function AdminAppointmentsPage(): JSX.Element {
                         <Button onClick={closeDialog} disabled={submitting}>
                             Anuluj
                         </Button>
-                        <Button
-                            variant="contained"
-                            onClick={handleSave}
-                            disabled={submitting || loadingLookups}
-                        >
+                        <Button variant="contained" onClick={handleSave} disabled={submitting || loadingLookups}>
                             {submitting ? 'Zapisuję...' : editMode ? 'Zapisz' : 'Utwórz'}
                         </Button>
                     </DialogActions>

@@ -175,7 +175,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class PasswordChangeSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True)
-    new_password2 = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
 
     def validate_old_password(self, value):
         user = self.context["request"].user
@@ -203,15 +204,19 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 class PasswordResetSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True)
-    new_password2 = serializers.CharField(write_only=True)
+    new_password2 = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     def validate(self, attrs):
-        if attrs["new_password"] != attrs["new_password2"]:
+        pw1 = attrs.get("new_password")
+        pw2 = attrs.get("new_password2")
+
+        # jeśli podano potwierdzenie — musi się zgadzać
+        if pw2 not in (None, "") and pw1 != pw2:
             raise serializers.ValidationError(
                 {"new_password2": "Hasła nie są identyczne."}
             )
 
-        _validate_password_or_raise(attrs["new_password"], field_name="new_password")
+        _validate_password_or_raise(pw1, field_name="new_password")
         return attrs
 
 
@@ -617,6 +622,16 @@ class TimeOffSerializer(serializers.ModelSerializer):
         user = request.user
         return user.is_admin or user.is_staff
 
+    def validate(self, attrs):
+        date_from = attrs.get("date_from") or getattr(self.instance, "date_from", None)
+        date_to = attrs.get("date_to") or getattr(self.instance, "date_to", None)
+
+        if date_from and date_to and date_to < date_from:
+            raise serializers.ValidationError(
+                {"date_to": "date_to nie może być wcześniejsze niż date_from."}
+            )
+
+        return attrs
 
 # =============================================================================
 # CLIENT SERIALIZERS
@@ -926,6 +941,24 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
         return obj.end <= timezone.now()
 
+    def validate(self, attrs):
+        start = attrs.get("start") or getattr(self.instance, "start", None)
+        end = attrs.get("end") or getattr(self.instance, "end", None)
+
+        if start and end and end <= start:
+            raise serializers.ValidationError(
+                {"end": "Zakończenie wizyty musi być później niż rozpoczęcie."}
+            )
+
+        if self.instance and getattr(self.instance, "start", None) and self.instance.start <= timezone.now():
+            allowed = {"internal_notes"}
+            changed = set(attrs.keys()) - allowed
+            if changed:
+                raise serializers.ValidationError(
+                    {"detail": "Nie można edytować wizyty, która już się rozpoczęła (dozwolone: notatki)."}
+                )
+
+        return attrs
 
 # =============================================================================
 # SYSTEM SETTINGS SERIALIZERS

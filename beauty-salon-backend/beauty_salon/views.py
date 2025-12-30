@@ -3,7 +3,7 @@ import io
 import os
 from datetime import datetime, timedelta, time
 from decimal import Decimal
-
+from django.http import Http404
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -235,7 +235,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
-    queryset = EmployeeProfile.objects.all().prefetch_related("skills")
+    queryset = EmployeeProfile.objects.all().prefetch_related("skills").order_by("id")
     serializer_class = EmployeeSerializer
     filter_backends = [
         DjangoFilterBackend,
@@ -570,7 +570,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 
 
 class ClientViewSet(viewsets.ModelViewSet):
-    queryset = ClientProfile.objects.all()
+    queryset = ClientProfile.objects.all().order_by("id")
     serializer_class = ClientSerializer
     filter_backends = [
         DjangoFilterBackend,
@@ -676,11 +676,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         """
         Lock w DB bez OUTER JOINów (Postgres nie lubi FOR UPDATE + LEFT JOIN).
         A jednocześnie bierzemy z get_queryset() -> brak IDOR (użytkownik widzi tylko swoje).
+        Jeśli obiekt nie istnieje w tym queryset (np. cudza wizyta) -> 404 zamiast 500.
         """
-        base_qs = self.get_queryset().select_related(
-            None
-        )  # usuwa joiny z get_queryset()
-        return base_qs.select_for_update().get(pk=pk)
+        base_qs = self.get_queryset().select_related(None)  # usuwa joiny z get_queryset()
+
+        try:
+            return base_qs.select_for_update().get(pk=pk)
+        except Appointment.DoesNotExist:
+            raise Http404("Appointment not found.")
 
     def perform_create(self, serializer):
         obj = serializer.save()
@@ -691,13 +694,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
+        # Usunęliśmy twardą blokadę stąd, teraz walidacja dzieje się w serializerze
         obj = serializer.save()
-        if self.action in ["update", "partial_update"]:
-            SystemLog.log(
-                action=SystemLog.Action.APPOINTMENT_UPDATED,
-                performed_by=self.request.user,
-                target_user=getattr(getattr(obj, "client", None), "user", None),
-            )
+        SystemLog.log(
+            action=SystemLog.Action.APPOINTMENT_UPDATED,
+            performed_by=self.request.user,
+            target_user=getattr(getattr(obj, "client", None), "user", None),
+        )
 
     @action(detail=False, methods=["get"], url_path="my")
     def my(self, request):

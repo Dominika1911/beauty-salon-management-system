@@ -1,5 +1,6 @@
 from rest_framework import permissions
 from typing import List
+from django.utils import timezone
 
 
 class RoleBasedPermission(permissions.BasePermission):
@@ -113,24 +114,30 @@ class CanCancelAppointment(permissions.BasePermission):
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-
         if not user.is_authenticated:
             return False
 
+        # 1) Nie anulujemy zakończonych / anulowanych
+        if obj.status in [obj.Status.COMPLETED, obj.Status.CANCELLED]:
+            return False
+
+        # 2) Klient nie może anulować przeszłych wizyt
+        if user.is_client and obj.start < timezone.now():
+            return False
+
+        # 3) Admin zawsze może (po blokadach powyżej)
         if user.is_admin:
             return True
 
+        # 4) Pracownik tylko swoje
         if user.is_employee:
             employee = getattr(user, "employee_profile", None)
-            if not employee or not employee.is_active:
-                return False
-            return obj.employee_id == employee.id
+            return bool(employee and employee.is_active and obj.employee_id == employee.id)
 
+        # 5) Klient tylko swoje
         if user.is_client:
             client = getattr(user, "client_profile", None)
-            if not client:
-                return False
-            return obj.client_id == client.id
+            return bool(client and obj.client_id == client.id)
 
         return False
 

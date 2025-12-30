@@ -199,10 +199,19 @@ export default function ClientAppointmentsPage(): JSX.Element {
         return 'Na razie nie masz żadnych wizyt.';
     }, [statusFilter]);
 
-    const openCancel = (appt: Appointment) => {
-        if (!appt.can_cancel) return;
-        setCancelDialog({ open: true, appt });
+
+    const canCancelClientUi = (appt: Appointment): boolean => {
+    const statusBlocked = appt.status === 'COMPLETED' || appt.status === 'CANCELLED';
+    const isPast = new Date(appt.start).getTime() <= Date.now();
+    return appt.can_cancel && !statusBlocked && !isPast;
     };
+
+
+    const openCancel = (appt: Appointment) => {
+    if (!canCancelClientUi(appt)) return;
+    setCancelDialog({ open: true, appt });
+    };
+
 
     const closeCancel = () => {
         if (busyCancelId != null) return;
@@ -456,7 +465,7 @@ export default function ClientAppointmentsPage(): JSX.Element {
                                     {formatPL(a.start)} – {formatPL(a.end)}
                                 </Typography>
 
-                                {a.can_cancel && (
+                                {canCancelClientUi(a)  && (
                                     <Box>
                                         <Button
                                             size="small"
