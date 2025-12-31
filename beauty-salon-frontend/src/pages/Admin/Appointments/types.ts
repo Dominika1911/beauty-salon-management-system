@@ -1,16 +1,16 @@
 import type { AppointmentStatus } from '@/types';
 
-/* ====== SELECT ITEMS (UI MODELS) ====== */
-
-export type EmployeeSelectItem = {
-  id: number;
-  label: string;
-  skills: number[];
-};
+export type StatusFilter = 'ALL' | AppointmentStatus;
 
 export type ClientSelectItem = {
   id: number;
   label: string;
+};
+
+export type EmployeeSelectItem = {
+  id: number;
+  label: string;
+  skills: number[]; // lista id usług
 };
 
 export type ServiceSelectItem = {
@@ -19,8 +19,6 @@ export type ServiceSelectItem = {
   duration_minutes: number;
   price: number;
 };
-
-/* ====== FORM ====== */
 
 export type AdminAppointmentFormData = {
   client: number | null;
@@ -31,6 +29,7 @@ export type AdminAppointmentFormData = {
   internal_notes: string;
 };
 
-/* ====== FILTERS ====== */
-
-export type StatusFilter = AppointmentStatus | 'ALL';
+export type Slot = {
+  start: string; // ISO
+  end: string;   // ISO
+};

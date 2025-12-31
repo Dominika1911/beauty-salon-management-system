@@ -403,11 +403,12 @@ class Appointment(models.Model):
 
     client = models.ForeignKey(
         ClientProfile,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        on_delete=models.PROTECT,
+        null=False,
+        blank=False,
         related_name="appointments",
     )
+
     employee = models.ForeignKey(
         EmployeeProfile, on_delete=models.CASCADE, related_name="appointments"
     )

@@ -836,7 +836,7 @@ class ClientPublicSerializer(serializers.ModelSerializer):
 
 class AppointmentSerializer(serializers.ModelSerializer):
     client_name = serializers.CharField(
-        source="client.get_full_name", read_only=True, allow_null=True
+        source="client.get_full_name", read_only=True
     )
     employee_name = serializers.CharField(
         source="employee.get_full_name", read_only=True
@@ -942,6 +942,17 @@ class AppointmentSerializer(serializers.ModelSerializer):
         return obj.end <= timezone.now()
 
     def validate(self, attrs):
+        # 0) Wymagany klient (CREATE + UPDATE)
+        # CREATE: musi być podany client
+        if self.instance is None:
+            if attrs.get("client", None) is None:
+                raise serializers.ValidationError({"client": "Klient jest wymagany."})
+
+        # UPDATE: nie pozwalamy ustawić client=None
+        if self.instance is not None and "client" in attrs:
+            if attrs.get("client", None) is None:
+                raise serializers.ValidationError({"client": "Nie można usunąć klienta z wizyty."})
+
         start = attrs.get("start") or getattr(self.instance, "start", None)
         end = attrs.get("end") or getattr(self.instance, "end", None)
 
@@ -962,10 +973,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 old_value = getattr(self.instance, field)
 
                 # Ważne dla pól relacyjnych (Foreign Key): porównujemy ID
-                if hasattr(old_value, 'id'):
+                if hasattr(old_value, "id"):
                     old_val_to_cmp = old_value.id
-                    # Jeśli frontend przysłał obiekt zamiast ID
-                    new_val_to_cmp = new_value.id if hasattr(new_value, 'id') else new_value
+                    new_val_to_cmp = new_value.id if hasattr(new_value, "id") else new_value
                 else:
                     old_val_to_cmp = old_value
                     new_val_to_cmp = new_value
@@ -977,6 +987,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
                     )
 
         return attrs
+
 
 # =============================================================================
 # SYSTEM SETTINGS SERIALIZERS
