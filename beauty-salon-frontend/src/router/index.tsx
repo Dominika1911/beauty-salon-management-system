@@ -22,7 +22,7 @@ import AccountPage from '@/pages/AccountPage';
 import ServicesPage from '@/pages/Admin/ServicesPage';
 import EmployeesPage from '@/pages/Admin/Employees/EmployeesPage';
 import EmployeesSchedulePage from '@/pages/Admin/EmployeesSchedulePage';
-import ClientsPage from '@/pages/Admin/ClientsPage';
+import ClientsPage from '@/pages/Admin/Clients/ClientsPage.tsx';
 import AdminAppointmentsPage from '@/pages/Admin/Appointments/AppointmentsPage.tsx';
 import StatisticsPage from '@/pages/Admin/Statistics/StatisticsPage.tsx';
 import ReportsPage from '@/pages/Admin/ReportsPage';
