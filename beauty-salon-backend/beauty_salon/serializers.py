@@ -945,18 +945,36 @@ class AppointmentSerializer(serializers.ModelSerializer):
         start = attrs.get("start") or getattr(self.instance, "start", None)
         end = attrs.get("end") or getattr(self.instance, "end", None)
 
+        # 1. Standardowa walidacja czasu dla nowych wizyt
         if start and end and end <= start:
             raise serializers.ValidationError(
                 {"end": "Zakończenie wizyty musi być później niż rozpoczęcie."}
             )
 
-        if self.instance and getattr(self.instance, "start", None) and self.instance.start <= timezone.now():
-            allowed = {"internal_notes"}
-            changed = set(attrs.keys()) - allowed
-            if changed:
-                raise serializers.ValidationError(
-                    {"detail": "Nie można edytować wizyty, która już się rozpoczęła (dozwolone: notatki)."}
-                )
+        # 2. Logika dla wizyt, które już się zaczęły (edycja)
+        if self.instance and self.instance.start <= timezone.now():
+            # Sprawdzamy każde pole, które przyszło z frontendu
+            for field, new_value in attrs.items():
+                if field == "internal_notes":
+                    continue  # Notatki zawsze wolno zmieniać
+
+                # Pobieramy aktualną wartość z bazy danych
+                old_value = getattr(self.instance, field)
+
+                # Ważne dla pól relacyjnych (Foreign Key): porównujemy ID
+                if hasattr(old_value, 'id'):
+                    old_val_to_cmp = old_value.id
+                    # Jeśli frontend przysłał obiekt zamiast ID
+                    new_val_to_cmp = new_value.id if hasattr(new_value, 'id') else new_value
+                else:
+                    old_val_to_cmp = old_value
+                    new_val_to_cmp = new_value
+
+                # Jeśli nowa wartość jest RÓŻNA od tej w bazie, wtedy blokujemy
+                if new_val_to_cmp != old_val_to_cmp:
+                    raise serializers.ValidationError(
+                        {"detail": f"Wizyta już się rozpoczęła. Nie można zmienić pola: {field}."}
+                    )
 
         return attrs
 
@@ -1034,6 +1052,17 @@ class BookingCreateSerializer(serializers.Serializer):
             )
 
         user = request.user
+
+        if user.role == "EMPLOYEE":
+            employee_profile = getattr(user, "employee_profile", None)
+            if not employee_profile:
+                raise serializers.ValidationError({"detail": "Brak profilu pracownika."})
+
+            # Wymuszamy, aby employee_id w danych zgadzało się z profilem zalogowanego
+            if data.get("employee_id") and int(data["employee_id"]) != employee_profile.id:
+                raise serializers.ValidationError(
+                    {"employee_id": "Jako pracownik możesz tworzyć wizyty tylko dla siebie."}
+                )
 
         if user.is_client:
             client = getattr(user, "client_profile", None)

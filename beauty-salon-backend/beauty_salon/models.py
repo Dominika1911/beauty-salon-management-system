@@ -353,7 +353,7 @@ class TimeOff(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=Q(date_to__gte=F("date_from")), name="timeoff_to_gte_from"
+                condition=Q(date_to__gte=F("date_from")), name="timeoff_to_gte_from"
             ),
         ]
         verbose_name = _("Urlop/Nieobecność")
@@ -427,10 +427,13 @@ class Appointment(models.Model):
         ordering = ["start"]
         constraints = [
             models.CheckConstraint(
-                check=Q(end__gt=F("start")), name="appointment_end_after_start"
+                condition=Q(end__gt=F("start")),
+                name="appointment_end_after_start",
             ),
             UniqueConstraint(
-                fields=["employee", "start"], name="unique_employee_start"
+                fields=["employee", "start"],
+                condition=Q(status__in=["PENDING", "CONFIRMED"]),
+                name="unique_employee_start_active",
             ),
         ]
         indexes = [

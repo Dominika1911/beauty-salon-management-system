@@ -283,16 +283,26 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated or not hasattr(user, "role"):
             return qs.none()
 
-        # CLIENT → tylko aktywni
+        # CLIENT → tylko aktywni (+ opcjonalnie filtr po usłudze: ?service_id=)
         if user.role == "CLIENT":
-            return qs.filter(is_active=True)
+            qs = qs.filter(is_active=True)
 
-        #  EMPLOYEE → tylko swój profil
+            service_id = self.request.query_params.get("service_id")
+            if service_id not in (None, ""):
+                try:
+                    service_id_int = int(service_id)
+                except (TypeError, ValueError):
+                    raise ValidationError(
+                        {"service_id": "Nieprawidłowa wartość. Oczekiwano liczby całkowitej."}
+                    )
+
+                qs = qs.filter(skills__id=service_id_int).distinct()
+
+            return qs
+
+        # EMPLOYEE → tylko swój profil
         if user.role == "EMPLOYEE":
-            emp = getattr(user, "employee_profile", None)
-            if not emp:
-                return qs.none()
-            return qs.filter(pk=emp.pk)
+            return qs.filter(user=user, is_active=True)
 
         # ADMIN → wszystko
         return qs
@@ -309,11 +319,19 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        obj = serializer.save()
+        user = self.request.user
+
+        if user.role == "EMPLOYEE":
+            employee_profile = getattr(user, 'employee_profile', None)
+            # Nadpisujemy przesłane employee_id profilem zalogowanego pracownika
+            obj = serializer.save(employee=employee_profile)
+        else:
+            obj = serializer.save()
+
         SystemLog.log(
-            action=SystemLog.Action.EMPLOYEE_CREATED,
-            performed_by=self.request.user,
-            target_user=getattr(obj, "user", None),
+            action=SystemLog.Action.APPOINTMENT_CREATED,
+            performed_by=user,
+            target_user=getattr(getattr(obj, "client", None), "user", None),
         )
 
     def perform_update(self, serializer):
@@ -350,7 +368,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
 
         return Response(ser.data)
-
 
 # =============================================================================
 # TIME OFF (SPÓJNY ENDPOINT)
@@ -626,7 +643,6 @@ class ClientViewSet(viewsets.ModelViewSet):
 # APPOINTMENTS
 # =============================================================================
 
-
 class AppointmentViewSet(viewsets.ModelViewSet):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
@@ -635,6 +651,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "status", "created_at"]
 
     def get_permissions(self):
+        # Akcja aktualizacji notatek
+        if self.action == "notes":
+            return [IsAdminOrEmployee()]
+
         if self.action in ["confirm", "complete", "no_show"]:
             return [IsAdminOrEmployee()]
 
@@ -694,7 +714,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        # Usunęliśmy twardą blokadę stąd, teraz walidacja dzieje się w serializerze
         obj = serializer.save()
         SystemLog.log(
             action=SystemLog.Action.APPOINTMENT_UPDATED,
@@ -719,6 +738,35 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         ser = AppointmentSerializer(qs, many=True, context={"request": request})
         return Response(ser.data)
+
+    @action(detail=True, methods=["patch"], url_path="notes")
+    @transaction.atomic
+    def notes(self, request, pk=None):
+        """
+        Aktualizacja notatek (dozwolona również dla wizyt z przeszłości).
+        Nie dotyka żadnych innych pól.
+        """
+        appt = self._lock_appt(pk)
+        self.check_object_permissions(request, appt)
+
+        notes = request.data.get("internal_notes", "")
+        if notes is None:
+            notes = ""
+
+        if not isinstance(notes, str):
+            return Response(
+                {"internal_notes": "internal_notes musi być tekstem."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appt.internal_notes = notes
+        # Uwzględniłem updated_at w update_fields, o ile Twoje modele go używają
+        appt.save(update_fields=["internal_notes", "updated_at"])
+
+        return Response(
+            AppointmentSerializer(appt, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="confirm")
     @transaction.atomic
@@ -859,8 +907,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
-
-
 # =============================================================================
 # AUDIT LOG
 # =============================================================================
@@ -881,7 +927,12 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class SystemSettingsView(APIView):
-    permission_classes = [IsAdmin]
+    def get_permissions(self):
+        # Pozwól pracownikom i adminom pobierać godziny otwarcia (GET)
+        if self.request.method == 'GET':
+            return [IsAdminOrEmployee()]
+        # Tylko admin może zmieniać ustawienia (PATCH)
+        return [IsAdmin()]
 
     def get(self, request):
         obj = SystemSettings.get_settings()

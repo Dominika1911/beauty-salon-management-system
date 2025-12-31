@@ -1,4 +1,3 @@
-// src/components/Statistics/StatCard.tsx
 import React from 'react';
 import { Grid, Card, CardContent, Typography } from '@mui/material';
 

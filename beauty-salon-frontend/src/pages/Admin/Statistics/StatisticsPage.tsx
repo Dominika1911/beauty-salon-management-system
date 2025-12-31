@@ -1,10 +1,9 @@
-// src/pages/Admin/StatisticsPage.tsx
 import React, { useEffect, useState } from 'react';
 import { Alert, Box, CircularProgress, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, Paper } from '@mui/material';
 import { statisticsApi } from '@/api/statistics';
 import type { Statistics } from '@/types';
 import { formatPrice } from '@/utils/appointmentUtils';
-import { StatCard } from '@/components/Statistics/StatCard';
+import { StatCard } from '@/pages/Admin/Statistics/StatCard';
 
 export default function StatisticsPage(): JSX.Element {
     const [stats, setStats] = useState<Statistics | null>(null);
