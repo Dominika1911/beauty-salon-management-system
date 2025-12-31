@@ -20,7 +20,7 @@ import AccountPage from '@/pages/AccountPage';
 // ADMIN
 // =========================
 import ServicesPage from '@/pages/Admin/ServicesPage';
-import EmployeesPage from '@/pages/Admin/EmployeesPage';
+import EmployeesPage from '@/pages/Admin/Employees/EmployeesPage';
 import EmployeesSchedulePage from '@/pages/Admin/EmployeesSchedulePage';
 import ClientsPage from '@/pages/Admin/ClientsPage';
 import AdminAppointmentsPage from '@/pages/Admin/Appointments/AppointmentsPage.tsx';
