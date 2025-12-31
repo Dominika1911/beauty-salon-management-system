@@ -1,183 +1,331 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box, Stack, Typography, Button, Paper, LinearProgress, Pagination, Snackbar, Alert, CircularProgress } from '@mui/material';
+import {
+  Alert,
+  Container,
+  LinearProgress,
+  Paper,
+  Snackbar,
+  Stack,
+  Typography,
+} from '@mui/material';
+import type { AlertColor } from '@mui/material/Alert';
+
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { pl } from 'date-fns/locale';
 
+import type { Appointment, DRFPaginated } from '@/types';
 import { appointmentsApi } from '@/api/appointments';
-import { servicesApi } from '@/api/services';
 import { clientsApi } from '@/api/clients';
 import { employeesApi } from '@/api/employees';
+import { servicesApi } from '@/api/services';
 import { parseDrfError } from '@/utils/drfErrors';
 
-import { AppointmentListItem } from '@/pages/Admin/Appointments/components/AppointmentListItem.tsx';
-import { AppointmentFormDialog } from '@/pages/Admin/Appointments/components/AppointmentFormDialog.tsx';
-import { AppointmentFilters } from '@/pages/Admin/Appointments/components/AppointmentFilters.tsx';
-import { Appointment, AppointmentStatus, DRFPaginated, Client, Employee, Service } from '@/types';
+import AppointmentFilters from './components/AppointmentFilters';
+import AppointmentListItem from './components/AppointmentListItem';
+import AppointmentFormDialog from './components/AppointmentFormDialog';
 
-type StatusFilter = AppointmentStatus | 'ALL';
-const PAGE_SIZE = 20;
+import type {
+  AdminAppointmentFormData,
+  ClientSelectItem,
+  EmployeeSelectItem,
+  ServiceSelectItem,
+  StatusFilter,
+} from './types';
 
-// Definicja typów dla lookupów, żeby TS nie krzyczał "never[]"
-interface LookupState {
-    clients: Client[];
-    employees: Employee[];
-    services: Service[];
-}
+/* ===================== CONST ===================== */
 
-export default function AdminAppointmentsPage(): JSX.Element {
-    const [data, setData] = useState<DRFPaginated<Appointment>>({ count: 0, next: null, previous: null, results: [] });
-    const [page, setPage] = useState(1);
-    const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
-    const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('ALL');
+const EMPTY_PAGE: DRFPaginated<Appointment> = {
+  count: 0,
+  next: null,
+  previous: null,
+  results: [],
+};
 
-    const [loading, setLoading] = useState(true);
-    const [busyId, setBusyId] = useState<number | null>(null);
-    const [snack, setSnack] = useState({ open: false, msg: '', severity: 'info' as any });
+const EMPTY_FORM: AdminAppointmentFormData = {
+  client: null,
+  employee: null,
+  service: null,
+  start: null,
+  status: 'PENDING',
+  internal_notes: '',
+};
 
-    const [dialogOpen, setDialogOpen] = useState(false);
-    const [editId, setEditId] = useState<number | null>(null);
+/* ===================== PAGE ===================== */
 
-    // 1. NAPRAWA BŁĘDU NULL: Inicjalizujemy pustym obiektem zamiast null
-    const [formData, setFormData] = useState<any>({});
+export default function AdminAppointmentsPage() {
+  const [data, setData] = useState<DRFPaginated<Appointment>>(EMPTY_PAGE);
+  const [loading, setLoading] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
 
-    // 2. NAPRAWA BŁĘDU TS2322 (never[]): Jawnie określamy typy
-    const [lookups, setLookups] = useState<LookupState>({ clients: [], employees: [], services: [] });
+  const [filters, setFilters] = useState<{ status: StatusFilter }>({
+    status: 'ALL',
+  });
 
-    const busy = loading || busyId !== null;
-    const hasUnappliedChanges = draftStatusFilter !== statusFilter;
-    const totalPages = Math.max(1, Math.ceil((data.count || 0) / PAGE_SIZE));
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
 
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const res = await appointmentsApi.list({
-                page,
-                ordering: '-created_at',
-                status: statusFilter === 'ALL' ? undefined : statusFilter,
-            });
-            setData(res);
-        } catch (e) {
-            setSnack({ open: true, msg: 'Błąd pobierania wizyt', severity: 'error' });
-        } finally {
-            setLoading(false);
-        }
-    }, [page, statusFilter]);
+  const [formData, setFormData] = useState<AdminAppointmentFormData>(EMPTY_FORM);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-    useEffect(() => { void load(); }, [load]);
+  const [clients, setClients] = useState<ClientSelectItem[]>([]);
+  const [employees, setEmployees] = useState<EmployeeSelectItem[]>([]);
+  const [services, setServices] = useState<ServiceSelectItem[]>([]);
+  const [loadingLookups, setLoadingLookups] = useState(false);
 
-    const runAction = async (fn: (id: number) => Promise<Appointment>, id: number, msg: string) => {
-        setBusyId(id);
-        try {
-            const updated = await fn(id);
-            setData(prev => ({
-                ...prev,
-                results: prev.results.map(r => r.id === updated.id ? updated : r)
-            }));
-            setSnack({ open: true, msg, severity: 'success' });
-        } catch (e) {
-            setSnack({ open: true, msg: parseDrfError(e).message || 'Błąd akcji', severity: 'error' });
-        } finally { setBusyId(null); }
-    };
+  const [snack, setSnack] = useState<{
+    open: boolean;
+    msg: string;
+    severity: AlertColor;
+  }>({
+    open: false,
+    msg: '',
+    severity: 'success',
+  });
 
-    const handleSave = async (payload: any) => {
-        if (editId) {
-            const updated = await appointmentsApi.update(editId, payload);
-            setData(prev => ({
-                ...prev,
-                results: prev.results.map(r => r.id === updated.id ? updated : r)
-            }));
-            setSnack({ open: true, msg: 'Zaktualizowano wizytę.', severity: 'success' });
+  const rows = useMemo(() => data.results ?? [], [data.results]);
+
+  const showSnack = (msg: string, severity: AlertColor = 'success') => {
+    setSnack({ open: true, msg, severity });
+  };
+
+  /* ===== LOAD ===== */
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setPageError(null);
+
+    try {
+      const params: Record<string, any> = {};
+      if (filters.status !== 'ALL') params.status = filters.status;
+      const res = await appointmentsApi.list(params);
+      setData(res);
+    } catch (err: any) {
+      setPageError(parseDrfError(err).message ?? 'Błąd ładowania wizyt.');
+      setData(EMPTY_PAGE);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /* ===== LOOKUPS ===== */
+
+  const loadLookups = async () => {
+    setLoadingLookups(true);
+    try {
+      const [c, e, s] = await Promise.all([
+        clientsApi.list(),
+        employeesApi.list(),
+        servicesApi.list(),
+      ]);
+
+      setClients(
+        (c.results ?? []).map((cl: any) => ({
+          id: cl.id,
+          label: [cl.first_name, cl.last_name].filter(Boolean).join(' ') || cl.email,
+        }))
+      );
+
+      setEmployees(
+        (e.results ?? []).map((emp: any) => ({
+          id: emp.id,
+          label: emp.full_name || emp.user_email || `#${emp.id}`,
+          skills: emp.skills ?? [],
+        }))
+      );
+
+      setServices(
+        (s.results ?? []).map((srv: any) => ({
+          id: srv.id,
+          name: srv.name,
+          duration_minutes: srv.duration_minutes,
+          price: srv.price,
+        }))
+      );
+    } catch (err: any) {
+      showSnack(parseDrfError(err).message ?? 'Błąd ładowania danych.', 'error');
+    } finally {
+      setLoadingLookups(false);
+    }
+  };
+
+  /* ===== DIALOG ACTIONS ===== */
+
+  const openCreateDialog = () => {
+    setEditId(null);
+    setFormData(EMPTY_FORM);
+    setFormError(null);
+    setDialogOpen(true);
+    void loadLookups();
+  };
+
+  const openEditDialog = (a: Appointment) => {
+    setEditId(a.id);
+    setFormData({
+      client: a.client,
+      employee: a.employee,
+      service: a.service,
+      start: new Date(a.start),
+      status: a.status,
+      internal_notes: a.internal_notes || '',
+    });
+    setFormError(null);
+    setDialogOpen(true);
+    void loadLookups();
+  };
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setEditId(null);
+    setFormError(null);
+  };
+
+  /* ===== SAVE LOGIC ===== */
+
+  const handleSave = async () => {
+    setSubmitting(true);
+    setFormError(null);
+
+    try {
+      const now = new Date();
+      const service = services.find((s) => s.id === formData.service);
+
+      // --- WALIDACJA ---
+      if (!formData.client || !formData.employee || !formData.service || !formData.start) {
+        setFormError('Uzupełnij wszystkie wymagane pola.');
+        setSubmitting(false);
+        return;
+      }
+
+      if (!service) {
+        setFormError('Nie znaleziono wybranej usługi.');
+        setSubmitting(false);
+        return;
+      }
+
+      const end = new Date(formData.start.getTime() + service.duration_minutes * 60 * 1000);
+
+      // --- EDYCJA ---
+      if (editId) {
+        const isPast = new Date(formData.start) <= now;
+
+        if (isPast) {
+          await appointmentsApi.update(editId, {
+            internal_notes: formData.internal_notes,
+          });
+          showSnack('Notatka została zapisana.');
         } else {
-            await appointmentsApi.create(payload);
-            void load();
-            setSnack({ open: true, msg: 'Utworzono wizytę.', severity: 'success' });
+          await appointmentsApi.update(editId, {
+            client: formData.client,
+            employee: formData.employee,
+            service: formData.service,
+            start: formData.start,
+            end,
+            status: formData.status,
+            internal_notes: formData.internal_notes,
+          });
+          showSnack('Wizyta została zaktualizowana.');
         }
-    };
-
-    const openCreate = () => {
-        setEditId(null);
-        setFormData({ client: '', employee: '', service: '', start: new Date(), status: 'PENDING', internal_notes: '' });
-        setDialogOpen(true);
-        void loadLookups();
-    };
-
-    const openEdit = (a: Appointment) => {
-        setEditId(a.id);
-        setFormData({ ...a, start: new Date(a.start) });
-        setDialogOpen(true);
-        void loadLookups();
-    };
-
-    const loadLookups = async () => {
-        try {
-            const [c, e, s] = await Promise.all([
-                clientsApi.list({ is_active: true }),
-                employeesApi.list({ is_active: true }),
-                servicesApi.list({ is_active: true })
-            ]);
-            setLookups({
-                clients: c.results,
-                employees: e.results as Employee[],
-                services: s.results
-            });
-        } catch (e) {
-            setSnack({ open: true, msg: 'Błąd ładowania danych pomocniczych', severity: 'error' });
+      }
+      // --- TWORZENIE ---
+      else {
+        if (formData.start <= now) {
+          setFormError('Nie można utworzyć wizyty w przeszłości.');
+          setSubmitting(false);
+          return;
         }
-    };
 
-    return (
-        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
-            <Stack spacing={2} sx={{ width: '100%', maxWidth: 1200, mx: 'auto', p: { xs: 1, sm: 3 } }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h5" fontWeight={900}>Zarządzanie wizytami</Typography>
-                    <Button variant="contained" onClick={openCreate}>+ Utwórz wizytę</Button>
-                </Box>
+        await appointmentsApi.create({
+          client: formData.client,
+          employee: formData.employee,
+          service: formData.service,
+          start: formData.start,
+          end,
+          status: formData.status,
+          internal_notes: formData.internal_notes,
+        });
+        showSnack('Wizyta została utworzona.');
+      }
 
-                <AppointmentFilters
-                    statusFilter={draftStatusFilter}
-                    onStatusChange={setDraftStatusFilter}
-                    onApply={() => { setPage(1); setStatusFilter(draftStatusFilter); }}
-                    onReset={() => { setDraftStatusFilter('ALL'); setStatusFilter('ALL'); }}
-                    onRefresh={load}
-                    busy={busy}
-                    hasActiveFilters={statusFilter !== 'ALL'}
-                    hasUnappliedChanges={hasUnappliedChanges}
+      closeDialog();
+      await load();
+    } catch (err: any) {
+      setFormError(parseDrfError(err).message ?? 'Błąd zapisu.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* ===== RENDER ===== */
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Stack spacing={3}>
+          <Typography variant="h5" fontWeight={700}>
+            Zarządzanie wizytami
+          </Typography>
+
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <AppointmentFilters
+              filters={filters}
+              setFilters={setFilters}
+              onCreate={openCreateDialog}
+              loading={loading}
+            />
+            {loading && <LinearProgress sx={{ mt: 2 }} />}
+          </Paper>
+
+          {pageError ? (
+            <Alert severity="error">{pageError}</Alert>
+          ) : (
+            <Stack spacing={1.5}>
+              {rows.map((a) => (
+                <AppointmentListItem
+                  key={a.id}
+                  appointment={a}
+                  onEdit={openEditDialog}
                 />
-
-                <Paper variant="outlined" sx={{ p: 2, position: 'relative', minHeight: 200 }}>
-                    {loading && <LinearProgress sx={{ position: 'absolute', top: 0, left: 0, right: 0 }} />}
-
-                    {data.results.length === 0 && !loading ? (
-                        <Box sx={{ p: 4, textAlign: 'center' }}>
-                            <Typography color="text.secondary">Brak wizyt do wyświetlenia.</Typography>
-                        </Box>
-                    ) : (
-                        <Stack spacing={1}>
-                            {data.results.map(a => (
-                                <AppointmentListItem
-                                    key={a.id} appointment={a} busyId={busyId} busyGlobal={busy}
-                                    onEdit={openEdit} onAction={runAction}
-                                />
-                            ))}
-                        </Stack>
-                    )}
-
-                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                        <Pagination count={totalPages} page={page} onChange={(_, p) => setPage(p)} disabled={busy} />
-                    </Box>
-                </Paper>
-
-                <AppointmentFormDialog
-                    open={dialogOpen} onClose={() => setDialogOpen(false)}
-                    editId={editId} initialData={formData} onSave={handleSave}
-                    clients={lookups.clients} employees={lookups.employees} services={lookups.services}
-                />
-
-                <Snackbar open={snack.open} autoHideDuration={3000} onClose={() => setSnack(s => ({ ...s, open: false }))}>
-                    <Alert severity={snack.severity}>{snack.msg}</Alert>
-                </Snackbar>
+              ))}
+              {!loading && rows.length === 0 && (
+                <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
+                  Brak wizyt pasujących do filtrów.
+                </Typography>
+              )}
             </Stack>
-        </LocalizationProvider>
-    );
+          )}
+
+          <AppointmentFormDialog
+            open={dialogOpen}
+            editMode={Boolean(editId)}
+            submitting={submitting}
+            formError={formError}
+            formData={formData}
+            setFormData={setFormData}
+            clients={clients}
+            employees={employees}
+            services={services}
+            loadingLookups={loadingLookups}
+            onClose={closeDialog}
+            onSubmit={handleSave}
+          />
+
+          <Snackbar
+            open={snack.open}
+            autoHideDuration={3000}
+            onClose={() => setSnack((s) => ({ ...s, open: false }))}
+          >
+            <Alert severity={snack.severity} variant="filled" sx={{ width: '100%' }}>
+              {snack.msg}
+            </Alert>
+          </Snackbar>
+        </Stack>
+      </Container>
+    </LocalizationProvider>
+  );
 }

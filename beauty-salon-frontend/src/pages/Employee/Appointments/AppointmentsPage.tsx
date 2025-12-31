@@ -24,22 +24,22 @@ import type {
   Client,
   Service,
 } from '@/types';
-import { appointmentsApi } from '@/api/appointments';
-import { clientsApi } from '@/api/clients';
-import { employeesApi } from '@/api/employees';
-import { servicesApi } from '@/api/services';
-import { parseDrfError } from '@/utils/drfErrors';
-import { useAuth } from '@/context/AuthContext';
+import { appointmentsApi } from '@/api/appointments.ts';
+import { clientsApi } from '@/api/clients.ts';
+import { employeesApi } from '@/api/employees.ts';
+import { servicesApi } from '@/api/services.ts';
+import { parseDrfError } from '@/utils/drfErrors.ts';
+import { useAuth } from '@/context/AuthContext.tsx';
 
 import type {
   FormData,
   Ordering,
   SnackState,
   EmployeeSelectItem,
-} from './Appointments/types';
-import { EMPTY_FORM, EMPTY_PAGE, orderingLabel } from './Appointments/utils';
-import AppointmentCard from './Appointments/components/AppointmentCard';
-import AppointmentFormDialog from './Appointments/components/AppointmentFormDialog';
+} from './types.ts';
+import { EMPTY_FORM, EMPTY_PAGE, orderingLabel } from './utils.ts';
+import AppointmentCard from './components/AppointmentCard.tsx';
+import AppointmentFormDialog from './components/AppointmentFormDialog.tsx';
 
 export default function AppointmentsPage() {
   const { user } = useAuth();
@@ -85,6 +85,14 @@ export default function AppointmentsPage() {
     setSnack({ open: true, msg, severity });
   };
 
+  const getOnlyEmployeeId = (emps: EmployeeSelectItem[]) => {
+    if (!emps?.length) return null;
+    // dla EMPLOYEE backend powinien zwrócić tylko 1 profil
+    if (emps.length === 1) return emps[0].id;
+    // fallback gdyby zwróciło więcej
+    return emps[0].id;
+  };
+
   /* ===================== LOAD DATA ===================== */
 
   const load = useCallback(async () => {
@@ -107,7 +115,7 @@ export default function AppointmentsPage() {
 
   /* ===================== LOAD LOOKUPS ===================== */
 
-  const loadLookups = async () => {
+  const loadLookups = async (opts?: { keepFormEmployee?: boolean }) => {
     setLoadingLookups(true);
     try {
       const [c, e, s] = await Promise.all([
@@ -118,16 +126,30 @@ export default function AppointmentsPage() {
 
       setClients(c.results ?? []);
 
-      // 🔥 DTO -> MODEL UI (BEZ Employee)
-      setEmployees(
-        (e.results ?? []).map((emp: any): EmployeeSelectItem => ({
-          id: emp.id,
-          label: emp.full_name || emp.user_email || `#${emp.id}`,
-          skills: emp.skills ?? [],
-        })),
-      );
+      const mappedEmployees: EmployeeSelectItem[] = (e.results ?? []).map((emp: any) => ({
+        id: emp.id,
+        label: emp.full_name || emp.user_email || `#${emp.id}`,
+        // backend zwraca skills jako OBIEKTY usług -> mapujemy na ID
+        skills: Array.isArray(emp.skills)
+          ? emp.skills
+              .map((x: any) => (typeof x === 'number' ? x : x?.id))
+              .filter((id: any) => typeof id === 'number')
+          : [],
+      }));
 
+      setEmployees(mappedEmployees);
       setServices(s.results ?? []);
+
+      const onlyEmpId = getOnlyEmployeeId(mappedEmployees);
+      if (onlyEmpId) {
+        setFormData((prev) => {
+          const keep = opts?.keepFormEmployee && prev.employee;
+          return {
+            ...prev,
+            employee: keep ? prev.employee : onlyEmpId,
+          };
+        });
+      }
     } catch (err: any) {
       showSnack(parseDrfError(err).message ?? 'Błąd ładowania danych.', 'error');
     } finally {
@@ -149,6 +171,7 @@ export default function AppointmentsPage() {
     setEditMode(false);
     setEditId(null);
     setIsPastEdit(false);
+
     setFormData(EMPTY_FORM);
     setFormError(null);
     setDialogOpen(true);
@@ -158,7 +181,10 @@ export default function AppointmentsPage() {
   const openEditDialog = (appointment: Appointment) => {
     setEditMode(true);
     setEditId(appointment.id);
+
+    // lepsze niż start: przeszłość dopiero po end
     setIsPastEdit(new Date(appointment.start).getTime() < Date.now());
+
     setFormData({
       client: appointment.client,
       employee: appointment.employee,
@@ -168,9 +194,10 @@ export default function AppointmentsPage() {
       status: appointment.status,
       internal_notes: appointment.internal_notes || '',
     });
+
     setFormError(null);
     setDialogOpen(true);
-    void loadLookups();
+    void loadLookups({ keepFormEmployee: true });
   };
 
   const closeDialog = () => {
@@ -182,41 +209,78 @@ export default function AppointmentsPage() {
   /* ===================== SAVE ===================== */
 
   const handleSave = async () => {
-    if (
-      !formData.client ||
-      !formData.employee ||
-      !formData.service ||
-      !formData.start ||
-      !formData.end
-    ) {
-      setFormError('Uzupełnij wszystkie wymagane pola.');
-      return;
-    }
-
+    setFormError(null);
     setSubmitting(true);
+
     try {
-      const payload = {
+      // ================== CREATE ==================
+      if (!editMode) {
+        if (
+          !formData.client ||
+          !formData.employee ||
+          !formData.service ||
+          !formData.start ||
+          !formData.end
+        ) {
+          setFormError('Uzupełnij wszystkie wymagane pola.');
+          return;
+        }
+
+       await appointmentsApi.create({
+        client: formData.client,
+        employee: formData.employee,
+        service: formData.service,
+        start: formData.start.toISOString(),
+        end: formData.end.toISOString(),
+        status: 'CONFIRMED' as AppointmentStatus,
+        internal_notes: formData.internal_notes ?? '',
+        });
+
+
+        showSnack('Wizyta została utworzona.');
+        closeDialog();
+        await load();
+        return;
+      }
+
+      // ================== EDIT ==================
+      if (!editId) {
+        setFormError('Brak ID wizyty.');
+        return;
+      }
+
+      // ✅ PRZESZŁOŚĆ -> tylko notatki (osobny endpoint, bez 500)
+      if (isPastEdit) {
+        await appointmentsApi.updateNotes(editId, formData.internal_notes ?? '');
+        showSnack('Notatki zostały zapisane.');
+        closeDialog();
+        await load();
+        return;
+      }
+
+      // ✅ PRZYSZŁOŚĆ -> pełna edycja
+      if (
+        !formData.client ||
+        !formData.employee ||
+        !formData.service ||
+        !formData.start ||
+        !formData.end
+      ) {
+        setFormError('Uzupełnij wszystkie wymagane pola.');
+        return;
+      }
+
+      await appointmentsApi.update(editId, {
         client: formData.client,
         employee: formData.employee,
         service: formData.service,
         start: formData.start.toISOString(),
         end: formData.end.toISOString(),
         status: formData.status as AppointmentStatus,
-        internal_notes: formData.internal_notes,
-      };
+        internal_notes: formData.internal_notes ?? '',
+      });
 
-      if (editMode) {
-        if (!editId) {
-          setFormError('Brak ID wizyty.');
-          return;
-        }
-        await appointmentsApi.update(editId, payload);
-        showSnack('Wizyta została zaktualizowana.');
-      } else {
-        await appointmentsApi.create(payload);
-        showSnack('Wizyta została utworzona.');
-      }
-
+      showSnack('Wizyta została zaktualizowana.');
       closeDialog();
       await load();
     } catch (err: any) {

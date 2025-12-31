@@ -23,8 +23,8 @@ import ServicesPage from '@/pages/Admin/ServicesPage';
 import EmployeesPage from '@/pages/Admin/EmployeesPage';
 import EmployeesSchedulePage from '@/pages/Admin/EmployeesSchedulePage';
 import ClientsPage from '@/pages/Admin/ClientsPage';
-import AdminAppointmentsPage from '@/pages/Admin/AppointmentsPage';
-import StatisticsPage from '@/pages/Admin/StatisticsPage';
+import AdminAppointmentsPage from '@/pages/Admin/Appointments/AppointmentsPage.tsx';
+import StatisticsPage from '@/pages/Admin/Statistics/StatisticsPage.tsx';
 import ReportsPage from '@/pages/Admin/ReportsPage';
 import SettingsPage from '@/pages/Admin/SettingsPage';
 import LogsPage from '@/pages/Admin/LogsPage';
@@ -33,16 +33,17 @@ import AdminTimeOffPage from '@/pages/Admin/AdminTimeOffPage';
 // =========================
 // EMPLOYEE
 // =========================
-import EmployeeAppointmentsPage from '@/pages/Employee/AppointmentsPage';
-import EmployeeCalendarPage from '@/pages/Employee/CalendarPage';
+import EmployeeAppointmentsPage from '@/pages/Employee/Appointments/AppointmentsPage.tsx';
+import EmployeeCalendarPage from '@/pages/Employee/Calendar/CalendarPage';
 import EmployeeSchedulePage from '@/pages/Employee/SchedulePage';
-import EmployeeTimeOffPage from '@/pages/Employee/EmployeeTimeOffPage';
+import EmployeeTimeOffPage from "@/pages/Employee/EmployeeTimeOff/EmployeeTimeOffPage";
+
 
 // =========================
 // CLIENT
 // =========================
-import ClientAppointmentsPage from '@/pages/Client/AppointmentsPage';
-import BookingPage from '@/pages/Client/BookingPage';
+import ClientAppointmentsPage from '@/pages/Client/Appointments/AppointmentsPage';
+import BookingPage from '@/pages/Client/Booking/BookingPage.tsx';
 
 export const router = createBrowserRouter([
     {

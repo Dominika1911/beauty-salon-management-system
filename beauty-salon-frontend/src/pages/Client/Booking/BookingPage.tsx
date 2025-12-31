@@ -14,9 +14,9 @@ import {
     Divider,
 } from '@mui/material';
 
-import { servicesApi } from '@/api/services';
-import { employeesApi, type EmployeePublic } from '@/api/employees';
-import { appointmentsApi } from '@/api/appointments';
+import { servicesApi } from '@/api/services.ts';
+import { employeesApi, type EmployeePublic } from '@/api/employees.ts';
+import { appointmentsApi } from '@/api/appointments.ts';
 import type { BookingCreate, Service } from '@/types';
 
 import type { AvailabilitySlot, ServiceSort } from './types';

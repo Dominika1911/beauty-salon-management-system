@@ -1,40 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import {
-    Alert,
-    Box,
-    Typography,
-    Snackbar,
-    Stack,
-    LinearProgress,
-    CircularProgress,
-    Dialog,
-    DialogTitle,
-    DialogContent,
-    DialogActions,
-    Button
-} from '@mui/material';
-import type { AlertColor } from '@mui/material/Alert';
+import { Alert, Box, Typography, Snackbar, Stack, LinearProgress, CircularProgress, Button } from '@mui/material';
 
 import { appointmentsApi } from '@/api/appointments';
 import { parseDrfError } from '@/utils/drfErrors';
-import { Appointment, AppointmentStatus, DRFPaginated } from '@/types';
+import type { Appointment, DRFPaginated } from '@/types';
 
-// Import Twoich nowych komponentów
+import type { Ordering, SnackState, StatusFilter } from './types';
+import { EMPTY_PAGE } from './utils';
+
 import { ClientAppointmentCard } from './components/ClientAppointmentCard';
 import { ClientAppointmentFilters } from './components/ClientAppointmentFilters';
-
-type StatusFilter = AppointmentStatus | 'ALL';
-type Ordering = 'start' | '-start' | 'status' | '-status' | 'created_at' | '-created_at';
-
-type SnackState = { open: boolean; msg: string; severity: AlertColor };
-
-const EMPTY_PAGE: DRFPaginated<Appointment> = {
-    count: 0,
-    next: null,
-    previous: null,
-    results: [],
-};
+import { CancelAppointmentDialog } from './components/CancelAppointmentDialog';
 
 export default function ClientAppointmentsPage(): JSX.Element {
     const location = useLocation();
@@ -95,7 +72,9 @@ export default function ClientAppointmentsPage(): JSX.Element {
         }
     }, [page, ordering, statusFilter]);
 
-    useEffect(() => { void load(); }, [load]);
+    useEffect(() => {
+        void load();
+    }, [load]);
 
     // Akcja anulowania
     const confirmCancel = async () => {
@@ -107,10 +86,11 @@ export default function ClientAppointmentsPage(): JSX.Element {
             const updated = await appointmentsApi.cancel(apptId);
 
             // Lokalna aktualizacja listy (optymistyczna)
-            setData(prev => ({
+            setData((prev) => ({
                 ...prev,
-                results: prev.results.map(r => r.id === updated.id ? updated : r)
-                    .filter(r => statusFilter === 'ALL' || r.status === statusFilter)
+                results: prev.results
+                    .map((r) => (r.id === updated.id ? updated : r))
+                    .filter((r) => statusFilter === 'ALL' || r.status === statusFilter),
             }));
 
             setSnack({ open: true, msg: 'Wizyta została anulowana.', severity: 'success' });
@@ -141,21 +121,31 @@ export default function ClientAppointmentsPage(): JSX.Element {
         <Stack spacing={2} sx={{ maxWidth: 980, mx: 'auto', p: { xs: 1.5, sm: 2.5 } }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
-                    <Typography variant="h5" fontWeight={900}>Moje wizyty</Typography>
-                    <Typography variant="body2" color="text.secondary">Zarządzaj swoimi terminami</Typography>
+                    <Typography variant="h5" fontWeight={900}>
+                        Moje wizyty
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        Zarządzaj swoimi terminami
+                    </Typography>
                 </Box>
-                <Button variant="outlined" onClick={() => void load()} disabled={busy}>Odśwież</Button>
+                <Button variant="outlined" onClick={() => void load()} disabled={busy}>
+                    Odśwież
+                </Button>
             </Box>
 
             {busy && <LinearProgress />}
 
-            {pageError && <Alert severity="error" onClose={() => setPageError(null)}>{pageError}</Alert>}
+            {pageError && (
+                <Alert severity="error" onClose={() => setPageError(null)}>
+                    {pageError}
+                </Alert>
+            )}
 
             <ClientAppointmentFilters
                 status={draftStatus}
                 ordering={draftOrdering}
                 onStatusChange={setDraftStatus}
-                onOrderingChange={(val) => setDraftOrdering(val as Ordering)}
+                onOrderingChange={setDraftOrdering}
                 onApply={applyFilters}
                 onClear={clearFilters}
                 onRefresh={load}
@@ -169,7 +159,9 @@ export default function ClientAppointmentsPage(): JSX.Element {
             />
 
             {loading && results.length === 0 ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+                    <CircularProgress />
+                </Box>
             ) : results.length === 0 ? (
                 <Alert severity="info">Brak wizyt do wyświetlenia.</Alert>
             ) : (
@@ -185,26 +177,22 @@ export default function ClientAppointmentsPage(): JSX.Element {
                 </Stack>
             )}
 
-            {/* Dialog potwierdzenia anulowania */}
-            <Dialog open={cancelDialog.open} onClose={() => !busy && setCancelDialog({ open: false, appt: null })}>
-                <DialogTitle>Anulować wizytę?</DialogTitle>
-                <DialogContent>
-                    <Typography>Czy na pewno chcesz zrezygnować z wizyty: <strong>{cancelDialog.appt?.service_name}</strong>?</Typography>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setCancelDialog({ open: false, appt: null })} disabled={busy}>Wróć</Button>
-                    <Button variant="contained" color="error" onClick={() => void confirmCancel()} disabled={busy}>
-                        {busy ? <CircularProgress size={20} /> : 'Potwierdzam anulowanie'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <CancelAppointmentDialog
+                open={cancelDialog.open}
+                appointment={cancelDialog.appt}
+                busy={busy}
+                onClose={() => setCancelDialog({ open: false, appt: null })}
+                onConfirm={() => void confirmCancel()}
+            />
 
             <Snackbar
                 open={snack.open}
                 autoHideDuration={3000}
-                onClose={() => setSnack(p => ({ ...p, open: false }))}
+                onClose={() => setSnack((p) => ({ ...p, open: false }))}
             >
-                <Alert severity={snack.severity} sx={{ width: '100%' }}>{snack.msg}</Alert>
+                <Alert severity={snack.severity} sx={{ width: '100%' }}>
+                    {snack.msg}
+                </Alert>
             </Snackbar>
         </Stack>
     );

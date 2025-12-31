@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Alert, Box, CircularProgress, Grid, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, Paper } from '@mui/material';
-import { statisticsApi } from '@/api/statistics';
+import { statisticsApi } from '@/api/statistics.ts';
 import type { Statistics } from '@/types';
-import { formatPrice } from '@/utils/appointmentUtils';
-import { StatCard } from '@/pages/Admin/Statistics/StatCard';
+import { formatPrice } from '@/utils/appointmentUtils.ts';
+import { StatCard } from '@/pages/Admin/Statistics/components/StatCard.tsx';
 
 export default function StatisticsPage(): JSX.Element {
     const [stats, setStats] = useState<Statistics | null>(null);
