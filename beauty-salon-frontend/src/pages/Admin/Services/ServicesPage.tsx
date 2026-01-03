@@ -9,8 +9,15 @@ import ServicesFiltersPanel from './components/ServicesFiltersPanel';
 import ServicesList from './components/ServicesList';
 import ServiceFormDialog from './components/ServiceFormDialog';
 
-import { emptyForm, type FormState, type IsActiveFilter, type SortDir, type SortKey, type SnackbarState } from './types';
-import { validateServiceForm } from './utils';
+import {
+    emptyForm,
+    type FormState,
+    type IsActiveFilter,
+    type SortDir,
+    type SortKey,
+    type SnackbarState,
+} from './types';
+import { buildServicePayload, getBestErrorMessage, validateServiceForm } from './utils';
 
 export default function ServicesPage() {
     const [items, setItems] = useState<Service[]>([]);
@@ -87,7 +94,7 @@ export default function ServicesPage() {
         draftSortKey !== sortKey ||
         draftSortDir !== sortDir;
 
-    async function load() {
+    async function load(): Promise<void> {
         setLoading(true);
         setPageError(null);
 
@@ -119,11 +126,16 @@ export default function ServicesPage() {
     // Request tylko na start / zmianę strony / zmianę APPLIED filtrów (po kliknięciu Zastosuj)
     useEffect(() => {
         void load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, orderingParam, query, is_active_param, categoryFilter]);
 
+    // KROK 2: zmiana sortowania -> wracamy na stronę 1 (żeby nie być na stronie 5 po sortowaniu)
+    useEffect(() => {
+        if (page !== 1) {
+            setPage(1);
+        }
+    }, [orderingParam]);
+
     function applyFilters() {
-        // resetujemy paginację, bo zmieniły się filtry
         setPage(1);
 
         setQuery(draftQuery);
@@ -176,8 +188,9 @@ export default function ServicesPage() {
         setOpen(false);
     }
 
-    async function save() {
+    async function save(): Promise<void> {
         setFormError(null);
+        setFieldErrors({});
 
         const validation = validateServiceForm(form);
         setFieldErrors(validation.errors);
@@ -189,16 +202,7 @@ export default function ServicesPage() {
 
         setSaving(true);
         try {
-            const dur = Number(form.duration_minutes);
-
-            const payload = {
-                name: form.name.trim(),
-                category: form.category.trim() || undefined,
-                description: form.description.trim() || undefined,
-                price: String(form.price),
-                duration_minutes: dur,
-                is_active: form.is_active,
-            };
+            const payload = buildServicePayload(form);
 
             if (edit) {
                 await servicesApi.update(edit.id, payload);
@@ -211,15 +215,15 @@ export default function ServicesPage() {
             setOpen(false);
             await load();
         } catch (e: unknown) {
+            setFormError(getBestErrorMessage(e) || 'Nie udało się zapisać. Spróbuj ponownie.');
             const parsed = parseDrfError(e);
-            setFormError(parsed.message || 'Nie udało się zapisać. Spróbuj ponownie.');
             setFieldErrors(pickFieldErrors<FormState>(parsed.fieldErrors, emptyForm));
         } finally {
             setSaving(false);
         }
     }
 
-    async function toggleActive(s: Service) {
+    async function toggleActive(s: Service): Promise<void> {
         setPageError(null);
         setTogglingId(s.id);
 

@@ -1,4 +1,3 @@
-// src/utils/drfErrors.ts
 export type DrfParsedError = {
     message?: string;
     fieldErrors?: Record<string, string>;
@@ -40,10 +39,6 @@ export function parseDrfError(err: unknown): DrfParsedError {
     };
 }
 
-/**
- * Bierze DRF fieldErrors i zostawia tylko te pola, które faktycznie istnieją w danym formularzu.
- * Dzięki temu w catch masz 2 linijki zamiast pętli/mapowania w każdym pliku.
- */
 export function pickFieldErrors<T extends Record<string, any>>(
     fieldErrors: Record<string, string> | undefined,
     template: T,

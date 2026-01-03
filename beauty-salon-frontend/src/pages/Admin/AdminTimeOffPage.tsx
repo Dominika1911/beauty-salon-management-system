@@ -1,5 +1,5 @@
 // AdminTimeOffPage.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Box,
@@ -35,6 +35,16 @@ function isValidYmd(s: string): boolean {
     return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
+function getHttpStatus(e: unknown): number | undefined {
+    return (e as any)?.response?.status;
+}
+
+function toAuthMessage(status?: number): string | null {
+    if (status === 401) return 'Twoja sesja wygasła. Zaloguj się ponownie.';
+    if (status === 403) return 'Brak uprawnień do tej sekcji.';
+    return null;
+}
+
 function StatusChip({ status, label }: { status: TimeOffStatus; label: string }) {
     switch (status) {
         case 'PENDING':
@@ -50,7 +60,7 @@ function StatusChip({ status, label }: { status: TimeOffStatus; label: string })
     }
 }
 
-export default function AdminTimeOffsPage(): JSX.Element {
+export default function AdminTimeOffPage() {
     const [data, setData] = useState<DRFPaginated<TimeOff> | null>(null);
     const [page, setPage] = useState(1);
 
@@ -77,11 +87,20 @@ export default function AdminTimeOffsPage(): JSX.Element {
     const [actionLoading, setActionLoading] = useState(false);
 
     const [pageError, setPageError] = useState<string | null>(null);
-    const [snack, setSnack] = useState<SnackbarState>({ open: false, msg: '', severity: 'info' });
+
+    const [snack, setSnack] = useState<SnackbarState>({
+        open: false,
+        msg: '',
+        severity: 'success',
+    });
 
     const [pageSize, setPageSize] = useState<number | null>(null);
 
     const busy = loading || actionLoading;
+
+    // ✅ anti-race tokens
+    const employeesReqToken = useRef(0);
+    const listReqToken = useRef(0);
 
     const employeeMap = useMemo(() => {
         const m = new Map<number, EmployeeListItem>();
@@ -106,18 +125,40 @@ export default function AdminTimeOffsPage(): JSX.Element {
         Boolean(dateTo);
 
     const loadEmployees = useCallback(async () => {
+        employeesReqToken.current += 1;
+        const token = employeesReqToken.current;
+
         setLoadingEmployees(true);
         try {
             const res = await employeesApi.list({ page: 1, is_active: true });
+
+            if (token !== employeesReqToken.current) return;
             setEmployees(res.results ?? []);
-        } catch {
+        } catch (e: unknown) {
+            if (token !== employeesReqToken.current) return;
+
             setEmployees([]);
+            const status = getHttpStatus(e);
+            const authMsg = toAuthMessage(status);
+            const parsed = parseDrfError(e);
+
+            const msg =
+                authMsg ||
+                parsed.message ||
+                'Nie udało się pobrać listy pracowników. Filtr pracownika może być niepełny.';
+
+            setSnack({ open: true, msg, severity: authMsg ? 'error' : 'info' });
         } finally {
-            setLoadingEmployees(false);
+            if (token === employeesReqToken.current) {
+                setLoadingEmployees(false);
+            }
         }
     }, []);
 
     const load = useCallback(async () => {
+        listReqToken.current += 1;
+        const token = listReqToken.current;
+
         setLoading(true);
         setPageError(null);
 
@@ -132,26 +173,45 @@ export default function AdminTimeOffsPage(): JSX.Element {
                 date_to: dateTo && isValidYmd(dateTo) ? dateTo : undefined,
             });
 
+            if (token !== listReqToken.current) return;
+
             setData(res);
 
             if (page === 1 && res.results?.length) {
                 setPageSize(res.results.length);
             }
         } catch (e: unknown) {
+            if (token !== listReqToken.current) return;
+
+            const status = getHttpStatus(e);
+            const authMsg = toAuthMessage(status);
             const parsed = parseDrfError(e);
-            setPageError(parsed.message || 'Nie udało się pobrać wniosków. Spróbuj ponownie.');
+
+            setPageError(authMsg || parsed.message || 'Nie udało się pobrać wniosków. Spróbuj ponownie.');
             setData({ count: 0, next: null, previous: null, results: [] });
         } finally {
-            setLoading(false);
+            if (token === listReqToken.current) {
+                setLoading(false);
+            }
         }
     }, [page, ordering, statusFilter, employeeId, search, dateFrom, dateTo]);
 
     useEffect(() => {
         void loadEmployees();
+
+        return () => {
+            // unmount -> unieważnij ewentualne setState z requestów
+            employeesReqToken.current += 1;
+        };
     }, [loadEmployees]);
 
     useEffect(() => {
         void load();
+
+        return () => {
+            // unmount / zmiana deps -> unieważnij poprzedni request
+            listReqToken.current += 1;
+        };
     }, [load]);
 
     const totalPages = useMemo(() => {
@@ -186,14 +246,6 @@ export default function AdminTimeOffsPage(): JSX.Element {
         setDraftOrdering('-created_at');
         setDraftDateFrom('');
         setDraftDateTo('');
-
-        setPage(1);
-        setStatusFilter('ALL');
-        setEmployeeId('');
-        setSearch('');
-        setOrdering('-created_at');
-        setDateFrom('');
-        setDateTo('');
     };
 
     const runAction = useCallback(
@@ -206,8 +258,13 @@ export default function AdminTimeOffsPage(): JSX.Element {
                 setSnack({ open: true, msg: successMsg, severity: 'success' });
                 await load();
             } catch (e: unknown) {
+                const status = getHttpStatus(e);
+                const authMsg = toAuthMessage(status);
                 const parsed = parseDrfError(e);
-                const msg = parsed.message || 'Nie udało się wykonać operacji. Spróbuj ponownie.';
+
+                const msg =
+                    authMsg || parsed.message || 'Nie udało się wykonać operacji. Spróbuj ponownie.';
+
                 setPageError(msg);
                 setSnack({ open: true, msg, severity: 'error' });
             } finally {
@@ -251,9 +308,7 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                 <Select
                                     label="Status"
                                     value={draftStatusFilter}
-                                    onChange={(e) =>
-                                        setDraftStatusFilter(e.target.value as StatusFilter)
-                                    }
+                                    onChange={(e) => setDraftStatusFilter(e.target.value as StatusFilter)}
                                 >
                                     <MenuItem value="ALL">Wszystkie</MenuItem>
                                     <MenuItem value="PENDING">Oczekujące</MenuItem>
@@ -279,8 +334,8 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                         employees.map((e) => (
                                             <MenuItem key={e.id} value={String(e.id)}>
                                                 {e.first_name} {e.last_name}
-                                                {'employee_number' in e && e.employee_number
-                                                    ? ` (${e.employee_number})`
+                                                {'employee_number' in e && (e as any).employee_number
+                                                    ? ` (${(e as any).employee_number})`
                                                     : ''}
                                             </MenuItem>
                                         ))
@@ -322,9 +377,9 @@ export default function AdminTimeOffsPage(): JSX.Element {
                             />
 
                             <FormControl size="small" sx={{ minWidth: 220 }} disabled={busy}>
-                                <InputLabel>Sortuj</InputLabel>
+                                <InputLabel>Sortowanie</InputLabel>
                                 <Select
-                                    label="Sortuj"
+                                    label="Sortowanie"
                                     value={draftOrdering}
                                     onChange={(e) => setDraftOrdering(String(e.target.value))}
                                 >
@@ -343,7 +398,7 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                 <Button
                                     variant="text"
                                     onClick={clearFilters}
-                                    disabled={busy && !isDirty}
+                                    disabled={busy || !isDirty}
                                 >
                                     Wyczyść
                                 </Button>
@@ -367,12 +422,12 @@ export default function AdminTimeOffsPage(): JSX.Element {
                     ) : emptyInfo ? (
                         <Alert severity="info">{emptyInfo}</Alert>
                     ) : (
-                        <Stack spacing={1}>
+                        <Stack spacing={1.25}>
                             {(data?.results ?? []).map((x) => {
                                 const emp = employeeMap.get(x.employee);
                                 const employeeHint =
-                                    emp && 'employee_number' in emp && emp.employee_number
-                                        ? ` (${emp.employee_number})`
+                                    emp && 'employee_number' in emp && (emp as any).employee_number
+                                        ? ` (${(emp as any).employee_number})`
                                         : '';
 
                                 return (
@@ -383,10 +438,7 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                             alignItems={{ md: 'center' }}
                                         >
                                             <Box sx={{ minWidth: 260 }}>
-                                                <Typography
-                                                    fontWeight={800}
-                                                    sx={{ lineHeight: 1.2 }}
-                                                >
+                                                <Typography fontWeight={800} sx={{ lineHeight: 1.2 }}>
                                                     {x.employee_name}
                                                     {employeeHint}
                                                 </Typography>
@@ -396,27 +448,19 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                                 <Typography
                                                     variant="body2"
                                                     sx={{ mt: 0.5 }}
-                                                    color={
-                                                        x.reason ? 'text.primary' : 'text.secondary'
-                                                    }
+                                                    color={x.reason ? 'text.primary' : 'text.secondary'}
                                                 >
                                                     {x.reason || 'Brak powodu'}
                                                 </Typography>
                                             </Box>
 
-                                            <StatusChip
-                                                status={x.status}
-                                                label={x.status_display}
-                                            />
+                                            <StatusChip status={x.status} label={x.status_display} />
                                             <Box sx={{ flex: 1 }} />
 
                                             <Box
                                                 sx={{
                                                     display: 'flex',
-                                                    justifyContent: {
-                                                        xs: 'flex-start',
-                                                        md: 'flex-end',
-                                                    },
+                                                    justifyContent: { xs: 'flex-start', md: 'flex-end' },
                                                     width: '100%',
                                                 }}
                                             >
@@ -464,7 +508,7 @@ export default function AdminTimeOffsPage(): JSX.Element {
                                     </Paper>
                                 );
                             })}
-                        </Stack>
+                    </Stack>
                     )}
 
                     <Divider />

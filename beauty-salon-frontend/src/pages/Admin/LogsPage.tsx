@@ -1,4 +1,3 @@
-// src/pages/Admin/LogsPage.tsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
@@ -57,7 +56,7 @@ function groupFromAction(action: string): ActionGroup {
         a.includes('LOGIN') ||
         a.includes('LOGOUT') ||
         a.includes('PASSWORD') ||
-        a.includes('HASŁ')
+        a.includes('HASŁO')
     ) {
         return 'AUTH';
     }

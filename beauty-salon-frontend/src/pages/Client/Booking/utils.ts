@@ -1,15 +1,8 @@
-export function getErrorMessage(e: unknown, fallback = 'Wystąpił błąd'): string {
-    const anyErr = e as any;
-    const d = anyErr?.response?.data;
+import { parseDrfError } from '@/utils/drfErrors';
 
-    if (typeof d?.detail === 'string') return d.detail;
-    if (d && typeof d === 'object') {
-        const k = Object.keys(d)[0];
-        const v = d[k];
-        if (Array.isArray(v) && v.length) return String(v[0]);
-        if (typeof v === 'string') return v;
-    }
-    return anyErr?.message || fallback;
+export function getErrorMessage(e: unknown, fallback = 'Wystąpił błąd'): string {
+    const parsed = parseDrfError(e);
+    return parsed.message || fallback;
 }
 
 export function toLocalISODate(date: Date): string {

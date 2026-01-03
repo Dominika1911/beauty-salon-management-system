@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Box,
@@ -7,7 +7,6 @@ import {
     CircularProgress,
     Divider,
     FormControl,
-    Grid,
     InputLabel,
     LinearProgress,
     MenuItem,
@@ -19,17 +18,27 @@ import {
     Typography,
     IconButton,
 } from '@mui/material';
+import Grid from '@mui/material/Unstable_Grid2';
+import type { SelectChangeEvent } from '@mui/material/Select';
 import type { AlertColor } from '@mui/material/Alert';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 
-import type { Employee } from '@/types';
-import { employeesApi, type WeeklyHours, type EmployeeListItem } from '@/api/employees';
+import { employeesApi, type EmployeeListItem } from '@/api/employees';
 import { parseDrfError } from '@/utils/drfErrors';
+import { hasOverlaps, hhmmToMinutes, isHHMM, sanitizePeriods, sortPeriods } from '@/utils/time';
 
 type DayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 type Period = { start: string; end: string };
 type WeeklyDraft = Partial<Record<DayKey, Period[]>>;
+
+type Employee = {
+    id: number;
+    employee_number: string;
+    first_name: string;
+    last_name: string;
+    full_name: string;
+};
 
 type SnackState = {
     open: boolean;
@@ -47,28 +56,24 @@ const dayLabels: Record<DayKey, string> = {
     sun: 'Niedziela',
 };
 
-/** ✅ type-guard: Admin/Employee widzi pełny EmployeeSerializer */
 function isEmployee(row: EmployeeListItem): row is Employee {
     return (row as Employee).employee_number !== undefined;
 }
 
 function normalizeWeeklyHours(input: unknown): WeeklyDraft {
-    if (!input || typeof input !== 'object') return {};
-    return input as WeeklyDraft;
+    const base: WeeklyDraft = {};
+    if (!input || typeof input !== 'object') return base;
+
+    const obj = input as Record<string, unknown>;
+    for (const day of Object.keys(dayLabels) as DayKey[]) {
+        base[day] = sanitizePeriods(obj[day]);
+    }
+    return base;
 }
 
-function isValidHHMM(s: string) {
-    return /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
-}
-
-function toMinutes(hhmm: string) {
-    const [h, m] = hhmm.split(':').map((n) => Number(n));
-    return h * 60 + m;
-}
-
-export default function EmployeesSchedulePage(): JSX.Element {
+export default function EmployeesSchedulePage() {
     const [employees, setEmployees] = useState<Employee[]>([]);
-    const [employeeId, setEmployeeId] = useState<string>('');
+    const [employeeId, setEmployeeId] = useState('');
 
     const [loadingEmployees, setLoadingEmployees] = useState(true);
     const [loadingSchedule, setLoadingSchedule] = useState(false);
@@ -79,104 +84,122 @@ export default function EmployeesSchedulePage(): JSX.Element {
     const [pageError, setPageError] = useState<string | null>(null);
     const [snack, setSnack] = useState<SnackState>({ open: false, msg: '', severity: 'success' });
 
-    const selectedEmployee = useMemo(() => {
-        const idNum = employeeId ? Number(employeeId) : null;
-        if (!idNum) return null;
-        return employees.find((e) => e.id === idNum) || null;
-    }, [employees, employeeId]);
-
     const busy = loadingEmployees || loadingSchedule || saving;
+    const scheduleReqToken = useRef(0);
 
-    // 1) load employees (DRF paginated) - pobierz WSZYSTKIE strony
+    const selectedEmployee = useMemo(() => {
+        const id = Number(employeeId);
+        if (!id) return null;
+        return employees.find((e) => e.id === id) ?? null;
+    }, [employeeId, employees]);
+
     useEffect(() => {
-        (async () => {
-            setLoadingEmployees(true);
-            setPageError(null);
-            setFormError(null);
-
+        const loadEmployees = async () => {
             try {
+                setPageError(null);
+                setLoadingEmployees(true);
+
                 const all: Employee[] = [];
-                let currentPage = 1;
+                let page = 1;
+                const MAX_PAGES = 50;
 
                 while (true) {
-                    const res = await employeesApi.list({
-                        ordering: 'last_name',
-                        page: currentPage,
-                    });
-                    const list = (res.results ?? []).filter(isEmployee);
-                    all.push(...list);
+                    const data = await employeesApi.list({ page });
+                    const rows = (data?.results || []).filter(isEmployee);
+                    all.push(...rows);
 
-                    if (!res.next) break;
-                    currentPage += 1;
+                    if (!data?.next) break;
+                    page += 1;
+                    if (page > MAX_PAGES) break;
                 }
 
                 setEmployees(all);
-
-                if (all.length > 0) setEmployeeId(String(all[0].id));
-                else setEmployeeId('');
             } catch (e: unknown) {
                 const parsed = parseDrfError(e);
                 setPageError(parsed.message || 'Nie udało się pobrać listy pracowników.');
                 setEmployees([]);
-                setEmployeeId('');
             } finally {
                 setLoadingEmployees(false);
             }
-        })();
+        };
+
+        void loadEmployees();
     }, []);
 
-    // 2) load schedule for selected employee
     useEffect(() => {
-        if (!employeeId) return;
+        const loadSchedule = async () => {
+            const id = Number(employeeId);
 
-        (async () => {
-            setLoadingSchedule(true);
-            setPageError(null);
-            setFormError(null);
+            scheduleReqToken.current += 1;
+            const token = scheduleReqToken.current;
+
+            if (!id) {
+                setWeekly({});
+                setLoadingSchedule(false);
+                return;
+            }
 
             try {
-                const sch = await employeesApi.getSchedule(Number(employeeId));
-                setWeekly(normalizeWeeklyHours(sch.weekly_hours));
+                setFormError(null);
+                setPageError(null);
+                setLoadingSchedule(true);
+
+                const schedule = await employeesApi.getSchedule(id);
+
+                if (token !== scheduleReqToken.current) return;
+
+                setWeekly(normalizeWeeklyHours(schedule?.weekly_hours));
             } catch (e: unknown) {
+                if (token !== scheduleReqToken.current) return;
+
                 const parsed = parseDrfError(e);
-                setWeekly({});
                 setPageError(parsed.message || 'Nie udało się pobrać grafiku pracownika.');
-            } finally {
-                setLoadingSchedule(false);
-            }
-        })();
-    }, [employeeId]);
+                setWeekly({});
+           } finally {
+        if (token === scheduleReqToken.current) {
+            setLoadingSchedule(false);
+        }
+    }
+};
 
-    const setPeriod = (day: DayKey, idx: number, field: 'start' | 'end', value: string) => {
+void loadSchedule();
+}, [employeeId]);
+
+    const handleEmployeeChange = (e: SelectChangeEvent) => {
+        setEmployeeId(e.target.value);
+        setFormError(null);
+        setPageError(null);
+    };
+
+    const ensureDayArray = (day: DayKey): Period[] => {
+        const v = weekly[day];
+        return Array.isArray(v) ? v : [];
+    };
+
+    const handleAddPeriod = (day: DayKey) => {
         setWeekly((prev) => {
             const next: WeeklyDraft = { ...prev };
-            const arr = Array.isArray(next[day]) ? [...(next[day] as Period[])] : [];
-            const row: Period = {
-                ...(arr[idx] ?? { start: '09:00', end: '17:00' }),
-                [field]: value,
-            };
-            arr[idx] = row;
-            next[day] = arr;
+            const arr = ensureDayArray(day);
+            next[day] = [...arr, { start: '09:00', end: '17:00' }];
             return next;
         });
         setFormError(null);
     };
 
-    const addPeriod = (day: DayKey) => {
+    const handleChangePeriod = (day: DayKey, idx: number, field: 'start' | 'end', value: string) => {
         setWeekly((prev) => {
             const next: WeeklyDraft = { ...prev };
-            const arr = Array.isArray(next[day]) ? [...(next[day] as Period[])] : [];
-            arr.push({ start: '09:00', end: '17:00' });
-            next[day] = arr;
+            const arr = ensureDayArray(day);
+            next[day] = arr.map((p, i) => (i === idx ? { ...p, [field]: value } : p));
             return next;
         });
         setFormError(null);
     };
 
-    const removePeriod = (day: DayKey, idx: number) => {
+    const handleRemovePeriod = (day: DayKey, idx: number) => {
         setWeekly((prev) => {
             const next: WeeklyDraft = { ...prev };
-            const arr = Array.isArray(next[day]) ? [...(next[day] as Period[])] : [];
+            const arr = ensureDayArray(day);
             next[day] = arr.filter((_, i) => i !== idx);
             return next;
         });
@@ -187,16 +210,20 @@ export default function EmployeesSchedulePage(): JSX.Element {
         for (const day of Object.keys(dayLabels) as DayKey[]) {
             const periods = weekly[day];
             if (!periods) continue;
-            if (!Array.isArray(periods))
-                return `Nieprawidłowe godziny dla dnia: ${dayLabels[day]}.`;
+            if (!Array.isArray(periods)) return `Nieprawidłowe godziny dla dnia: ${dayLabels[day]}.`;
 
             for (const p of periods) {
-                if (!isValidHHMM(p.start) || !isValidHHMM(p.end)) {
+                if (!isHHMM(p.start) || !isHHMM(p.end)) {
                     return `W ${dayLabels[day]} godziny muszą mieć format HH:MM.`;
                 }
-                if (toMinutes(p.start) >= toMinutes(p.end)) {
+                if (hhmmToMinutes(p.start) >= hhmmToMinutes(p.end)) {
                     return `W ${dayLabels[day]} godzina rozpoczęcia musi być wcześniejsza niż zakończenia.`;
                 }
+            }
+
+            const cleaned = sortPeriods(periods);
+            if (hasOverlaps(cleaned)) {
+                return `W ${dayLabels[day]} przedziały godzin nachodzą na siebie.`;
             }
         }
         return null;
@@ -216,359 +243,167 @@ export default function EmployeesSchedulePage(): JSX.Element {
 
         setSaving(true);
         try {
-            // API oczekuje Record<string, Array<{start,end}>>
-            const payload = (weekly || {}) as Record<string, Array<{ start: string; end: string }>>;
+            const payload: Record<string, Array<{ start: string; end: string }>> = {};
+            for (const day of Object.keys(dayLabels) as DayKey[]) {
+                const periods = weekly[day];
+                if (!periods || !Array.isArray(periods)) continue;
+                payload[day] = sortPeriods(periods).map((p) => ({ start: p.start.trim(), end: p.end.trim() }));
+            }
+
             await employeesApi.updateSchedule(Number(employeeId), payload);
             setSnack({ open: true, msg: 'Grafik zapisany.', severity: 'success' });
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
-
-            // POPRAWKA: Wyciąganie szczegółowego błędu z pola weekly_hours
-            if (parsed.fieldErrors && parsed.fieldErrors.weekly_hours) {
-                const error = parsed.fieldErrors.weekly_hours;
-                // Jeśli błąd jest tablicą, bierzemy pierwszy element, w przeciwnym razie cały string
-                setFormError(Array.isArray(error) ? error[0] : error);
-            } else {
-                setFormError(parsed.message || 'Nie udało się zapisać grafiku.');
-            }
+            setFormError(parsed.message || 'Nie udało się zapisać grafiku.');
+            setSnack({ open: true, msg: parsed.message || 'Błąd zapisu grafiku.', severity: 'error' });
         } finally {
             setSaving(false);
         }
     };
 
-    const dayHasAnyInvalid = (day: DayKey, periods: Period[]) => {
-        return periods.some(
-            (p) =>
-                !isValidHHMM(p.start) ||
-                !isValidHHMM(p.end) ||
-                (isValidHHMM(p.start) &&
-                    isValidHHMM(p.end) &&
-                    toMinutes(p.start) >= toMinutes(p.end)),
-        );
-    };
+    const closeSnack = () => setSnack((s) => ({ ...s, open: false }));
 
     return (
-        <Stack
-            spacing={2}
-            sx={{
-                width: '100%',
-                maxWidth: 1200,
-                mx: 'auto',
-                px: { xs: 1, sm: 2 },
-                py: { xs: 2, sm: 3 },
-            }}
-        >
-            <Box
-                sx={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: { xs: 'flex-start', sm: 'center' },
-                    gap: 2,
-                    flexWrap: 'wrap',
-                }}
-            >
-                <Box>
-                    <Typography variant="h5" fontWeight={900}>
-                        Grafiki pracowników
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        Wybierz pracownika i uzupełnij godziny pracy w tygodniu.
-                    </Typography>
-                </Box>
+        <Box>
+            <Typography variant="h4" sx={{ mb: 2 }}>
+                Grafik pracowników
+            </Typography>
 
-                <Button
-                    variant="contained"
-                    onClick={() => void handleSave()}
-                    disabled={!employeeId || saving || loadingSchedule}
-                >
-                    {saving ? 'Zapisywanie...' : 'Zapisz'}
-                </Button>
-            </Box>
+            {(loadingEmployees || loadingSchedule) && <LinearProgress sx={{ mb: 2 }} />}
 
             {pageError && (
-                <Alert severity="error" onClose={() => setPageError(null)}>
+                <Alert severity="error" sx={{ mb: 2 }}>
                     {pageError}
                 </Alert>
             )}
 
-            <Paper variant="outlined" sx={{ p: 2, position: 'relative' }}>
-                {(loadingEmployees || loadingSchedule || saving) && (
-                    <LinearProgress sx={{ position: 'absolute', left: 0, right: 0, top: 0 }} />
-                )}
-
-                <Stack
-                    spacing={2}
-                    sx={{ pt: loadingEmployees || loadingSchedule || saving ? 1 : 0 }}
-                >
-                    {loadingEmployees ? (
-                        <Stack direction="row" spacing={2} alignItems="center">
-                            <CircularProgress size={22} />
-                            <Typography>Ładowanie pracowników…</Typography>
-                        </Stack>
-                    ) : employees.length === 0 ? (
-                        <Alert severity="info">Brak pracowników do wyświetlenia.</Alert>
-                    ) : (
-                        <FormControl fullWidth size="small" disabled={busy}>
-                            <InputLabel>Pracownik</InputLabel>
+            <Paper sx={{ p: 2, mb: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid xs={12} md={6}>
+                        <FormControl fullWidth disabled={loadingEmployees}>
+                            <InputLabel id="emp-select-label">Pracownik</InputLabel>
                             <Select
-                                value={employeeId}
+                                labelId="emp-select-label"
                                 label="Pracownik"
-                                onChange={(e) => setEmployeeId(String(e.target.value))}
+                                value={employeeId}
+                                onChange={handleEmployeeChange}
                             >
+                                <MenuItem value="">
+                                    <em>Wybierz</em>
+                                </MenuItem>
                                 {employees.map((e) => (
                                     <MenuItem key={e.id} value={String(e.id)}>
-                                        {e.first_name} {e.last_name} ({e.employee_number})
+                                        {e.employee_number} — {e.full_name || `${e.first_name} ${e.last_name}`.trim()}
                                     </MenuItem>
                                 ))}
                             </Select>
                         </FormControl>
-                    )}
-                </Stack>
+                    </Grid>
+
+                    <Grid xs={12} md={6}>
+                        {selectedEmployee ? (
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                <Chip label={`ID: ${selectedEmployee.id}`} />
+                                <Chip label={`Nr: ${selectedEmployee.employee_number}`} />
+                                <Chip
+                                    label={selectedEmployee.full_name || `${selectedEmployee.first_name} ${selectedEmployee.last_name}`.trim()}
+                                />
+                            </Stack>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary">
+                                Wybierz pracownika, aby edytować grafik.
+                            </Typography>
+                        )}
+                    </Grid>
+                </Grid>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={1}>
-                    <Stack
-                        direction={{ xs: 'column', sm: 'row' }}
-                        spacing={1}
-                        justifyContent="space-between"
-                        alignItems={{ sm: 'center' }}
-                    >
-                        <Box>
-                            <Typography variant="h6" fontWeight={800}>
-                                {selectedEmployee
-                                    ? `${selectedEmployee.first_name} ${selectedEmployee.last_name}`
-                                    : 'Grafik tygodniowy'}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                                {selectedEmployee
-                                    ? 'Ustaw przedziały godzinowe dla każdego dnia.'
-                                    : 'Wybierz pracownika, aby zobaczyć grafik.'}
-                            </Typography>
-                        </Box>
+            {employeeId && !loadingSchedule && (
+                <Paper sx={{ p: 2 }}>
+                    <Stack spacing={2}>
+                        {formError && <Alert severity="warning">{formError}</Alert>}
 
-                        {selectedEmployee && (
-                            <Chip
-                                size="small"
-                                variant="outlined"
-                                label={loadingSchedule ? 'Ładowanie grafiku…' : 'Edytuj grafik'}
-                            />
-                        )}
-                    </Stack>
+                        <Divider />
 
-                    <Divider />
-
-                    {formError && (
-                        <Alert severity="error" onClose={() => setFormError(null)}>
-                            {formError}
-                        </Alert>
-                    )}
-
-                    {!employeeId ? (
-                        <Alert severity="info">Wybierz pracownika, aby edytować grafik.</Alert>
-                    ) : loadingSchedule ? (
-                        <Stack direction="row" spacing={2} alignItems="center" sx={{ py: 1 }}>
-                            <CircularProgress size={22} />
-                            <Typography>Ładowanie grafiku…</Typography>
-                        </Stack>
-                    ) : (
-                        <Stack spacing={2}>
+                        <Grid container spacing={2}>
                             {(Object.keys(dayLabels) as DayKey[]).map((day) => {
-                                const periods = (weekly[day] ?? []) as Period[];
-                                const isClosed = periods.length === 0;
-                                const hasInvalid = dayHasAnyInvalid(day, periods);
+                                const periods = ensureDayArray(day);
 
                                 return (
-                                    <Paper
-                                        key={day}
-                                        variant="outlined"
-                                        sx={{
-                                            p: 2,
-                                            borderColor: hasInvalid ? 'error.light' : 'divider',
-                                            bgcolor: hasInvalid ? 'error.50' : 'transparent',
-                                        }}
-                                    >
-                                        <Stack
-                                            direction={{ xs: 'column', sm: 'row' }}
-                                            justifyContent="space-between"
-                                            alignItems={{ sm: 'center' }}
-                                            spacing={1}
-                                        >
-                                            <Stack
-                                                direction="row"
-                                                spacing={1}
-                                                alignItems="center"
-                                                flexWrap="wrap"
-                                            >
-                                                <Typography fontWeight={800}>
-                                                    {dayLabels[day]}
-                                                </Typography>
-                                                {isClosed && <Chip size="small" label="Wolne" />}
-                                                {!isClosed && (
-                                                    <Chip
+                                    <Grid key={day} xs={12} md={6} lg={4}>
+                                        <Paper variant="outlined" sx={{ p: 2 }}>
+                                            <Stack spacing={1}>
+                                                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                                    <Typography fontWeight={600}>{dayLabels[day]}</Typography>
+                                                    <Button
                                                         size="small"
-                                                        variant="outlined"
-                                                        label={`${periods.length} przedz.`}
-                                                    />
-                                                )}
-                                                {hasInvalid && (
-                                                    <Chip
-                                                        size="small"
-                                                        color="error"
-                                                        label="Sprawdź godziny"
-                                                    />
+                                                        startIcon={<AddIcon />}
+                                                        onClick={() => handleAddPeriod(day)}
+                                                        disabled={busy}
+                                                    >
+                                                        Dodaj
+                                                    </Button>
+                                                </Stack>
+
+                                                {periods.length === 0 ? (
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Brak godzin — dzień wolny.
+                                                    </Typography>
+                                                ) : (
+                                                    periods.map((p, idx) => (
+                                                        <Stack key={`${day}-${idx}`} direction="row" spacing={1} alignItems="center">
+                                                            <TextField
+                                                                label="Start"
+                                                                size="small"
+                                                                value={p.start}
+                                                                onChange={(e) => handleChangePeriod(day, idx, 'start', e.target.value)}
+                                                                disabled={busy}
+                                                                sx={{ flex: 1 }}
+                                                            />
+                                                            <TextField
+                                                                label="Koniec"
+                                                                size="small"
+                                                                value={p.end}
+                                                                onChange={(e) => handleChangePeriod(day, idx, 'end', e.target.value)}
+                                                                disabled={busy}
+                                                                sx={{ flex: 1 }}
+                                                            />
+                                                            <IconButton
+                                                                aria-label="Usuń"
+                                                                onClick={() => handleRemovePeriod(day, idx)}
+                                                                disabled={busy}
+                                                            >
+                                                                <DeleteIcon />
+                                                            </IconButton>
+                                                        </Stack>
+                                                    ))
                                                 )}
                                             </Stack>
-
-                                            <Button
-                                                size="small"
-                                                variant="outlined"
-                                                startIcon={<AddIcon />}
-                                                onClick={() => addPeriod(day)}
-                                                disabled={busy}
-                                            >
-                                                Dodaj przedział
-                                            </Button>
-                                        </Stack>
-
-                                        {periods.length === 0 ? (
-                                            <Typography
-                                                variant="body2"
-                                                color="text.secondary"
-                                                sx={{ mt: 1 }}
-                                            >
-                                                Brak godzin — dzień wolny.
-                                            </Typography>
-                                        ) : (
-                                            <Grid container spacing={1} sx={{ mt: 0.5 }}>
-                                                {periods.map((p, idx) => {
-                                                    const badFormat =
-                                                        !isValidHHMM(p.start) ||
-                                                        !isValidHHMM(p.end);
-                                                    const badOrder =
-                                                        isValidHHMM(p.start) &&
-                                                        isValidHHMM(p.end) &&
-                                                        toMinutes(p.start) >= toMinutes(p.end);
-
-                                                    const helper = badFormat
-                                                        ? 'Format HH:MM (np. 09:00)'
-                                                        : badOrder
-                                                          ? 'Start musi być wcześniej niż koniec'
-                                                          : ' ';
-
-                                                    return (
-                                                        <Grid item xs={12} key={`${day}-${idx}`}>
-                                                            <Stack
-                                                                direction={{
-                                                                    xs: 'column',
-                                                                    sm: 'row',
-                                                                }}
-                                                                spacing={1}
-                                                                alignItems={{ sm: 'center' }}
-                                                            >
-                                                                <TextField
-                                                                    label="Start"
-                                                                    type="time"
-                                                                    value={p.start}
-                                                                    onChange={(e) =>
-                                                                        setPeriod(
-                                                                            day,
-                                                                            idx,
-                                                                            'start',
-                                                                            e.target.value,
-                                                                        )
-                                                                    }
-                                                                    size="small"
-                                                                    InputLabelProps={{
-                                                                        shrink: true,
-                                                                    }}
-                                                                    inputProps={{ step: 300 }}
-                                                                    sx={{ width: { sm: 200 } }}
-                                                                    disabled={busy}
-                                                                    error={badFormat || badOrder}
-                                                                    helperText={helper}
-                                                                />
-                                                                <TextField
-                                                                    label="Koniec"
-                                                                    type="time"
-                                                                    value={p.end}
-                                                                    onChange={(e) =>
-                                                                        setPeriod(
-                                                                            day,
-                                                                            idx,
-                                                                            'end',
-                                                                            e.target.value,
-                                                                        )
-                                                                    }
-                                                                    size="small"
-                                                                    InputLabelProps={{
-                                                                        shrink: true,
-                                                                    }}
-                                                                    inputProps={{ step: 300 }}
-                                                                    sx={{ width: { sm: 200 } }}
-                                                                    disabled={busy}
-                                                                    error={badFormat || badOrder}
-                                                                    helperText={helper}
-                                                                />
-
-                                                                <Box
-                                                                    sx={{
-                                                                        display: 'flex',
-                                                                        justifyContent: {
-                                                                            xs: 'flex-end',
-                                                                            sm: 'flex-start',
-                                                                        },
-                                                                    }}
-                                                                >
-                                                                    <IconButton
-                                                                        color="error"
-                                                                        onClick={() =>
-                                                                            removePeriod(day, idx)
-                                                                        }
-                                                                        aria-label="Usuń przedział"
-                                                                        disabled={busy}
-                                                                    >
-                                                                        <DeleteIcon />
-                                                                    </IconButton>
-                                                                </Box>
-                                                            </Stack>
-                                                        </Grid>
-                                                    );
-                                                })}
-                                            </Grid>
-                                        )}
-                                    </Paper>
+                                        </Paper>
+                                    </Grid>
                                 );
                             })}
+                        </Grid>
 
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                                <Button
-                                    variant="contained"
-                                    onClick={() => void handleSave()}
-                                    disabled={!employeeId || saving || loadingSchedule}
-                                >
-                                    {saving ? 'Zapisywanie...' : 'Zapisz grafik'}
-                                </Button>
-                            </Box>
+                        <Divider />
+
+                        <Stack direction="row" spacing={2} alignItems="center">
+                            <Button variant="contained" onClick={handleSave} disabled={busy || !employeeId}>
+                                {saving ? <CircularProgress size={20} /> : 'Zapisz'}
+                            </Button>
+                            <Typography variant="body2" color="text.secondary">
+                                Uwaga: backend waliduje godziny względem godzin otwarcia salonu.
+                            </Typography>
                         </Stack>
-                    )}
-                </Stack>
-            </Paper>
+                    </Stack>
+                </Paper>
+            )}
 
-            <Snackbar
-                open={snack.open}
-                autoHideDuration={3200}
-                onClose={() => setSnack((p) => ({ ...p, open: false }))}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            >
-                <Alert
-                    onClose={() => setSnack((p) => ({ ...p, open: false }))}
-                    severity={snack.severity}
-                    sx={{ width: '100%' }}
-                >
+            <Snackbar open={snack.open} autoHideDuration={4000} onClose={closeSnack}>
+                <Alert severity={snack.severity} onClose={closeSnack} sx={{ width: '100%' }}>
                     {snack.msg}
                 </Alert>
             </Snackbar>
-        </Stack>
+        </Box>
     );
 }

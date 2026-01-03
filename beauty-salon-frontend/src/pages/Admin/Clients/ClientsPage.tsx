@@ -1,14 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Add } from '@mui/icons-material';
-import {
-    Alert,
-    Box,
-    Button,
-    Paper,
-    Snackbar,
-    Stack,
-    Typography,
-} from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import { Alert, Box, Button, IconButton, Paper, Snackbar, Stack, Tooltip, Typography } from '@mui/material';
 
 import { clientsApi } from '@/api/clients';
 import { usersApi } from '@/api/users';
@@ -16,7 +9,14 @@ import type { Client, DRFPaginated } from '@/types';
 import { parseDrfError } from '@/utils/drfErrors';
 
 import type { ClientFormData, SnackbarState } from './types';
-import { firstFromDrf, ORDERING_OPTIONS } from './utils';
+import {
+    buildClientCreatePayload,
+    buildClientUpdatePayload,
+    firstFromDrf,
+    getBestErrorMessage,
+    getResponseData,
+    ORDERING_OPTIONS,
+} from './utils';
 
 import ClientsFiltersPanel from './components/ClientsFiltersPanel';
 import ClientsTable from './components/ClientsTable';
@@ -24,11 +24,6 @@ import ClientFormDialog from './components/ClientFormDialog';
 import DeleteClientDialog from './components/DeleteClientDialog';
 import ClientViewDialog from './components/ClientViewDialog';
 import ResetClientPasswordDialog from './components/ResetClientPasswordDialog';
-
-import {
-    Alert as MuiAlert,
-    Button as MuiButton,
-} from '@mui/material';
 
 const ClientsPage: React.FC = () => {
     const [data, setData] = useState<DRFPaginated<Client> | null>(null);
@@ -136,14 +131,21 @@ const ClientsPage: React.FC = () => {
         }
     }, [page, ordering, search, onlyActive, clientNumber]);
 
-    // request tylko gdy: page lub applied filtry
-    useEffect(() => {
-        void loadClients();
+    // KROK 3: jeden entrypoint do ładowania (start + refresh)
+    const loadAll = useCallback(async () => {
+        await loadClients();
     }, [loadClients]);
 
+    // request tylko gdy: page lub applied filtry
+    useEffect(() => {
+        void loadAll();
+    }, [loadAll]);
+
     const clients = useMemo(() => data?.results ?? [], [data]);
-    const canPrev = Boolean(data?.previous) && !loading;
-    const canNext = Boolean(data?.next) && !loading;
+
+    // KROK 2: paginacja blokowana przez busy (nie tylko loading)
+    const canPrev = Boolean(data?.previous) && !busy;
+    const canNext = Boolean(data?.next) && !busy;
 
     const openCreate = () => {
         setFormError(null);
@@ -182,62 +184,38 @@ const ClientsPage: React.FC = () => {
         try {
             setFormError(null);
 
-            const emailToSend: string | null = values.email.trim() ? values.email.trim() : null;
-            const notesToSend: string = values.internal_notes.trim();
-
             if (!editingClient) {
-                const payload: Parameters<typeof clientsApi.create>[0] = {
-                    first_name: values.first_name.trim(),
-                    last_name: values.last_name.trim(),
-                    phone: values.phone.trim() || undefined,
-                    email: emailToSend,
-                    internal_notes: notesToSend,
-                    password: values.password || '',
-                    is_active: values.is_active,
-                };
-
+                const payload = buildClientCreatePayload(values);
                 await clientsApi.create(payload);
                 setSnack({ open: true, msg: 'Utworzono klienta.', severity: 'success' });
             } else {
-                const payload: Parameters<typeof clientsApi.update>[1] = {
-                    first_name: values.first_name.trim(),
-                    last_name: values.last_name.trim(),
-                    phone: values.phone.trim() || undefined,
-                    email: emailToSend,
-                    internal_notes: notesToSend,
-                    is_active: values.is_active,
-                };
-
+                const payload = buildClientUpdatePayload(values);
                 await clientsApi.update(editingClient.id, payload);
                 setSnack({ open: true, msg: 'Zapisano zmiany.', severity: 'success' });
             }
 
-            await loadClients();
+            await loadAll();
             setFormOpen(false);
             setEditingClient(null);
         } catch (err: unknown) {
-            const { message, fieldErrors } = parseDrfError(err);
+            const { fieldErrors } = parseDrfError(err);
 
-            const d =
-                typeof err === 'object' && err !== null && 'response' in err
-                    ? (err as { response?: { data?: unknown } }).response?.data
-                    : undefined;
+            const d = getResponseData(err);
+const nextFieldErrors: Record<string, string> = { ...(fieldErrors || {}) };
 
-            const nextFieldErrors: Record<string, string> = { ...(fieldErrors || {}) };
+// create: jeśli backend zwrócił non_field_errors dot. password, mapujemy w pole password
+if (!editingClient && !nextFieldErrors.password) {
+    const obj = d && typeof d === 'object' ? (d as Record<string, unknown>) : undefined;
+    const nfe = firstFromDrf(obj?.non_field_errors);
+    if (nfe) nextFieldErrors.password = nfe;
+}
 
-            if (!editingClient && !nextFieldErrors.password) {
-                const nonFieldErrors =
-                    d && typeof d === 'object' && d !== null && 'non_field_errors' in d
-                        ? (d as Record<string, unknown>).non_field_errors
-                        : undefined;
-
-                const nfe = firstFromDrf(nonFieldErrors);
-                if (nfe) nextFieldErrors.password = nfe;
-            }
 
             if (Object.keys(nextFieldErrors).length) setErrors(nextFieldErrors);
 
-            if (message) setFormError(message);
+            const msg = getBestErrorMessage(err);
+
+            if (msg) setFormError(msg);
             else if (Object.keys(nextFieldErrors).length)
                 setFormError('Nie udało się zapisać — popraw zaznaczone pola i spróbuj ponownie.');
             else setFormError('Nie udało się zapisać. Spróbuj ponownie.');
@@ -251,9 +229,10 @@ const ClientsPage: React.FC = () => {
             setPageError(null);
             await clientsApi.delete(clientToDelete.id);
             setSnack({ open: true, msg: 'Usunięto klienta.', severity: 'success' });
-            await loadClients();
+
             setDeleteOpen(false);
             setClientToDelete(null);
+            await loadAll();
         } catch (err: unknown) {
             const parsed = parseDrfError(err);
             setPageError(parsed.message || 'Nie udało się usunąć klienta. Spróbuj ponownie.');
@@ -278,29 +257,27 @@ const ClientsPage: React.FC = () => {
 
         try {
             setResetSaving(true);
+
+            // UWAGA: w Twoim backendzie/typach klient ma user_id (tak było w zipie)
             await usersApi.resetPassword(resetTarget.user_id, {
                 new_password: p1,
                 new_password2: p2,
             });
+
             setSnack({ open: true, msg: 'Zresetowano hasło klienta.', severity: 'success' });
             setResetOpen(false);
-            await loadClients();
+            await loadAll();
         } catch (err: unknown) {
-            const parsed = parseDrfError(err);
+            const d = getResponseData(err);
+const obj = d && typeof d === 'object' ? (d as Record<string, unknown>) : undefined;
 
-            const d =
-                typeof err === 'object' && err !== null && 'response' in err
-                    ? (err as { response?: { data?: unknown } }).response?.data
-                    : undefined;
+setResetErr(
+    getBestErrorMessage(err) ||
+        firstFromDrf(obj?.new_password) ||
+        firstFromDrf(obj?.new_password2) ||
+        'Nie udało się zresetować hasła. Spróbuj ponownie.',
+);
 
-            const obj = d && typeof d === 'object' && d !== null ? (d as Record<string, unknown>) : undefined;
-
-            setResetErr(
-                parsed.message ||
-                    firstFromDrf(obj?.new_password) ||
-                    firstFromDrf(obj?.new_password2) ||
-                    'Nie udało się zresetować hasła. Spróbuj ponownie.',
-            );
         } finally {
             setResetSaving(false);
         }
@@ -335,9 +312,19 @@ const ClientsPage: React.FC = () => {
                     </Typography>
                 </Box>
 
-                <Button variant="contained" startIcon={<Add />} onClick={openCreate} disabled={busy}>
-                    Dodaj klienta
-                </Button>
+                <Stack direction="row" spacing={1} alignItems="center">
+                    <Tooltip title="Odśwież">
+                        <span>
+                            <IconButton onClick={() => void loadAll()} disabled={busy} aria-label="Odśwież listę">
+                                <RefreshIcon />
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+
+                    <Button variant="contained" startIcon={<Add />} onClick={openCreate} disabled={busy}>
+                        Dodaj klienta
+                    </Button>
+                </Stack>
             </Box>
 
             {pageError && (
@@ -445,13 +432,13 @@ const ClientsPage: React.FC = () => {
                 onClose={() => setSnack((p) => ({ ...p, open: false }))}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
             >
-                <MuiAlert
+                <Alert
                     onClose={() => setSnack((p) => ({ ...p, open: false }))}
                     severity={snack.severity}
                     sx={{ width: '100%' }}
                 >
                     {snack.msg}
-                </MuiAlert>
+                </Alert>
             </Snackbar>
         </Stack>
     );

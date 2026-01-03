@@ -1,18 +1,17 @@
 import { createTheme, responsiveFontSizes } from '@mui/material';
 
-// Konfiguracja motywu "Soft Eye-Friendly Pink"
 let theme = createTheme({
     palette: {
         mode: 'light',
-        primary: { main: '#D81B60' }, // Główny akcent salonu
+        primary: { main: '#D81B60' },
         secondary: { main: '#AD1457' },
         background: {
-            default: '#FFF5F7', // Bardzo jasny, cieplejszy róż zamiast białego (tło główne)
-            paper: '#FEFBFD', // Odcień "off-white" dla kart, łagodniejszy dla oczu
+            default: '#FFF5F7',
+            paper: '#FEFBFD',
         },
         divider: 'rgba(216, 27, 96, 0.12)',
         text: {
-            primary: '#2D2D2D', // Ciemny grafit zamiast czerni - mniejszy kontrast, mniejsze zmęczenie
+            primary: '#2D2D2D',
             secondary: '#5F6368',
         },
         success: { main: '#16A34A' },
@@ -49,7 +48,7 @@ let theme = createTheme({
         MuiAppBar: {
             styleOverrides: {
                 root: {
-                    backgroundColor: '#FEFBFD', // Łagodny odcień zamiast bieli
+                    backgroundColor: '#FEFBFD',
                     color: '#D81B60',
                     boxShadow: 'none',
                     borderBottom: '1px solid rgba(216, 27, 96, 0.12)',
@@ -60,7 +59,7 @@ let theme = createTheme({
         MuiDrawer: {
             styleOverrides: {
                 paper: {
-                    backgroundColor: '#FCE4EC', // Pastelowy róż panelu bocznego
+                    backgroundColor: '#FCE4EC',
                     borderRight: '1px solid rgba(216, 27, 96, 0.12)',
                     backgroundImage: 'none',
                 },
@@ -91,7 +90,7 @@ let theme = createTheme({
                 root: {
                     borderRadius: 12,
                     boxShadow: 'none',
-                    backgroundColor: '#FFF9FA', // Bardzo miękki róż tła karty
+                    backgroundColor: '#FFF9FA',
                     border: '1px solid rgba(216, 27, 96, 0.15)',
                     transition: 'box-shadow 120ms ease, border-color 120ms ease',
                     '&:hover': {

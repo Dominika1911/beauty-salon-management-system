@@ -1,6 +1,9 @@
 import type { GridSortModel } from '@mui/x-data-grid';
 import type { Employee } from '@/types';
 import type { EmployeeListItem } from '@/api/employees';
+import { parseDrfError } from '@/utils/drfErrors';
+
+import type { EmployeeFormState, FieldErrors } from './types';
 
 export const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
     { value: '-created_at', label: 'Najnowsi' },
@@ -13,12 +16,12 @@ export const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
     { value: '-id', label: 'ID (malejąco)' },
 ];
 
-/**  type-guard: ADMIN ma pełny EmployeeSerializer */
+/** type-guard: ADMIN ma pełny EmployeeSerializer */
 export function isEmployee(row: EmployeeListItem): row is Employee {
     return (row as Employee).employee_number !== undefined;
 }
 
-export function formatPLN(value: string | number) {
+export function formatPLN(value: string | number): string {
     const n = typeof value === 'string' ? Number(value) : value;
     if (Number.isNaN(n)) return '0,00 zł';
     return new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(n);
@@ -91,4 +94,76 @@ export function mapEmployeeCreateMessage(msg: string): string {
     }
 
     return msg;
+}
+
+/** Jawna walidacja formularza (UI blokuje wysyłkę). */
+export function validateEmployeeForm(
+    form: EmployeeFormState,
+    isEdit: boolean,
+): { ok: true } | { ok: false; formError: string; fieldErrors?: FieldErrors } {
+    const fieldErrors: FieldErrors = {};
+
+    if (!form.first_name.trim()) fieldErrors.first_name = 'Wymagane.';
+    if (!form.last_name.trim()) fieldErrors.last_name = 'Wymagane.';
+
+    if (!isEdit) {
+        if (!form.email.trim()) fieldErrors.email = 'Wymagane.';
+        if (!form.password.trim()) fieldErrors.password = 'Wymagane.';
+        if (form.password.trim() && form.password.trim().length < 8) {
+            fieldErrors.password = 'Minimum 8 znaków.';
+        }
+    }
+
+    if (Object.keys(fieldErrors).length) {
+        return { ok: false, formError: 'Uzupełnij wymagane pola.', fieldErrors };
+    }
+
+    return { ok: true };
+}
+
+// ------ payload types (zgodne z api/employees.ts) ------
+export type EmployeeCreatePayload = {
+    first_name: string;
+    last_name: string;
+    phone?: string;
+    skill_ids?: number[];
+    email: string;
+    password: string;
+    is_active?: boolean;
+};
+
+export type EmployeeUpdatePayload = Partial<EmployeeCreatePayload>;
+
+/**
+ * Overloady są kluczowe: TS wtedy wie, co zwraca funkcja przy true/false.
+ */
+export function buildEmployeePayload(form: EmployeeFormState, isEdit: false): EmployeeCreatePayload;
+export function buildEmployeePayload(form: EmployeeFormState, isEdit: true): EmployeeUpdatePayload;
+export function buildEmployeePayload(
+    form: EmployeeFormState,
+    isEdit: boolean,
+): EmployeeCreatePayload | EmployeeUpdatePayload {
+    const base: EmployeeUpdatePayload = {
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone: form.phone.trim() || undefined,
+        is_active: form.is_active,
+        skill_ids: form.skill_ids,
+    };
+
+    if (!isEdit) {
+        return {
+            ...(base as EmployeeUpdatePayload),
+            email: form.email.trim(),
+            password: form.password,
+        };
+    }
+
+    return base;
+}
+
+/** Jedno miejsce na „najlepszy” komunikat błędu z DRF. */
+export function getBestErrorMessage(e: unknown): string | undefined {
+    const parsed = parseDrfError(e);
+    return parsed.message || extractDrfMessage(getResponseData(e));
 }

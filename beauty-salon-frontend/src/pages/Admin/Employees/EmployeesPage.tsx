@@ -3,8 +3,6 @@ import {
     Alert,
     Box,
     Button,
-    ButtonGroup,
-    Chip,
     IconButton,
     Paper,
     Snackbar,
@@ -14,16 +12,9 @@ import {
     useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import {
-    type GridColDef,
-    type GridColumnVisibilityModel,
-    type GridSortModel,
-} from '@mui/x-data-grid';
+import { type GridColumnVisibilityModel, type GridSortModel } from '@mui/x-data-grid';
 import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import KeyIcon from '@mui/icons-material/Key';
 
 import type { DRFPaginated, Employee, Service } from '@/types';
 import { employeesApi } from '@/api/employees';
@@ -33,6 +24,7 @@ import { parseDrfError, pickFieldErrors } from '@/utils/drfErrors';
 
 import EmployeesFiltersPanel from './components/EmployeesFiltersPanel';
 import EmployeesTable from './components/EmployeesTable';
+import { getEmployeesColumns } from './components/employeesColumns';
 import EmployeeFormDialog from './components/EmployeeFormDialog';
 import ResetEmployeePasswordDialog from './components/ResetEmployeePasswordDialog';
 import ConfirmEmployeeDeleteDialog from './components/ConfirmEmployeeDeleteDialog';
@@ -46,23 +38,29 @@ import {
 } from './types';
 import {
     ORDERING_OPTIONS,
-    extractDrfMessage,
+    buildEmployeePayload,
     formatPLN,
+    getBestErrorMessage,
     getResponseData,
     isEmployee,
     mapEmployeeCreateMessage,
     sortModelToOrdering,
+    validateEmployeeForm,
 } from './utils';
 
-export default function EmployeesPage(): JSX.Element {
+export default function EmployeesPage(): React.ReactNode {
     const theme = useTheme();
     const isDownMd = useMediaQuery(theme.breakpoints.down('md'));
     const isDownSm = useMediaQuery(theme.breakpoints.down('sm'));
 
     const [employeesData, setEmployeesData] = useState<DRFPaginated<Employee> | null>(null);
     const [services, setServices] = useState<Service[]>([]);
-    const [loading, setLoading] = useState(true);
 
+    // --- SERVICES LOAD FLAGS (KROK 5) ---
+    const [servicesLoaded, setServicesLoaded] = useState(false);
+    const [servicesLoadFailed, setServicesLoadFailed] = useState(false);
+
+    const [loading, setLoading] = useState(true);
     const [publicDataWarning, setPublicDataWarning] = useState(false);
 
     // ---- Filtry: draft (bez requestów) ----
@@ -76,9 +74,7 @@ export default function EmployeesPage(): JSX.Element {
     const [serviceIdFilter, setServiceIdFilter] = useState<number | ''>('');
 
     const [page, setPage] = useState(1);
-    const [sortModel, setSortModel] = useState<GridSortModel>([
-        { field: 'created_at', sort: 'desc' },
-    ]);
+    const [sortModel, setSortModel] = useState<GridSortModel>([{ field: 'created_at', sort: 'desc' }]);
 
     const [pageError, setPageError] = useState<string | null>(null);
 
@@ -123,24 +119,56 @@ export default function EmployeesPage(): JSX.Element {
         draftIsActiveFilter !== isActiveFilter ||
         draftServiceIdFilter !== serviceIdFilter;
 
+    // ---- SERVICES (defensywnie) ----
     const loadAllServices = useCallback(async () => {
+        setServicesLoaded(false);
+        setServicesLoadFailed(false);
+
         const all: Service[] = [];
+        const MAX_PAGES = 50;
         let currentPage = 1;
 
-        while (true) {
-            const res = await servicesApi.list({
-                is_active: true,
-                page: currentPage,
-                ordering: 'name',
-            });
-            all.push(...res.results);
-            if (!res.next) break;
-            currentPage += 1;
-        }
+        try {
+            for (let i = 0; i < MAX_PAGES; i += 1) {
+                const res = await servicesApi.list({
+                    is_active: true,
+                    page: currentPage,
+                    ordering: 'name',
+                });
 
-        setServices(all);
+                all.push(...res.results);
+
+                if (!res.next) {
+                    setServices(all);
+                    setServicesLoaded(true);
+                    return;
+                }
+
+                currentPage += 1;
+            }
+
+            // limit paginacji: lepiej pokazać niepełne dane niż wieszać UI
+            setServices(all);
+            setServicesLoaded(true);
+            setServicesLoadFailed(true);
+            setSnack({
+                open: true,
+                msg: 'Nie udało się wczytać pełnej listy usług (limit paginacji). Filtry mogą być niepełne.',
+                severity: 'info',
+            });
+        } catch (e: unknown) {
+            setServices([]);
+            setServicesLoaded(true);
+            setServicesLoadFailed(true);
+            setSnack({
+                open: true,
+                msg: getBestErrorMessage(e) || 'Nie udało się wczytać listy usług.',
+                severity: 'info',
+            });
+        }
     }, []);
 
+    // ---- EMPLOYEES ----
     const loadEmployees = useCallback(async () => {
         setLoading(true);
         setPageError(null);
@@ -162,9 +190,7 @@ export default function EmployeesPage(): JSX.Element {
             setPublicDataWarning(hadPublic);
 
             if (hadPublic) {
-                setPageError(
-                    'Część danych pracowników jest ukryta. Sprawdź, czy jesteś zalogowany jako ADMIN.',
-                );
+                setPageError('Część danych pracowników jest ukryta. Sprawdź, czy jesteś zalogowany jako ADMIN.');
             }
 
             setEmployeesData({
@@ -184,29 +210,22 @@ export default function EmployeesPage(): JSX.Element {
         }
     }, [page, sortModel, search, isActiveFilter, serviceIdFilter]);
 
+    // ---- JEDEN ENTRYPOINT: start + refresh ----
     const loadAll = useCallback(async () => {
-        setLoading(true);
         setPageError(null);
-        try {
-            await Promise.all([loadAllServices(), loadEmployees()]);
-        } finally {
-            setLoading(false);
-        }
+        await Promise.all([loadAllServices(), loadEmployees()]);
     }, [loadAllServices, loadEmployees]);
 
-    // Na starcie: ładujemy usługi raz
     useEffect(() => {
-        void loadAllServices();
-    }, [loadAllServices]);
-
-    // Lista pracowników: tylko gdy zmieni się page/sort/applied filtry
-    useEffect(() => {
-        void loadEmployees();
-    }, [loadEmployees]);
+        void loadAll();
+    }, [loadAll]);
 
     const rows = useMemo(() => employeesData?.results ?? [], [employeesData]);
     const canPrev = Boolean(employeesData?.previous) && !loading;
     const canNext = Boolean(employeesData?.next) && !loading;
+
+    // --- UI gating (KROK 5) ---
+    const canOpenCreate = servicesLoaded && !servicesLoadFailed;
 
     const openCreate = () => {
         setIsEdit(false);
@@ -276,53 +295,36 @@ export default function EmployeesPage(): JSX.Element {
         setFormFieldErrors({});
         setActionLoading(true);
 
+        const v = validateEmployeeForm(form, isEdit);
+        if (!v.ok) {
+            setFormError(v.formError);
+            setFormFieldErrors(v.fieldErrors || {});
+            setActionLoading(false);
+            return;
+        }
+
         try {
-            if (!form.first_name.trim() || !form.last_name.trim()) {
-                setFormError('Uzupełnij imię i nazwisko.');
-                return;
-            }
-
             if (!isEdit) {
-                if (!form.email.trim() || !form.password.trim()) {
-                    setFormError('Email i hasło są wymagane przy tworzeniu pracownika.');
-                    return;
-                }
-                if (form.password.trim().length < 8) {
-                    setFormError('Hasło musi mieć minimum 8 znaków.');
-                    return;
-                }
-            }
-
-            const basePayload = {
-                first_name: form.first_name.trim(),
-                last_name: form.last_name.trim(),
-                phone: form.phone.trim() || undefined,
-                is_active: form.is_active,
-                skill_ids: form.skill_ids,
-            };
-
-            if (!isEdit) {
-                await employeesApi.create({
-                    ...basePayload,
-                    email: form.email.trim(),
-                    password: form.password,
-                });
+                const payload = buildEmployeePayload(form, false);
+                await employeesApi.create(payload);
                 setSnack({ open: true, msg: 'Utworzono pracownika.', severity: 'success' });
             } else if (form.id) {
-                await employeesApi.update(form.id, basePayload);
+                const payload = buildEmployeePayload(form, true);
+                await employeesApi.update(form.id, payload);
                 setSnack({ open: true, msg: 'Zapisano zmiany.', severity: 'success' });
+            } else {
+                setFormError('Nieprawidłowe dane formularza (brak ID).');
+                return;
             }
 
             closeDialog();
             await loadEmployees();
         } catch (e: unknown) {
-            const { message, fieldErrors } = parseDrfError(e);
-            const nextFieldErrors = pickFieldErrors(fieldErrors, emptyForm);
+            const parsed = parseDrfError(e);
+            const nextFieldErrors = pickFieldErrors(parsed.fieldErrors, emptyForm);
             setFormFieldErrors(nextFieldErrors);
 
-            const rawData = getResponseData(e);
-            const fallbackMsg = extractDrfMessage(rawData);
-            const msg = message || fallbackMsg;
+            const msg = getBestErrorMessage(e);
 
             if (msg) {
                 setFormError(mapEmployeeCreateMessage(msg));
@@ -349,8 +351,7 @@ export default function EmployeesPage(): JSX.Element {
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
             setPageError(
-                parsed.message ||
-                    'Nie udało się usunąć pracownika. Sprawdź powiązania i spróbuj ponownie.',
+                parsed.message || 'Nie udało się usunąć pracownika. Sprawdź powiązania i spróbuj ponownie.',
             );
         } finally {
             setActionLoading(false);
@@ -378,190 +379,54 @@ export default function EmployeesPage(): JSX.Element {
                 new_password2: resetPass2,
             });
 
-            setSnack({ open: true, msg: 'Zresetowano hasło pracownika.', severity: 'success' });
+            setSnack({ open: true, msg: 'Zresetowano hasło.', severity: 'success' });
             closeResetDialog();
-            await loadEmployees();
         } catch (e: unknown) {
-            const parsed = parseDrfError(e);
-
             const data = getResponseData(e);
             const dataObj =
-                typeof data === 'object' && data !== null
-                    ? (data as Record<string, unknown>)
-                    : undefined;
+                typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : undefined;
 
             const np = dataObj?.new_password;
             const np2 = dataObj?.new_password2;
 
-            const msg =
-                parsed.message ||
-                (Array.isArray(np) && np.length ? String(np[0]) : undefined) ||
-                (Array.isArray(np2) && np2.length ? String(np2[0]) : undefined) ||
-                'Nie udało się zresetować hasła. Spróbuj ponownie.';
+            const npMsg =
+                (Array.isArray(np) && np.length && typeof np[0] === 'string' ? String(np[0]) : undefined) ||
+                (typeof np === 'string' ? np : undefined) ||
+                (Array.isArray(np2) && np2.length && typeof np2[0] === 'string' ? String(np2[0]) : undefined) ||
+                (typeof np2 === 'string' ? np2 : undefined);
 
-            setResetError(String(msg));
+            const msg = npMsg || getBestErrorMessage(e) || 'Nie udało się zresetować hasła. Spróbuj ponownie.';
+
+            setResetError(msg);
         } finally {
             setResetLoading(false);
         }
     };
 
+    // Busy = blokuje globalne akcje
     const busy = loading || resetLoading || actionLoading;
+
+    // Disabled actions in table if services are missing (żeby edycja nie odpalała dialogu bez usług)
+    const actionsDisabled = busy || (servicesLoaded && servicesLoadFailed);
 
     const emptyInfo = useMemo(() => {
         if (loading) return null;
         if (rows.length) return null;
-        if (hasActiveFiltersApplied)
-            return 'Brak wyników dla podanych filtrów. Zmień filtry i kliknij „Zastosuj”.';
+        if (hasActiveFiltersApplied) return 'Brak wyników dla podanych filtrów. Zmień filtry i kliknij „Zastosuj”.';
         return 'Brak pracowników. Dodaj pierwszego pracownika, aby zarządzać grafikiem i wizytami.';
     }, [loading, rows.length, hasActiveFiltersApplied]);
 
-    const columns: GridColDef<Employee>[] = [
-        {
-            field: 'employee_number',
-            headerName: 'Nr',
-            minWidth: 90,
-            flex: 0.45,
-            valueGetter: (_v, row) => row.employee_number || '—',
-            sortable: true,
-        },
-        {
-            field: 'full_name',
-            headerName: 'Pracownik',
-            minWidth: 170,
-            flex: 1.1,
-            sortable: false,
-            renderCell: (params) => (
-                <Stack spacing={0.25} sx={{ py: 0.5, minWidth: 0 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
-                        {`${params.row.first_name ?? ''} ${params.row.last_name ?? ''}`.trim()}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                        {params.row.phone || '—'}
-                    </Typography>
-                </Stack>
-            ),
-        },
-        {
-            field: 'contact',
-            headerName: 'Kontakt',
-            minWidth: 170,
-            flex: 1.05,
-            sortable: false,
-            valueGetter: (_v, row) => `${row.user_username || ''} ${row.user_email || ''}`.trim(),
-            renderCell: (params) => (
-                <Stack spacing={0.25} sx={{ py: 0.5, minWidth: 0 }}>
-                    <Typography variant="body2" noWrap>
-                        {params.row.user_username || '—'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                        {params.row.user_email || '—'}
-                    </Typography>
-                </Stack>
-            ),
-        },
-        {
-            field: 'is_active',
-            headerName: 'Status',
-            minWidth: 110,
-            flex: 0.6,
-            sortable: false,
-            renderCell: (params) =>
-                params.row.is_active ? (
-                    <Chip label="Aktywny" color="success" size="small" />
-                ) : (
-                    <Chip label="Nieaktywny" size="small" />
-                ),
-        },
-        {
-            field: 'appointments_count',
-            headerName: 'Wizyty',
-            minWidth: 80,
-            flex: 0.5,
-            valueGetter: (_v, row) => row.appointments_count ?? 0,
-            sortable: false,
-        },
-        {
-            field: 'completed_appointments_count',
-            headerName: 'Zakończone',
-            minWidth: 105,
-            flex: 0.7,
-            valueGetter: (_v, row) => row.completed_appointments_count ?? 0,
-            sortable: false,
-        },
-        {
-            field: 'revenue_completed_total',
-            headerName: 'Przychód',
-            minWidth: 105,
-            flex: 0.7,
-            valueGetter: (_v, row) => formatPLN(row.revenue_completed_total ?? '0'),
-            sortable: false,
-        },
-        {
-            field: 'skills',
-            headerName: 'Usługi',
-            minWidth: 150,
-            flex: 0.95,
-            sortable: false,
-            renderCell: (params) => {
-                const list = params.row.skills || [];
-                if (!list.length) return '—';
-                return (
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', py: 0.5 }}>
-                        {list.slice(0, 2).map((s) => (
-                            <Chip key={s.id} label={s.name} size="small" />
-                        ))}
-                        {list.length > 2 && (
-                            <Chip label={`+${list.length - 2}`} size="small" variant="outlined" />
-                        )}
-                    </Box>
-                );
-            },
-        },
-        {
-            field: 'actions',
-            headerName: 'Akcje',
-            minWidth: 280,
-            flex: 1.05,
-            sortable: false,
-            filterable: false,
-            align: 'right',
-            headerAlign: 'right',
-            renderCell: (params) => (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-                    <ButtonGroup
-                        variant="text"
-                        size="small"
-                        aria-label="Akcje pracownika"
-                        disabled={busy}
-                        sx={{
-                            '& .MuiButton-root': { whiteSpace: 'nowrap', px: 1, minWidth: 'auto' },
-                        }}
-                    >
-                        <Button
-                            onClick={() => openResetDialog(params.row)}
-                            startIcon={<KeyIcon fontSize="small" />}
-                        >
-                            Hasło
-                        </Button>
-                        <Button
-                            onClick={() => openEdit(params.row)}
-                            startIcon={<EditIcon fontSize="small" />}
-                            color="primary"
-                        >
-                            Edytuj
-                        </Button>
-                        <Button
-                            onClick={() => setConfirmDelete(params.row)}
-                            startIcon={<DeleteIcon fontSize="small" />}
-                            color="error"
-                        >
-                            Usuń
-                        </Button>
-                    </ButtonGroup>
-                </Box>
-            ),
-        },
-    ];
+    const columns = useMemo(
+        () =>
+            getEmployeesColumns({
+                busy: actionsDisabled,
+                onResetPassword: openResetDialog,
+                onEdit: openEdit,
+                onDelete: (e) => setConfirmDelete(e),
+                formatPLN,
+            }),
+        [actionsDisabled, openResetDialog, openEdit],
+    );
 
     const columnVisibilityModel = useMemo<GridColumnVisibilityModel>(() => {
         if (isDownSm)
@@ -606,7 +471,12 @@ export default function EmployeesPage(): JSX.Element {
                         </span>
                     </Tooltip>
 
-                    <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} disabled={busy}>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={openCreate}
+                        disabled={busy || !canOpenCreate}
+                    >
                         Dodaj pracownika
                     </Button>
                 </Stack>
@@ -615,6 +485,13 @@ export default function EmployeesPage(): JSX.Element {
             {pageError && (
                 <Alert severity={publicDataWarning ? 'warning' : 'error'} onClose={() => setPageError(null)}>
                     {pageError}
+                </Alert>
+            )}
+
+            {/* Jawna informacja dlaczego blokujemy create/edit */}
+            {servicesLoaded && servicesLoadFailed && (
+                <Alert severity="info">
+                    Nie udało się wczytać listy usług — dodawanie/edycja pracowników jest zablokowana. Odśwież stronę.
                 </Alert>
             )}
 
@@ -668,7 +545,7 @@ export default function EmployeesPage(): JSX.Element {
             <EmployeeFormDialog
                 open={dialogOpen}
                 onClose={closeDialog}
-                busy={busy}
+                busy={busy || (servicesLoaded && servicesLoadFailed)}
                 isEdit={isEdit}
                 form={form}
                 setForm={setForm}
