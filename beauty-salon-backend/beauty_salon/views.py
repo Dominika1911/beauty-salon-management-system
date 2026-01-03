@@ -1,68 +1,65 @@
 from __future__ import annotations
+
 import io
 import os
-from datetime import datetime, timedelta, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal
-from django.http import Http404
+
+# Django imports
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, Sum, Q
-from django.db.models.functions import Coalesce, TruncDate, TruncMonth
-from django.http import HttpResponse
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import Coalesce, ExtractWeekDay
+from django.http import Http404, HttpResponse
 from django.utils import timezone
 
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import status, viewsets, permissions, serializers, filters
+from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, APIException, ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-# PDF (ReportLab)
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.fonts import addMapping
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.fonts import addMapping
 
 from .models import (
-    Service,
-    EmployeeProfile,
-    ClientProfile,
-    EmployeeSchedule,
-    TimeOff,
     Appointment,
-    SystemSettings,
+    ClientProfile,
+    EmployeeProfile,
+    EmployeeSchedule,
+    Service,
     SystemLog,
+    SystemSettings,
+    TimeOff,
 )
+from .permissions import CanCancelAppointment, IsAdmin, IsAdminOrEmployee, IsEmployee
 from .serializers import (
-    UserListSerializer,
-    UserDetailSerializer,
-    UserCreateSerializer,
-    UserUpdateSerializer,
-    ServiceSerializer,
+    AppointmentSerializer,
+    BookingCreateSerializer,
+    ClientSerializer,
+    EmployeeScheduleSerializer,
     EmployeeSerializer,
     EmployeePublicSerializer,
-    ClientSerializer,
-    AppointmentSerializer,
-    SystemSettingsSerializer,
-    SystemLogSerializer,
-    BookingCreateSerializer,
-    EmployeeScheduleSerializer,
-    TimeOffSerializer,
-    PasswordChangeSerializer,
     PasswordResetSerializer,
+    ServiceSerializer,
+    SystemLogSerializer,
+    SystemSettingsSerializer,
+    TimeOffSerializer,
+    UserCreateSerializer,
+    UserDetailSerializer,
+    UserListSerializer,
+    UserUpdateSerializer,
 )
-from .permissions import IsAdmin, IsAdminOrEmployee, IsEmployee, CanCancelAppointment
 
 User = get_user_model()
 
-# =============================================================================
-# PDF FONT (DejaVuSans) - polskie znaki
-# =============================================================================
 FONT_PATH = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
 PDF_FONT_NAME = "DejaVuSans"
 
@@ -80,12 +77,6 @@ def clean_text(s):
     if s is None:
         return ""
     return str(s).replace("\u00a0", " ").replace("\u200b", "")
-
-
-# =============================================================================
-# USERS
-# =============================================================================
-
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -118,10 +109,6 @@ class UserViewSet(viewsets.ModelViewSet):
             UserDetailSerializer(request.user, context={"request": request}).data
         )
 
-    # =========================================================================
-    # PASSWORD: ADMIN RESET USER PASSWORD
-    # POST /api/users/{id}/reset-password/
-    # =========================================================================
     @action(
         detail=True,
         methods=["post"],
@@ -151,11 +138,6 @@ class UserViewSet(viewsets.ModelViewSet):
         )
 
 
-# =============================================================================
-# SERVICES
-# =============================================================================
-
-
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.all()
     serializer_class = ServiceSerializer
@@ -171,8 +153,6 @@ class ServiceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        # Jeśli intencją jest publiczny odczyt usług aktywnych, to permissiony muszą to dopuścić.
-        # W obecnym projekcie read wymaga auth, więc zostawiamy filtr tylko dla CLIENT.
         if (
             user
             and user.is_authenticated
@@ -229,11 +209,6 @@ class ServiceViewSet(viewsets.ModelViewSet):
         return Response({"detail": "Usługa została włączona."})
 
 
-# =============================================================================
-# EMPLOYEES
-# =============================================================================
-
-
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = EmployeeProfile.objects.all().prefetch_related("skills").order_by("id")
     serializer_class = EmployeeSerializer
@@ -283,7 +258,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated or not hasattr(user, "role"):
             return qs.none()
 
-        # CLIENT → tylko aktywni (+ opcjonalnie filtr po usłudze: ?service_id=)
         if user.role == "CLIENT":
             qs = qs.filter(is_active=True)
 
@@ -300,11 +274,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
             return qs
 
-        # EMPLOYEE → tylko swój profil
         if user.role == "EMPLOYEE":
             return qs.filter(user=user, is_active=True)
 
-        # ADMIN → wszystko
         return qs
 
     def get_permissions(self):
@@ -323,7 +295,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         if user.role == "EMPLOYEE":
             employee_profile = getattr(user, 'employee_profile', None)
-            # Nadpisujemy przesłane employee_id profilem zalogowanego pracownika
             obj = serializer.save(employee=employee_profile)
         else:
             obj = serializer.save()
@@ -369,9 +340,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         return Response(ser.data)
 
-# =============================================================================
-# TIME OFF (SPÓJNY ENDPOINT)
-# =============================================================================
+
 class TimeOffViewSet(viewsets.ModelViewSet):
     serializer_class = TimeOffSerializer
     filter_backends = [
@@ -384,25 +353,20 @@ class TimeOffViewSet(viewsets.ModelViewSet):
     search_fields = ["reason", "employee__first_name", "employee__last_name"]
 
     def get_permissions(self):
-        # ADMIN: może tylko decydować
         if self.action in ["approve", "reject"]:
             return [IsAdmin()]
 
-        # EMPLOYEE: tworzy wniosek
         if self.action == "create":
             return [IsEmployee()]
 
-        # EMPLOYEE: może anulować (w metodzie cancel sprawdzamy właściciela)
         if self.action == "cancel":
             return [IsEmployee()]
 
-        # blokujemy adminowi edycję/usuwanie (bo ma tylko przeglądać + decydować)
         if self.action in ["update", "partial_update", "destroy"]:
             raise PermissionDenied(
                 "Edycja i usuwanie wniosków urlopowych jest zablokowane."
             )
 
-        # list/retrieve: admin + employee
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
@@ -486,8 +450,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 {"detail": "Można akceptować tylko wnioski PENDING."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        # 🔥 KRYTYCZNA WALIDACJA: Sprawdź czy są wizyty w okresie urlopu
         conflicting_appointments = Appointment.objects.filter(
             employee=obj.employee,
             start__date__gte=obj.date_from,
@@ -508,8 +470,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj.status = TimeOff.Status.APPROVED
         obj.decided_by = request.user
         obj.decided_at = timezone.now()
-
-        # ✅ krytyczne: walidacja overlapów i reguł modelu
         obj.full_clean()
 
         obj.save(update_fields=["status", "decided_by", "decided_at"])
@@ -545,9 +505,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="cancel")
     def cancel(self, request, pk=None):
-        """
-        EMPLOYEE: może anulować tylko własny wniosek w statusie PENDING.
-        """
+
         obj: TimeOff = self.get_object()
 
         if obj.status != TimeOff.Status.PENDING:
@@ -579,12 +537,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         )
 
         return Response(TimeOffSerializer(obj, context={"request": request}).data)
-
-
-# =============================================================================
-# CLIENTS
-# =============================================================================
-
 
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = ClientProfile.objects.all().order_by("id")
@@ -638,11 +590,6 @@ class ClientViewSet(viewsets.ModelViewSet):
         obj = self.get_queryset().filter(pk=profile.pk).first()
         return Response(ClientSerializer(obj, context={"request": request}).data)
 
-
-# =============================================================================
-# APPOINTMENTS
-# =============================================================================
-
 class AppointmentViewSet(viewsets.ModelViewSet):
     queryset = Appointment.objects.all()
     serializer_class = AppointmentSerializer
@@ -651,7 +598,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["start", "status", "created_at"]
 
     def get_permissions(self):
-        # Akcja aktualizacji notatek
         if self.action == "notes":
             return [IsAdminOrEmployee()]
 
@@ -670,7 +616,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        # select_related tylko tutaj (list/retrieve), nie na klasie
         qs = super().get_queryset().select_related("client", "employee", "service")
         user = self.request.user
 
@@ -693,11 +638,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return qs
 
     def _lock_appt(self, pk):
-        """
-        Lock w DB bez OUTER JOINów (Postgres nie lubi FOR UPDATE + LEFT JOIN).
-        A jednocześnie bierzemy z get_queryset() -> brak IDOR (użytkownik widzi tylko swoje).
-        Jeśli obiekt nie istnieje w tym queryset (np. cudza wizyta) -> 404 zamiast 500.
-        """
         base_qs = self.get_queryset().select_related(None)  # usuwa joiny z get_queryset()
 
         try:
@@ -742,10 +682,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["patch"], url_path="notes")
     @transaction.atomic
     def notes(self, request, pk=None):
-        """
-        Aktualizacja notatek (dozwolona również dla wizyt z przeszłości).
-        Nie dotyka żadnych innych pól.
-        """
         appt = self._lock_appt(pk)
         self.check_object_permissions(request, appt)
 
@@ -760,7 +696,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             )
 
         appt.internal_notes = notes
-        # Uwzględniłem updated_at w update_fields, o ile Twoje modele go używają
         appt.save(update_fields=["internal_notes", "updated_at"])
 
         return Response(
@@ -907,10 +842,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
 
         return Response(AppointmentSerializer(appt, context={"request": request}).data)
-# =============================================================================
-# AUDIT LOG
-# =============================================================================
-
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SystemLog.objects.select_related("performed_by", "target_user").all()
@@ -921,17 +852,10 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["timestamp"]
 
 
-# =============================================================================
-# SYSTEM SETTINGS
-# =============================================================================
-
-
 class SystemSettingsView(APIView):
     def get_permissions(self):
-        # Pozwól pracownikom i adminom pobierać godziny otwarcia (GET)
         if self.request.method == 'GET':
             return [IsAdminOrEmployee()]
-        # Tylko admin może zmieniać ustawienia (PATCH)
         return [IsAdmin()]
 
     def get(self, request):
@@ -951,12 +875,6 @@ class SystemSettingsView(APIView):
             action=SystemLog.Action.SETTINGS_UPDATED, performed_by=request.user
         )
         return Response(ser.data)
-
-
-# =============================================================================
-# Availability + Booking
-# =============================================================================
-
 
 def _parse_date(date_str: str):
     return datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -1121,7 +1039,7 @@ class CheckAvailabilityView(APIView):
         if not all([employee_id, service_id, start_str]):
             return Response(
                 {
-                    "detail": "Wymagane pola: employee_id, service_id, start (ISO format)"
+                    "detail": "Wymagane pola: employee_id, service_id, start"
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -1195,12 +1113,6 @@ class CheckAvailabilityView(APIView):
                 "duration_minutes": service.duration_minutes + buffer_minutes,
             }
         )
-
-
-# =============================================================================
-# Dashboard
-# =============================================================================
-
 
 class DashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -1368,14 +1280,7 @@ class DashboardView(APIView):
             }
         )
 
-
-# -----------------------------------------------
-# Statystyki:
-# -----------------------------------------------
-
-
 class StatisticsView(APIView):
-    """Statystyki salonu - wydzielone z dashboardu"""
 
     permission_classes = [IsAdmin]
 
@@ -1385,13 +1290,8 @@ class StatisticsView(APIView):
         thirty_days_ago = timezone.now() - timedelta(days=30)
         now = timezone.now()
 
-        # ============================================================
-        # WIZYTY (APPOINTMENTS)
-        # ============================================================
-
         total_appointments = Appointment.objects.count()
 
-        # Ostatnie 30 dni
         recent_appointments = Appointment.objects.filter(start__gte=thirty_days_ago)
 
         appointments_last_30d = recent_appointments.count()
@@ -1405,15 +1305,10 @@ class StatisticsView(APIView):
             status=Appointment.Status.NO_SHOW
         ).count()
 
-        # Nadchodzące
         upcoming_appointments = Appointment.objects.filter(
             start__gte=now,
             status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
         ).count()
-
-        # ============================================================
-        # PRZYCHODY (REVENUE)
-        # ============================================================
 
         completed_recent = recent_appointments.filter(
             status=Appointment.Status.COMPLETED
@@ -1431,10 +1326,6 @@ class StatisticsView(APIView):
             status=Appointment.Status.COMPLETED
         ).aggregate(total=Sum("service__price"))["total"] or Decimal("0")
 
-        # ============================================================
-        # PRACOWNICY (EMPLOYEES)
-        # ============================================================
-
         total_employees = EmployeeProfile.objects.count()
         active_employees = EmployeeProfile.objects.filter(is_active=True).count()
 
@@ -1443,10 +1334,6 @@ class StatisticsView(APIView):
             .distinct()
             .count()
         )
-
-        # ============================================================
-        # KLIENCI (CLIENTS)
-        # ============================================================
 
         total_clients = ClientProfile.objects.count()
         active_clients = ClientProfile.objects.filter(is_active=True).count()
@@ -1457,14 +1344,8 @@ class StatisticsView(APIView):
             .count()
         )
 
-        # ============================================================
-        # USŁUGI (SERVICES)
-        # ============================================================
-
         total_services = Service.objects.count()
         active_services = Service.objects.filter(is_active=True).count()
-
-        # Top 10 najpopularniejszych usług
         popular_services = (
             Service.objects.filter(
                 appointments__start__gte=thirty_days_ago,
@@ -1473,10 +1354,6 @@ class StatisticsView(APIView):
             .annotate(booking_count=Count("appointments"), total_revenue=Sum("price"))
             .order_by("-booking_count")[:10]
         )
-
-        # ============================================================
-        # RESPONSE
-        # ============================================================
 
         return Response(
             {
@@ -1521,17 +1398,6 @@ class StatisticsView(APIView):
             }
         )
 
-
-# ============================================================================
-# RAPORTY Z DEJAVU - TYLKO DejaVuSans.ttf (JEDEN PLIK)
-# ============================================================================
-
-"""
-ZAMIEŃ całą klasę ReportView w views.py na TĘ WERSJĘ:
-(używa tylko DejaVuSans.ttf - jeden plik, bez Bold)
-"""
-
-
 class ReportView(APIView):
     permission_classes = [IsAdmin]
 
@@ -1563,7 +1429,6 @@ class ReportView(APIView):
                 }
             )
 
-        # Wszystkie raporty od razu zwracają PDF
         if report_type == "employee-performance":
             return self._employee_performance_pdf()
         if report_type == "revenue-analysis":
@@ -1580,16 +1445,10 @@ class ReportView(APIView):
         )
 
     def _register_fonts(self):
-        """Rejestruje font DejaVu (TYLKO JEDEN PLIK - DejaVuSans.ttf)"""
-        from reportlab.pdfbase import pdfmetrics
-        from reportlab.pdfbase.ttfonts import TTFont
-        import os
-        from django.conf import settings
 
         font_path = os.path.join(settings.BASE_DIR, "static", "fonts", "DejaVuSans.ttf")
 
         try:
-            # Rejestruj tylko jeden font
             pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
             return True
         except Exception as e:
@@ -1597,8 +1456,6 @@ class ReportView(APIView):
             return False
 
     def _build_pdf_response(self, title_text, data, filename, landscape_mode=False):
-        """Wspólna metoda do budowania PDF"""
-        from reportlab.lib.pagesizes import A4, landscape
         from reportlab.platypus import (
             SimpleDocTemplate,
             Table,
@@ -1606,13 +1463,7 @@ class ReportView(APIView):
             Paragraph,
             Spacer,
         )
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib import colors
-        from reportlab.lib.enums import TA_CENTER
-        import io
-        from django.http import HttpResponse
 
-        # Rejestruj font
         fonts_ok = self._register_fonts()
         font_name = "DejaVuSans" if fonts_ok else "Helvetica"
 
@@ -1630,8 +1481,6 @@ class ReportView(APIView):
 
         styles = getSampleStyleSheet()
         elements = []
-
-        # Tytuł
         title_style = ParagraphStyle(
             "CustomTitle",
             parent=styles["Title"],
@@ -1643,8 +1492,6 @@ class ReportView(APIView):
 
         elements.append(Paragraph(f"<b>{title_text}</b>", title_style))
         elements.append(Spacer(1, 12))
-
-        # Tabela
         table = Table(data, repeatRows=1)
         table.setStyle(
             TableStyle(
@@ -1652,7 +1499,7 @@ class ReportView(APIView):
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1976d2")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("FONTNAME", (0, 0), (-1, -1), font_name),  # Wszędzie ten sam font
+                    ("FONTNAME", (0, 0), (-1, -1), font_name),
                     ("FONTSIZE", (0, 0), (-1, 0), 10),
                     ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
                     ("TOPPADDING", (0, 0), (-1, 0), 10),
@@ -1677,8 +1524,6 @@ class ReportView(APIView):
         return response
 
     def _employee_performance_pdf(self):
-        """Raport wydajności pracowników - ostatnie 30 dni"""
-        from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
         until = timezone.now()
@@ -1745,7 +1590,6 @@ class ReportView(APIView):
         )
 
     def _revenue_analysis_pdf(self):
-        """Analiza przychodów - ostatnie 30 dni"""
         from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
@@ -1757,7 +1601,6 @@ class ReportView(APIView):
             start__lte=until,
         )
 
-        # Top 10 usług
         top_services = (
             completed.values("service__name", "service__category")
             .annotate(revenue=Sum("service__price"), count=Count("id"))
@@ -1784,7 +1627,6 @@ class ReportView(APIView):
         )
 
     def _client_analytics_pdf(self):
-        """Top 20 klientów - ostatnie 30 dni"""
         from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
@@ -1828,16 +1670,7 @@ class ReportView(APIView):
             landscape_mode=True,
         )
 
-    # ============================================================================
-    # RAPORTY Z POLSKIMI NAZWAMI STATUSÓW
-    # ============================================================================
-
-    """
-    ZAMIEŃ metodę _operations_pdf() w klasie ReportView:
-    """
-
     def _operations_pdf(self):
-        """Raport operacyjny - ostatnie 30 dni - POLSKIE NAZWY STATUSÓW"""
         from datetime import timedelta
 
         since = timezone.now() - timedelta(days=30)
@@ -1854,13 +1687,12 @@ class ReportView(APIView):
 
         data = [["Status", "Liczba", "Procent"]]
 
-        # POLSKIE NAZWY STATUSÓW
         status_list = [
-            ("Oczekujące", pending),  # PENDING
-            ("Potwierdzone", confirmed),  # CONFIRMED
-            ("Ukończone", completed),  # COMPLETED
-            ("Anulowane", cancelled),  # CANCELLED
-            ("Nieobecność", no_shows),  # NO_SHOW
+            ("Oczekujące", pending),
+            ("Potwierdzone", confirmed),
+            ("Ukończone", completed),
+            ("Anulowane", cancelled),
+            ("Nieobecność", no_shows),
         ]
 
         for status_name, count in status_list:
@@ -1881,9 +1713,6 @@ class ReportView(APIView):
         )
 
     def _capacity_utilization_pdf(self):
-        """Wykorzystanie mocy - ostatnie 7 dni"""
-        from datetime import timedelta
-        from django.db.models.functions import ExtractWeekDay
 
         since = timezone.now() - timedelta(days=7)
         until = timezone.now()
@@ -1898,7 +1727,6 @@ class ReportView(APIView):
             ],
         )
 
-        # Według dnia tygodnia
         by_day = (
             appointments.annotate(day=ExtractWeekDay("start"))
             .values("day")

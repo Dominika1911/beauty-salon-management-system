@@ -18,28 +18,6 @@ def csrf(request):
 
 
 class SessionLoginView(APIView):
-    """
-    Endpoint do logowania użytkownika przez sesję.
-
-    POST /api/auth/login/
-
-    Body:
-    {
-        "username": "admin-1234",
-        "password": "password123"
-    }
-
-    Response (sukces):
-    {
-        "detail": "Zalogowano pomyślnie.",
-        "user": {...}
-    }
-
-    Response (błąd):
-    {
-        "detail": "Nieprawidłowe dane logowania."
-    }
-    """
 
     permission_classes = [AllowAny]
 
@@ -84,16 +62,6 @@ class SessionLoginView(APIView):
 
 
 class SessionLogoutView(APIView):
-    """
-    Endpoint do wylogowania użytkownika.
-
-    POST /api/auth/logout/
-
-    Response:
-    {
-        "detail": "Wylogowano pomyślnie."
-    }
-    """
 
     permission_classes = [IsAuthenticated]
 
@@ -115,24 +83,6 @@ class SessionLogoutView(APIView):
 
 
 class AuthStatusView(APIView):
-    """
-    Endpoint sprawdzający status autoryzacji użytkownika.
-    Używany przez frontend do sprawdzenia czy użytkownik jest zalogowany.
-
-    GET /api/auth/status/
-
-    Response (zalogowany):
-    {
-        "isAuthenticated": true,
-        "user": {...}
-    }
-
-    Response (niezalogowany):
-    {
-        "isAuthenticated": false,
-        "user": null
-    }
-    """
 
     permission_classes = [AllowAny]
 
@@ -155,18 +105,6 @@ class AuthStatusView(APIView):
 
 
 class ChangePasswordView(APIView):
-    """
-    Endpoint do zmiany hasła aktualnie zalogowanego użytkownika.
-
-    POST /api/auth/change-password/
-
-    Body:
-    {
-        "old_password": "starehaslo",
-        "new_password": "NoweHaslo123!",
-        "new_password2": "NoweHaslo123!"
-    }
-    """
 
     permission_classes = [IsAuthenticated]
 
@@ -181,7 +119,6 @@ class ChangePasswordView(APIView):
         user.set_password(serializer.validated_data["new_password"])
         user.save(update_fields=["password"])
 
-        # Utrzymaj zalogowanie po zmianie hasła (ważne przy auth sesyjnym).
         update_session_auth_hash(request, user)
 
         SystemLog.log(

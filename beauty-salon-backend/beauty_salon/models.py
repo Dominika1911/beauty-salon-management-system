@@ -12,7 +12,6 @@ from django.db.models import F, Q, UniqueConstraint
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-# Walidatory globalne
 phone_validator = RegexValidator(
     regex=r"^\+?\d{9,15}$",
     message=_("Telefon musi mieć 9–15 cyfr i może zaczynać się od znaku +."),
@@ -258,8 +257,6 @@ class EmployeeSchedule(models.Model):
         super().clean()
         system_settings = SystemSettings.get_settings()
         salon_hours = system_settings.opening_hours or {}
-
-        # Słownik musi być wewnątrz metody clean
         day_names_pl = {
             "mon": "Poniedziałek",
             "tue": "Wtorek",
@@ -276,8 +273,6 @@ class EmployeeSchedule(models.Model):
         for day, periods in self.weekly_hours.items():
             if not periods:
                 continue
-
-            # Pobieramy ładną nazwę
             pretty_day = day_names_pl.get(day, day)
             salon_day_periods = salon_hours.get(day)
 
@@ -535,21 +530,17 @@ class SystemSettings(models.Model):
 
 class SystemLog(models.Model):
     class Action(models.TextChoices):
-        # --- SERVICES ---
         SERVICE_CREATED = "SERVICE_CREATED", _("Utworzono usługę")
         SERVICE_UPDATED = "SERVICE_UPDATED", _("Zaktualizowano usługę")
         SERVICE_DISABLED = "SERVICE_DISABLED", _("Wyłączono usługę")
         SERVICE_ENABLED = "SERVICE_ENABLED", _("Włączono usługę")
 
-        # --- EMPLOYEES ---
         EMPLOYEE_CREATED = "EMPLOYEE_CREATED", _("Utworzono pracownika")
         EMPLOYEE_UPDATED = "EMPLOYEE_UPDATED", _("Zaktualizowano pracownika")
 
-        # --- CLIENTS ---
         CLIENT_CREATED = "CLIENT_CREATED", _("Utworzono klienta")
         CLIENT_UPDATED = "CLIENT_UPDATED", _("Zaktualizowano klienta")
 
-        # --- APPOINTMENTS ---
         APPOINTMENT_CREATED = "APPOINTMENT_CREATED", _("Utworzono wizytę")
         APPOINTMENT_UPDATED = "APPOINTMENT_UPDATED", _("Zaktualizowano wizytę")
         APPOINTMENT_CONFIRMED = "APPOINTMENT_CONFIRMED", _("Potwierdzono wizytę")
@@ -557,18 +548,15 @@ class SystemLog(models.Model):
         APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", _("Zakończono wizytę")
         APPOINTMENT_NO_SHOW = "APPOINTMENT_NO_SHOW", _("Oznaczono wizytę jako no-show")
 
-        # --- TIME OFF ---
         TIMEOFF_CREATED = "TIMEOFF_CREATED", _("Utworzono wniosek urlopowy")
         TIMEOFF_APPROVED = "TIMEOFF_APPROVED", _("Zaakceptowano urlop")
         TIMEOFF_REJECTED = "TIMEOFF_REJECTED", _("Odrzucono urlop")
         TIMEOFF_CANCELLED = "TIMEOFF_CANCELLED", _("Anulowano wniosek urlopowy")
 
-        # --- AUTH ---
         AUTH_LOGIN = "AUTH_LOGIN", _("Zalogowano pomyślnie")
         AUTH_LOGOUT = "AUTH_LOGOUT", _("Wylogowano pomyślnie")
         AUTH_PASSWORD_CHANGE = "AUTH_PASSWORD_CHANGE", _("Zmieniono/zresetowano hasło")
 
-        # --- SETTINGS ---
         SETTINGS_UPDATED = "SETTINGS_UPDATED", _("Zaktualizowano ustawienia systemu")
 
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
