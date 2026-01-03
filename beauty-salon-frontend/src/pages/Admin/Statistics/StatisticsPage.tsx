@@ -5,7 +5,7 @@ import type { Statistics } from '@/types';
 import { formatPrice } from '@/utils/appointmentUtils.ts';
 import { StatCard } from '@/pages/Admin/Statistics/components/StatCard.tsx';
 
-export default function StatisticsPage(): JSX.Element {
+export default function StatisticsPage() {
     const [stats, setStats] = useState<Statistics | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -17,7 +17,7 @@ export default function StatisticsPage(): JSX.Element {
             setLoading(true);
             const data = await statisticsApi.get();
             setStats(data);
-        } catch (e: any) {
+        } catch (e: unknown) {
             setError('Nie udało się załadować statystyk.');
         } finally {
             setLoading(false);

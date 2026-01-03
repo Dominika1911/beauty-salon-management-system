@@ -12,7 +12,6 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import type { AlertColor } from '@mui/material/Alert';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { pl } from 'date-fns/locale';
@@ -40,6 +39,23 @@ import type {
 import { EMPTY_FORM, EMPTY_PAGE, orderingLabel } from './utils.ts';
 import AppointmentCard from './components/AppointmentCard.tsx';
 import AppointmentFormDialog from './components/AppointmentFormDialog.tsx';
+
+type EmployeeApiItem = {
+  id: number;
+  full_name?: string | null;
+  user_email?: string | null;
+  skills?: unknown;
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === 'object';
+}
+
+function toErrorMessage(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message;
+  const e = err as { message?: unknown };
+  return typeof e.message === 'string' ? e.message : undefined;
+}
 
 export default function AppointmentsPage() {
   const { user } = useAuth();
@@ -81,7 +97,7 @@ export default function AppointmentsPage() {
 
   /* ===================== HELPERS ===================== */
 
-  const showSnack = (msg: string, severity: AlertColor = 'success') => {
+  const showSnack = (msg: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, msg, severity });
   };
 
@@ -93,6 +109,22 @@ export default function AppointmentsPage() {
     return emps[0].id;
   };
 
+  const mapEmployeeSkillsToIds = (skills: unknown): number[] => {
+    if (!Array.isArray(skills)) return [];
+
+    const ids: number[] = [];
+    for (const x of skills) {
+      if (typeof x === 'number' && Number.isFinite(x)) {
+        ids.push(x);
+        continue;
+      }
+      if (isRecord(x) && typeof x.id === 'number' && Number.isFinite(x.id)) {
+        ids.push(x.id);
+      }
+    }
+    return ids;
+  };
+
   /* ===================== LOAD DATA ===================== */
 
   const load = useCallback(async () => {
@@ -101,7 +133,7 @@ export default function AppointmentsPage() {
     try {
       const res = await appointmentsApi.getMy({ ordering });
       setData(res);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPageError(parseDrfError(err).message ?? 'Błąd ładowania danych.');
       setData(EMPTY_PAGE);
     } finally {
@@ -126,16 +158,18 @@ export default function AppointmentsPage() {
 
       setClients(c.results ?? []);
 
-      const mappedEmployees: EmployeeSelectItem[] = (e.results ?? []).map((emp: any) => ({
-        id: emp.id,
-        label: emp.full_name || emp.user_email || `#${emp.id}`,
-        // backend zwraca skills jako OBIEKTY usług -> mapujemy na ID
-        skills: Array.isArray(emp.skills)
-          ? emp.skills
-              .map((x: any) => (typeof x === 'number' ? x : x?.id))
-              .filter((id: any) => typeof id === 'number')
-          : [],
-      }));
+      const mappedEmployees: EmployeeSelectItem[] = (e.results ?? []).map((empRaw) => {
+        const emp = empRaw as EmployeeApiItem;
+
+        const label = emp.full_name || emp.user_email || `#${emp.id}`;
+
+        return {
+          id: emp.id,
+          label,
+          // backend zwraca skills jako OBIEKTY usług -> mapujemy na ID
+          skills: mapEmployeeSkillsToIds(emp.skills),
+        };
+      });
 
       setEmployees(mappedEmployees);
       setServices(s.results ?? []);
@@ -150,8 +184,8 @@ export default function AppointmentsPage() {
           };
         });
       }
-    } catch (err: any) {
-      showSnack(parseDrfError(err).message ?? 'Błąd ładowania danych.', 'error');
+    } catch (err: unknown) {
+      showSnack(parseDrfError(err).message ?? toErrorMessage(err) ?? 'Błąd ładowania danych.', 'error');
     } finally {
       setLoadingLookups(false);
     }
@@ -226,16 +260,15 @@ export default function AppointmentsPage() {
           return;
         }
 
-       await appointmentsApi.create({
-        client: formData.client,
-        employee: formData.employee,
-        service: formData.service,
-        start: formData.start.toISOString(),
-        end: formData.end.toISOString(),
-        status: 'CONFIRMED' as AppointmentStatus,
-        internal_notes: formData.internal_notes ?? '',
+        await appointmentsApi.create({
+          client: formData.client,
+          employee: formData.employee,
+          service: formData.service,
+          start: formData.start.toISOString(),
+          end: formData.end.toISOString(),
+          status: 'CONFIRMED',
+          internal_notes: formData.internal_notes ?? '',
         });
-
 
         showSnack('Wizyta została utworzona.');
         closeDialog();
@@ -283,7 +316,7 @@ export default function AppointmentsPage() {
       showSnack('Wizyta została zaktualizowana.');
       closeDialog();
       await load();
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormError(parseDrfError(err).message ?? 'Błąd zapisu.');
     } finally {
       setSubmitting(false);
@@ -295,7 +328,7 @@ export default function AppointmentsPage() {
   const patchRow = (id: number, patch: Partial<Appointment>) => {
     setData((prev) => ({
       ...prev,
-      results: prev.results.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+      results: (prev.results ?? []).map((r) => (r.id === id ? { ...r, ...patch } : r)),
     }));
   };
 
@@ -310,7 +343,7 @@ export default function AppointmentsPage() {
       const updated = await action(id);
       patchRow(id, updated);
       showSnack(msg);
-    } catch (err: any) {
+    } catch (err: unknown) {
       showSnack(parseDrfError(err).message ?? 'Błąd operacji.', 'error');
     } finally {
       setBusy(false);
@@ -348,13 +381,17 @@ export default function AppointmentsPage() {
               </Select>
             </FormControl>
 
-            <Button variant="contained" onClick={applyFilters} disabled={!hasUnappliedFilters}>
+            <Button
+              variant="contained"
+              onClick={applyFilters}
+              disabled={!hasUnappliedFilters || loading || busy}
+            >
               Zastosuj
             </Button>
-            <Button variant="outlined" onClick={clearFilters}>
+            <Button variant="outlined" onClick={clearFilters} disabled={loading || busy}>
               Wyczyść
             </Button>
-            <Button variant="contained" onClick={openCreateDialog}>
+            <Button variant="contained" onClick={openCreateDialog} disabled={loading || busy}>
               Dodaj wizytę
             </Button>
           </Stack>
@@ -410,8 +447,16 @@ export default function AppointmentsPage() {
           open={snack.open}
           autoHideDuration={3000}
           onClose={() => setSnack((s) => ({ ...s, open: false }))}
-          message={snack.msg}
-        />
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={() => setSnack((s) => ({ ...s, open: false }))}
+            severity={snack.severity}
+            sx={{ width: '100%' }}
+          >
+            {snack.msg}
+          </Alert>
+        </Snackbar>
       </Stack>
     </LocalizationProvider>
   );

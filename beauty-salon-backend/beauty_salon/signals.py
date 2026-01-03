@@ -9,32 +9,14 @@ logger = logging.getLogger(__name__)
 
 
 def _get_next_number(model_class, field_name: str, max_retries: int = 3) -> str:
-    """
-    Funkcja pomocnicza generująca sekwencyjne numery identyfikacyjne.
-
-    Wykorzystuje agregację Max() w celu optymalizacji wydajności bazy danych.
-    Zastosowano mechanizm powtórzeń (retry logic) oraz blokowanie rekordów
-    (select_for_update) w celu uniknięcia problemów z wyścigiem (race conditions).
-
-    Args:
-        model_class: Klasa modelu (EmployeeProfile lub ClientProfile).
-        field_name: Nazwa pola identyfikatora.
-        max_retries: Maksymalna liczba prób w przypadku wystąpienia konfliktu.
-
-    Returns:
-        str: Ośmiocyfrowy numer w formacie tekstowym (np. "00000001").
-    """
     for attempt in range(max_retries):
         try:
             with transaction.atomic():
-                # Pobranie najwyższego aktualnego numeru z blokadą wierszy
                 result = model_class.objects.select_for_update().aggregate(
                     max_num=Max(field_name)
                 )
-
                 max_num = result.get("max_num")
 
-                # Walidacja formatu i konwersja na typ całkowity
                 if max_num and max_num.isdigit():
                     try:
                         next_number = int(max_num) + 1
@@ -64,10 +46,6 @@ def _get_next_number(model_class, field_name: str, max_retries: int = 3) -> str:
 
 @receiver(pre_save, sender=EmployeeProfile)
 def generate_employee_number(sender, instance: EmployeeProfile, **kwargs):
-    """
-    Sygnał automatycznie generujący numer pracownika przed zapisem do bazy danych.
-    Działa wyłącznie dla nowych rekordów, które nie posiadają jeszcze identyfikatora.
-    """
     if instance.pk or instance.employee_number:
         return
 
@@ -79,10 +57,6 @@ def generate_employee_number(sender, instance: EmployeeProfile, **kwargs):
 
 @receiver(pre_save, sender=ClientProfile)
 def generate_client_number(sender, instance: ClientProfile, **kwargs):
-    """
-    Sygnał automatycznie generujący numer klienta przed zapisem do bazy danych.
-    Działa wyłącznie dla nowych rekordów, które nie posiadają jeszcze identyfikatora.
-    """
     if instance.pk or instance.client_number:
         return
 

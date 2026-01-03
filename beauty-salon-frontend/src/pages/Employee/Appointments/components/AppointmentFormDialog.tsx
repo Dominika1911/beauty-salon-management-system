@@ -17,7 +17,7 @@ import {
   Typography,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import type { Client, Service } from '@/types';
+import type { AppointmentStatus, Client, Service } from '@/types';
 import type { FormData, EmployeeSelectItem } from '../types';
 
 type Slot = { start: string; end: string };
@@ -45,6 +45,16 @@ type Props = {
 
 // Jeśli masz inne base path, zmień tutaj:
 const SLOTS_URL = '/api/availability/slots/';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === 'object';
+}
+
+function getErrMessage(e: unknown): string | undefined {
+  if (e instanceof Error) return e.message;
+  const err = e as { message?: unknown };
+  return typeof err.message === 'string' ? err.message : undefined;
+}
 
 function pad2(n: number) {
   return String(n).padStart(2, '0');
@@ -104,7 +114,7 @@ export default function AppointmentFormDialog({
     if (!open) return;
     const s = formData.start ? new Date(formData.start) : null;
     setDay(s);
-    setSlotValue(s ? new Date(s).toISOString() : '');
+    setSlotValue(s ? s.toISOString() : '');
     setSlotsError(null);
     setSlots([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,12 +160,17 @@ export default function AppointmentFormDialog({
         headers: { Accept: 'application/json' },
       });
 
-      const data = (await res.json()) as any;
+      const data: unknown = await res.json();
 
       if (!res.ok) {
-        const msg =
-          (data && (data.detail || data.message)) ||
-          `Nie udało się pobrać slotów (HTTP ${res.status}).`;
+        const msgFromBody =
+          isRecord(data) && typeof data.detail === 'string'
+            ? data.detail
+            : isRecord(data) && typeof data.message === 'string'
+              ? data.message
+              : undefined;
+
+        const msg = msgFromBody || `Nie udało się pobrać slotów (HTTP ${res.status}).`;
         throw new Error(msg);
       }
 
@@ -178,8 +193,8 @@ export default function AppointmentFormDialog({
       } else {
         setSlotValue(currentStartIso);
       }
-    } catch (e: any) {
-      setSlotsError(e?.message ?? 'Błąd pobierania slotów.');
+    } catch (e: unknown) {
+      setSlotsError(getErrMessage(e) ?? 'Błąd pobierania slotów.');
       setSlots([]);
       setSlotValue('');
       setFormData((prev) => ({ ...prev, start: null, end: null }));
@@ -431,32 +446,32 @@ export default function AppointmentFormDialog({
             </FormControl>
 
             {/* Status */}
-{editMode ? (
-  <FormControl fullWidth required>
-    <InputLabel>Status</InputLabel>
-    <Select
-      label="Status"
-      value={formData.status ?? 'CONFIRMED'}
-      onChange={(e) =>
-        setFormData((prev) => ({
-          ...prev,
-          status: e.target.value as any,
-        }))
-      }
-      disabled={submitting || isPastEdit}
-    >
-      <MenuItem value="PENDING">Oczekuje</MenuItem>
-      <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>
-      <MenuItem value="COMPLETED">Zakończona</MenuItem>
-      <MenuItem value="CANCELLED">Anulowana</MenuItem>
-      <MenuItem value="NO_SHOW">No-show</MenuItem>
-    </Select>
-  </FormControl>
-) : (
-  <Alert severity="info">
-    Status nowej wizyty jest ustawiany automatycznie na <b>Potwierdzona</b>.
-  </Alert>
-)}
+            {editMode ? (
+              <FormControl fullWidth required>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  label="Status"
+                  value={formData.status ?? 'CONFIRMED'}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      status: e.target.value as AppointmentStatus,
+                    }))
+                  }
+                  disabled={submitting || isPastEdit}
+                >
+                  <MenuItem value="PENDING">Oczekuje</MenuItem>
+                  <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>
+                  <MenuItem value="COMPLETED">Zakończona</MenuItem>
+                  <MenuItem value="CANCELLED">Anulowana</MenuItem>
+                  <MenuItem value="NO_SHOW">No-show</MenuItem>
+                </Select>
+              </FormControl>
+            ) : (
+              <Alert severity="info">
+                Status nowej wizyty jest ustawiany automatycznie na <b>Potwierdzona</b>.
+              </Alert>
+            )}
 
             {/* Internal notes */}
             <TextField

@@ -1,194 +1,179 @@
-from rest_framework import permissions
-from typing import List
+from __future__ import annotations
+from typing import List, Optional, Callable, Any
 from django.utils import timezone
+from rest_framework import permissions
+
+
+def _is_authenticated(user) -> bool:
+    return bool(user and getattr(user, "is_authenticated", False))
+
+
+def _role(user) -> Optional[str]:
+    role = getattr(user, "role", None)
+    return role if isinstance(role, str) else None
+
+
+def _has_role(user, *roles: str) -> bool:
+    r = _role(user)
+    if not r:
+        return False
+    ru = r.upper()
+    return any(ru == x.upper() for x in roles)
+
+
+def _employee(user):
+    emp = getattr(user, "employee_profile", None)
+    if not emp or not getattr(emp, "is_active", False):
+        return None
+    return emp
+
+
+def _client(user):
+    return getattr(user, "client_profile", None)
+
+
+def _admin_or_participant(
+    user,
+    *,
+    obj: Any,
+    employee_id_getter: Callable[[Any], Optional[int]],
+    client_id_getter: Callable[[Any], Optional[int]],
+) -> bool:
+    if not _is_authenticated(user):
+        return False
+
+    if _has_role(user, "ADMIN"):
+        return True
+
+    if _has_role(user, "EMPLOYEE"):
+        emp = _employee(user)
+        return bool(emp and employee_id_getter(obj) == emp.id)
+
+    if _has_role(user, "CLIENT"):
+        cl = _client(user)
+        return bool(cl and client_id_getter(obj) == cl.id)
+
+    return False
 
 
 class RoleBasedPermission(permissions.BasePermission):
-    """
-    Bazowa klasa uprawnień oparta na rolach użytkowników.
-    Wymaga zdefiniowania listy 'required_roles' w klasach dziedziczących.
-    """
-
     required_roles: List[str] = []
 
     def has_permission(self, request, view):
-        if not request.user.is_authenticated:
-            return False
-
-        return any(
-            getattr(request.user, f"is_{role}", False) for role in self.required_roles
-        )
+        user = request.user
+        return _is_authenticated(user) and _has_role(user, *self.required_roles)
 
 
 class IsAdmin(RoleBasedPermission):
-    """Dostęp tylko dla użytkowników z rolą administratora."""
-
-    required_roles = ["admin"]
+    required_roles = ["ADMIN"]
 
 
 class IsAdminOrEmployee(RoleBasedPermission):
-    """Dostęp dla administratorów oraz pracowników."""
-
-    required_roles = ["admin", "employee"]
+    required_roles = ["ADMIN", "EMPLOYEE"]
 
 
 class IsEmployee(RoleBasedPermission):
-    """Dostęp tylko dla pracowników."""
-
-    required_roles = ["employee"]
+    required_roles = ["EMPLOYEE"]
 
 
 class IsClient(RoleBasedPermission):
-    """Dostęp tylko dla klientów."""
-
-    required_roles = ["client"]
+    required_roles = ["CLIENT"]
 
 
 class IsReadOnly(permissions.BasePermission):
-    """Zezwala jedynie na bezpieczne metody zapytania (GET, HEAD, OPTIONS)."""
-
     def has_permission(self, request, view):
         return request.method in permissions.SAFE_METHODS
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
-    """
-    Zezwala na dostęp administratorowi lub właścicielowi obiektu.
-    Wymaga obecności atrybutu 'user' w sprawdzanym obiekcie.
-    """
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated
+        return _is_authenticated(request.user)
 
     def has_object_permission(self, request, view, obj):
-        if not request.user.is_authenticated:
-            return False
-
-        if request.user.is_admin:
-            return True
-
-        return getattr(obj, "user", None) == request.user
+        user = request.user
+        return _admin_or_participant(
+            user,
+            obj=obj,
+            employee_id_getter=lambda _: None,
+            client_id_getter=lambda _: None,
+        ) or getattr(obj, "user", None) == user
 
 
 class IsAppointmentParticipant(permissions.BasePermission):
-    """
-    Weryfikuje, czy użytkownik jest uczestnikiem wizyty (klientem lub przypisanym pracownikiem).
-    Wykorzystywane przy autoryzacji dostępu do szczegółów wizyty.
-    """
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated
+        return _is_authenticated(request.user)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-
-        if not user.is_authenticated:
-            return False
-
-        if user.is_admin:
-            return True
-
-        if user.is_employee:
-            employee = getattr(user, "employee_profile", None)
-            if not employee or not employee.is_active:
-                return False
-            return obj.employee_id == employee.id
-
-        if user.is_client:
-            client = getattr(user, "client_profile", None)
-            if not client:
-                return False
-            return obj.client_id == client.id
-
-        return False
+        return _admin_or_participant(
+            user,
+            obj=obj,
+            employee_id_getter=lambda o: getattr(o, "employee_id", None),
+            client_id_getter=lambda o: getattr(o, "client_id", None),
+        )
 
 
 class CanCancelAppointment(permissions.BasePermission):
-    """
-    Weryfikuje uprawnienia podmiotu do anulowania wizyty.
-    Logika biznesowa dotycząca czasu anulowania znajduje się w warstwie widoku.
-    """
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated
+        return _is_authenticated(request.user)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-        if not user.is_authenticated:
+        if not _is_authenticated(user):
             return False
 
-        # 1) Nie anulujemy zakończonych / anulowanych
         if obj.status in [obj.Status.COMPLETED, obj.Status.CANCELLED]:
             return False
 
-        # 2) Klient nie może anulować przeszłych wizyt
-        if user.is_client and obj.start < timezone.now():
+        if _has_role(user, "CLIENT") and obj.start < timezone.now():
             return False
 
-        # 3) Admin zawsze może (po blokadach powyżej)
-        if user.is_admin:
-            return True
-
-        # 4) Pracownik tylko swoje
-        if user.is_employee:
-            employee = getattr(user, "employee_profile", None)
-            return bool(employee and employee.is_active and obj.employee_id == employee.id)
-
-        # 5) Klient tylko swoje
-        if user.is_client:
-            client = getattr(user, "client_profile", None)
-            return bool(client and obj.client_id == client.id)
-
-        return False
+        return _admin_or_participant(
+            user,
+            obj=obj,
+            employee_id_getter=lambda o: getattr(o, "employee_id", None),
+            client_id_getter=lambda o: getattr(o, "client_id", None),
+        )
 
 
 class CanModifyAppointment(permissions.BasePermission):
-    """Weryfikuje uprawnienia do modyfikacji danych wizyty."""
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated
+        return _is_authenticated(request.user)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-
-        if not user.is_authenticated:
+        if not _is_authenticated(user):
             return False
 
-        if user.is_admin:
+        if _has_role(user, "ADMIN"):
             return True
 
-        if user.is_employee:
-            employee = getattr(user, "employee_profile", None)
-            if not employee or not employee.is_active:
-                return False
-            return obj.employee_id == employee.id
+        if _has_role(user, "EMPLOYEE"):
+            emp = _employee(user)
+            return bool(emp and getattr(obj, "employee_id", None) == emp.id)
 
         return False
 
 
 class CanDecideTimeOff(permissions.BasePermission):
-    """Zezwala administratorowi na akceptację lub odrzucenie wniosku urlopowego."""
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_admin
+        user = request.user
+        return _is_authenticated(user) and _has_role(user, "ADMIN")
 
 
 class CanCancelOwnTimeOff(permissions.BasePermission):
-    """Zezwala na anulowanie własnego wniosku urlopowego przez pracownika lub dowolnego przez administratora."""
-
     def has_permission(self, request, view):
-        return request.user.is_authenticated
+        return _is_authenticated(request.user)
 
     def has_object_permission(self, request, view, obj):
         user = request.user
-
-        if not user.is_authenticated:
+        if not _is_authenticated(user):
             return False
 
-        if user.is_admin:
+        if _has_role(user, "ADMIN"):
             return True
 
-        if user.is_employee:
-            return obj.employee.user_id == user.id
+        if _has_role(user, "EMPLOYEE"):
+            return getattr(obj.employee, "user_id", None) == getattr(user, "id", None)
 
         return False

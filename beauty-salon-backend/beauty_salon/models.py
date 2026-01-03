@@ -256,8 +256,8 @@ class EmployeeSchedule(models.Model):
 
     def clean(self) -> None:
         super().clean()
-        settings = SystemSettings.get_settings()
-        salon_hours = settings.opening_hours or {}
+        system_settings = SystemSettings.get_settings()
+        salon_hours = system_settings.opening_hours or {}
 
         # Słownik musi być wewnątrz metody clean
         day_names_pl = {
@@ -304,7 +304,7 @@ class EmployeeSchedule(models.Model):
                             break
 
                 if not is_within_salon_hours:
-                    # TUTAJ ZMIENIAMY KOMUNIKAT - używamy pretty_day zamiast day
+
                     raise ValidationError(
                         {
                             f"weekly_hours": f"Godziny {emp_start}-{emp_end} w dniu: {pretty_day} wykraczają poza godziny otwarcia salonu."

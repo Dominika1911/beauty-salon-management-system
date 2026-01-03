@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FormikHelpers } from 'formik';
 import { Add } from '@mui/icons-material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Alert, Box, Button, IconButton, Paper, Snackbar, Stack, Tooltip, Typography } from '@mui/material';
@@ -178,8 +179,12 @@ const ClientsPage: React.FC = () => {
         setDeleteOpen(true);
     };
 
-    const handleSubmit = async (values: ClientFormData, helpers: any) => {
-        const { setErrors } = helpers as { setErrors: (e: Record<string, string>) => void };
+    const handleSubmit = async (
+    values: ClientFormData,
+    helpers: FormikHelpers<ClientFormData>,
+) => {
+    const { setErrors } = helpers;
+
 
         try {
             setFormError(null);

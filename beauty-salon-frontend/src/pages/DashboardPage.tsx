@@ -99,7 +99,7 @@ function formatMoneyPLN(value: number): string {
  * Page
  * ============================================================================= */
 
-export default function DashboardPage(): JSX.Element {
+export default function DashboardPage() {
     const [state, setState] = React.useState<ViewState>({ status: 'idle' });
     const [snack, setSnack] = React.useState<SnackState>({
         open: false,
@@ -199,7 +199,7 @@ export default function DashboardPage(): JSX.Element {
  * Role switch
  * ============================================================================= */
 
-function RoleDashboard({ data }: { data: DashboardResponse }): JSX.Element {
+function RoleDashboard({ data }: { data: DashboardResponse }) {
     if (data.role === 'ADMIN') return <AdminDashboardView data={data} />;
     if (data.role === 'EMPLOYEE') return <EmployeeDashboardView data={data} />;
     return <ClientDashboardView data={data} />;
@@ -219,7 +219,7 @@ function StatCard({
     value: React.ReactNode;
     hint?: string;
     action?: React.ReactNode;
-}): JSX.Element {
+}) {
     return (
         <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -252,7 +252,7 @@ function AppointmentsList({
     emptyText: string;
     showClient?: boolean;
     showEmployee?: boolean;
-}): JSX.Element {
+}) {
     if (items.length === 0) {
         return <Typography color="text.secondary">{emptyText}</Typography>;
     }
@@ -320,7 +320,7 @@ function AdminDashboardView({
     data,
 }: {
     data: Extract<DashboardResponse, { role: 'ADMIN' }>;
-}): JSX.Element {
+}) {
     return (
         <Stack spacing={2}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -383,7 +383,7 @@ function EmployeeDashboardView({
     data,
 }: {
     data: Extract<DashboardResponse, { role: 'EMPLOYEE' }>;
-}): JSX.Element {
+}) {
     return (
         <Stack spacing={2}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -455,7 +455,7 @@ function ClientDashboardView({
     data,
 }: {
     data: Extract<DashboardResponse, { role: 'CLIENT' }>;
-}): JSX.Element {
+}) {
     return (
         <Stack spacing={2}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
