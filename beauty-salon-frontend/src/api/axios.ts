@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios';
 
 const axiosInstance = axios.create({
     baseURL: '/api',
@@ -14,21 +14,27 @@ function getCookie(name: string): string | null {
     return null;
 }
 
-axiosInstance.interceptors.request.use((config) => {
-    config.headers = config.headers ?? {};
+function ensureAxiosHeaders(h: InternalAxiosRequestConfig['headers']): AxiosHeaders {
+    return new AxiosHeaders(h);
+}
+
+
+axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const headers = ensureAxiosHeaders(config.headers);
+    config.headers = headers;
 
     const csrfToken = getCookie('csrftoken');
     if (csrfToken) {
-        (config.headers as any)['X-CSRFToken'] = csrfToken;
+        headers.set('X-CSRFToken', csrfToken);
     }
 
-    // U Was na razie JSON, ale zostawiamy bezpiecznie obsługę FormData
     const isFD = typeof FormData !== 'undefined' && config.data instanceof FormData;
 
     if (!isFD) {
-        (config.headers as any)['Content-Type'] = 'application/json';
+        headers.set('Content-Type', 'application/json');
     } else {
-        delete (config.headers as any)['Content-Type'];
+        // przy FormData axios sam ustawi boundary
+        headers.delete('Content-Type');
     }
 
     return config;
@@ -36,10 +42,11 @@ axiosInstance.interceptors.request.use((config) => {
 
 axiosInstance.interceptors.response.use(
     (response) => response,
-    (error) => {
-        if (error.response?.status === 401) {
-            // Nie przekierowuj jeśli to /auth/status/ (unikamy pętli)
-            const reqUrl = (error.config?.url || '').toString();
+    (error: unknown) => {
+        const e = error as { response?: { status?: number }; config?: { url?: unknown } };
+
+        if (e.response?.status === 401) {
+            const reqUrl = String(e.config?.url ?? '');
             const isAuthEndpoint =
                 reqUrl.includes('/auth/status/') ||
                 reqUrl.includes('/auth/login/') ||
@@ -50,6 +57,13 @@ axiosInstance.interceptors.response.use(
                 window.location.assign('/login');
             }
         }
+
+        if (e.response?.status === 403) {
+            if (window.location.pathname !== '/access-denied') {
+                window.location.assign('/access-denied');
+            }
+        }
+
         return Promise.reject(error);
     },
 );

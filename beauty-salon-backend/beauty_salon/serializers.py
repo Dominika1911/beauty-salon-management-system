@@ -459,11 +459,12 @@ class EmployeePublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EmployeeProfile
-        fields = ["id", "first_name", "last_name", "full_name"]
+        fields = ["id", "employee_number", "first_name", "last_name", "full_name"]
         read_only_fields = fields
 
     def get_full_name(self, obj):
         return obj.get_full_name()
+
 
 
 from rest_framework import serializers

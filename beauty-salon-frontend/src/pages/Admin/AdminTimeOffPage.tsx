@@ -1,4 +1,3 @@
-// AdminTimeOffPage.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -35,14 +34,30 @@ function isValidYmd(s: string): boolean {
     return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
+function compareYmd(a: string, b: string): number {
+    // YYYY-MM-DD porównywalne leksykograficznie
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
+}
+
 function getHttpStatus(e: unknown): number | undefined {
-    return (e as any)?.response?.status;
+    const err = e as { response?: { status?: unknown } };
+    const s = err.response?.status;
+    return typeof s === 'number' ? s : undefined;
 }
 
 function toAuthMessage(status?: number): string | null {
     if (status === 401) return 'Twoja sesja wygasła. Zaloguj się ponownie.';
     if (status === 403) return 'Brak uprawnień do tej sekcji.';
     return null;
+}
+
+function toFiniteIntOrUndef(v: string): number | undefined {
+    if (!v) return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n)) return undefined;
+    const i = Math.trunc(n);
+    return i > 0 ? i : undefined;
 }
 
 function StatusChip({ status, label }: { status: TimeOffStatus; label: string }) {
@@ -124,6 +139,16 @@ export default function AdminTimeOffPage() {
         Boolean(dateFrom) ||
         Boolean(dateTo);
 
+    // --- walidacja dat w draft ---
+    const draftDateFromOk = !draftDateFrom || isValidYmd(draftDateFrom);
+    const draftDateToOk = !draftDateTo || isValidYmd(draftDateTo);
+    const draftDateRangeOk =
+        (!draftDateFrom || !draftDateTo || (draftDateFromOk && draftDateToOk && compareYmd(draftDateFrom, draftDateTo) <= 0)) &&
+        draftDateFromOk &&
+        draftDateToOk;
+
+    const canApply = isDirty && !busy && draftDateRangeOk;
+
     const loadEmployees = useCallback(async () => {
         employeesReqToken.current += 1;
         const token = employeesReqToken.current;
@@ -163,11 +188,13 @@ export default function AdminTimeOffPage() {
         setPageError(null);
 
         try {
+            const employeeInt = toFiniteIntOrUndef(employeeId);
+
             const res = await timeOffApi.list({
                 page,
                 ordering,
                 status: statusFilter === 'ALL' ? undefined : statusFilter,
-                employee: employeeId ? Number(employeeId) : undefined,
+                employee: employeeInt,
                 search: search.trim() || undefined,
                 date_from: dateFrom && isValidYmd(dateFrom) ? dateFrom : undefined,
                 date_to: dateTo && isValidYmd(dateTo) ? dateTo : undefined,
@@ -200,7 +227,6 @@ export default function AdminTimeOffPage() {
         void loadEmployees();
 
         return () => {
-            // unmount -> unieważnij ewentualne setState z requestów
             employeesReqToken.current += 1;
         };
     }, [loadEmployees]);
@@ -209,7 +235,6 @@ export default function AdminTimeOffPage() {
         void load();
 
         return () => {
-            // unmount / zmiana deps -> unieważnij poprzedni request
             listReqToken.current += 1;
         };
     }, [load]);
@@ -230,6 +255,8 @@ export default function AdminTimeOffPage() {
     }, [loading, data, hasActiveFiltersApplied]);
 
     const applyFilters = () => {
+        if (!draftDateRangeOk) return;
+
         setPage(1);
         setStatusFilter(draftStatusFilter);
         setEmployeeId(draftEmployeeId);
@@ -331,14 +358,15 @@ export default function AdminTimeOffPage() {
                                             Ładowanie listy…
                                         </MenuItem>
                                     ) : (
-                                        employees.map((e) => (
-                                            <MenuItem key={e.id} value={String(e.id)}>
-                                                {e.first_name} {e.last_name}
-                                                {'employee_number' in e && (e as any).employee_number
-                                                    ? ` (${(e as any).employee_number})`
-                                                    : ''}
-                                            </MenuItem>
-                                        ))
+                                        employees.map((e) => {
+                                            const num = e.employee_number;
+                                            return (
+                                                <MenuItem key={e.id} value={String(e.id)}>
+                                                    {e.first_name} {e.last_name}
+                                                    {num ? ` (${num})` : ''}
+                                                </MenuItem>
+                                            );
+                                        })
                                     )}
                                 </Select>
                             </FormControl>
@@ -363,6 +391,10 @@ export default function AdminTimeOffPage() {
                                 onChange={(e) => setDraftDateFrom(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
                                 disabled={busy}
+                                error={Boolean(draftDateFrom) && !draftDateFromOk}
+                                helperText={
+                                    Boolean(draftDateFrom) && !draftDateFromOk ? 'Niepoprawny format daty.' : ' '
+                                }
                             />
 
                             <TextField
@@ -374,6 +406,25 @@ export default function AdminTimeOffPage() {
                                 onChange={(e) => setDraftDateTo(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
                                 disabled={busy}
+                                error={
+                                    (Boolean(draftDateTo) && !draftDateToOk) ||
+                                    (draftDateFromOk &&
+                                        draftDateToOk &&
+                                        Boolean(draftDateFrom) &&
+                                        Boolean(draftDateTo) &&
+                                        compareYmd(draftDateFrom, draftDateTo) > 0)
+                                }
+                                helperText={
+                                    Boolean(draftDateTo) && !draftDateToOk
+                                        ? 'Niepoprawny format daty.'
+                                        : draftDateFromOk &&
+                                            draftDateToOk &&
+                                            Boolean(draftDateFrom) &&
+                                            Boolean(draftDateTo) &&
+                                            compareYmd(draftDateFrom, draftDateTo) > 0
+                                          ? 'Zakres dat jest niepoprawny.'
+                                          : ' '
+                                }
                             />
 
                             <FormControl size="small" sx={{ minWidth: 220 }} disabled={busy}>
@@ -395,18 +446,10 @@ export default function AdminTimeOffPage() {
                             </FormControl>
 
                             <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
-                                <Button
-                                    variant="text"
-                                    onClick={clearFilters}
-                                    disabled={busy || !isDirty}
-                                >
+                                <Button variant="text" onClick={clearFilters} disabled={busy || !isDirty}>
                                     Wyczyść
                                 </Button>
-                                <Button
-                                    variant="contained"
-                                    onClick={applyFilters}
-                                    disabled={busy || !isDirty}
-                                >
+                                <Button variant="contained" onClick={applyFilters} disabled={!canApply}>
                                     Zastosuj
                                 </Button>
                             </Stack>
@@ -425,10 +468,8 @@ export default function AdminTimeOffPage() {
                         <Stack spacing={1.25}>
                             {(data?.results ?? []).map((x) => {
                                 const emp = employeeMap.get(x.employee);
-                                const employeeHint =
-                                    emp && 'employee_number' in emp && (emp as any).employee_number
-                                        ? ` (${(emp as any).employee_number})`
-                                        : '';
+                                const num = emp?.employee_number ?? null;
+                                const employeeHint = num ? ` (${num})` : '';
 
                                 return (
                                     <Paper key={x.id} variant="outlined" sx={{ p: 1.75 }}>
@@ -508,7 +549,7 @@ export default function AdminTimeOffPage() {
                                     </Paper>
                                 );
                             })}
-                    </Stack>
+                        </Stack>
                     )}
 
                     <Divider />

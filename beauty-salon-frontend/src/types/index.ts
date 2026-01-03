@@ -18,7 +18,7 @@ export interface User {
     is_active: boolean;
     employee_profile: {
         id: number;
-        employee_number: string;
+        employee_number: string | null;
         full_name: string;
     } | null;
     client_profile: {
@@ -39,7 +39,7 @@ export interface Service {
     name: string;
     category: string;
     description: string;
-    price: string; // DRF Decimal -> string
+    price: string;
     duration_minutes: number;
     duration_display: string;
     is_active: boolean;

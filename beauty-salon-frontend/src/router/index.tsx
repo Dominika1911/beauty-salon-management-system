@@ -1,49 +1,59 @@
+import React, { Suspense } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
+import { LinearProgress } from '@mui/material';
+
 import Layout from '@/components/Layout/Layout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
-// =========================
-// PUBLIC
-// =========================
-import HomePage from '@/pages/HomePage';
-import LoginPage from '@/pages/LoginPage';
-import AccessDeniedPage from '@/pages/AccessDeniedPage';
-import NotFoundPage from '@/pages/NotFoundPage';
+function withSuspense(node: React.ReactNode): React.ReactNode {
+    return <Suspense fallback={<LinearProgress />}>{node}</Suspense>;
+}
 
 // =========================
-// SHARED
+// PUBLIC (LAZY)
 // =========================
-import DashboardPage from '@/pages/DashboardPage';
-import AccountPage from '@/pages/AccountPage';
+const HomePage = React.lazy(() => import('@/pages/HomePage'));
+const LoginPage = React.lazy(() => import('@/pages/LoginPage'));
+const AccessDeniedPage = React.lazy(() => import('@/pages/AccessDeniedPage'));
+const NotFoundPage = React.lazy(() => import('@/pages/NotFoundPage'));
 
 // =========================
-// ADMIN
+// SHARED (LAZY)
 // =========================
-import ServicesPage from '@/pages/Admin/Services/ServicesPage';
-import EmployeesPage from '@/pages/Admin/Employees/EmployeesPage';
-import EmployeesSchedulePage from '@/pages/Admin/EmployeesSchedulePage';
-import ClientsPage from '@/pages/Admin/Clients/ClientsPage.tsx';
-import AdminAppointmentsPage from '@/pages/Admin/Appointments/AppointmentsPage.tsx';
-import StatisticsPage from '@/pages/Admin/Statistics/StatisticsPage.tsx';
-import ReportsPage from '@/pages/Admin/ReportsPage';
-import SettingsPage from '@/pages/Admin/SettingsPage';
-import LogsPage from '@/pages/Admin/LogsPage';
-import AdminTimeOffPage from '@/pages/Admin/AdminTimeOffPage';
+const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'));
+const AccountPage = React.lazy(() => import('@/pages/AccountPage'));
 
 // =========================
-// EMPLOYEE
+// ADMIN (LAZY)
 // =========================
-import EmployeeAppointmentsPage from '@/pages/Employee/Appointments/AppointmentsPage.tsx';
-import EmployeeCalendarPage from '@/pages/Employee/Calendar/CalendarPage';
-import EmployeeSchedulePage from '@/pages/Employee/SchedulePage';
-import EmployeeTimeOffPage from "@/pages/Employee/EmployeeTimeOff/EmployeeTimeOffPage";
+const ServicesPage = React.lazy(() => import('@/pages/Admin/Services/ServicesPage'));
+const EmployeesPage = React.lazy(() => import('@/pages/Admin/Employees/EmployeesPage'));
+const EmployeesSchedulePage = React.lazy(() => import('@/pages/Admin/EmployeesSchedulePage'));
+const ClientsPage = React.lazy(() => import('@/pages/Admin/Clients/ClientsPage'));
+const AdminAppointmentsPage = React.lazy(() => import('@/pages/Admin/Appointments/AppointmentsPage'));
+const StatisticsPage = React.lazy(() => import('@/pages/Admin/Statistics/StatisticsPage'));
+const ReportsPage = React.lazy(() => import('@/pages/Admin/ReportsPage'));
+const SettingsPage = React.lazy(() => import('@/pages/Admin/SettingsPage'));
+const LogsPage = React.lazy(() => import('@/pages/Admin/LogsPage'));
+const AdminTimeOffPage = React.lazy(() => import('@/pages/Admin/AdminTimeOffPage'));
 
+// =========================
+// EMPLOYEE (LAZY)
+// =========================
+const EmployeeAppointmentsPage = React.lazy(
+    () => import('@/pages/Employee/Appointments/AppointmentsPage'),
+);
+const EmployeeCalendarPage = React.lazy(() => import('@/pages/Employee/Calendar/CalendarPage'));
+const EmployeeSchedulePage = React.lazy(() => import('@/pages/Employee/SchedulePage'));
+const EmployeeTimeOffPage = React.lazy(
+    () => import('@/pages/Employee/EmployeeTimeOff/EmployeeTimeOffPage'),
+);
 
 // =========================
-// CLIENT
+// CLIENT (LAZY)
 // =========================
-import ClientAppointmentsPage from '@/pages/Client/Appointments/AppointmentsPage';
-import BookingPage from '@/pages/Client/Booking/BookingPage.tsx';
+const ClientAppointmentsPage = React.lazy(() => import('@/pages/Client/Appointments/AppointmentsPage'));
+const BookingPage = React.lazy(() => import('@/pages/Client/Booking/BookingPage'));
 
 export const router = createBrowserRouter([
     {
@@ -52,8 +62,8 @@ export const router = createBrowserRouter([
             // ======================================================
             // PUBLIC
             // ======================================================
-            { path: '/', element: <HomePage /> },
-            { path: '/login', element: <LoginPage /> },
+            { path: '/', element: withSuspense(<HomePage />) },
+            { path: '/login', element: withSuspense(<LoginPage />) },
 
             // ======================================================
             // DASHBOARD – JEDEN DLA WSZYSTKICH RÓL
@@ -62,7 +72,7 @@ export const router = createBrowserRouter([
                 path: '/dashboard',
                 element: (
                     <ProtectedRoute>
-                        <DashboardPage />
+                        {withSuspense(<DashboardPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -74,7 +84,7 @@ export const router = createBrowserRouter([
                 path: '/account',
                 element: (
                     <ProtectedRoute>
-                        <AccountPage />
+                        {withSuspense(<AccountPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -86,7 +96,7 @@ export const router = createBrowserRouter([
                 path: '/admin/services',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <ServicesPage />
+                        {withSuspense(<ServicesPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -94,7 +104,7 @@ export const router = createBrowserRouter([
                 path: '/admin/employees',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <EmployeesPage />
+                        {withSuspense(<EmployeesPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -102,7 +112,7 @@ export const router = createBrowserRouter([
                 path: '/admin/employees-schedule',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <EmployeesSchedulePage />
+                        {withSuspense(<EmployeesSchedulePage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -110,7 +120,7 @@ export const router = createBrowserRouter([
                 path: '/admin/clients',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <ClientsPage />
+                        {withSuspense(<ClientsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -118,16 +128,15 @@ export const router = createBrowserRouter([
                 path: '/admin/appointments',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <AdminAppointmentsPage />
+                        {withSuspense(<AdminAppointmentsPage />)}
                     </ProtectedRoute>
                 ),
             },
             {
-                // ✅ DODANE - STATYSTYKI
                 path: '/admin/statistics',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <StatisticsPage />
+                        {withSuspense(<StatisticsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -135,7 +144,7 @@ export const router = createBrowserRouter([
                 path: '/admin/reports',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <ReportsPage />
+                        {withSuspense(<ReportsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -143,7 +152,7 @@ export const router = createBrowserRouter([
                 path: '/admin/settings',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <SettingsPage />
+                        {withSuspense(<SettingsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -151,7 +160,7 @@ export const router = createBrowserRouter([
                 path: '/admin/logs',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <LogsPage />
+                        {withSuspense(<LogsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -159,7 +168,7 @@ export const router = createBrowserRouter([
                 path: '/admin/time-offs',
                 element: (
                     <ProtectedRoute allowedRoles={['ADMIN']}>
-                        <AdminTimeOffPage />
+                        {withSuspense(<AdminTimeOffPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -171,7 +180,7 @@ export const router = createBrowserRouter([
                 path: '/employee/calendar',
                 element: (
                     <ProtectedRoute allowedRoles={['EMPLOYEE']}>
-                        <EmployeeCalendarPage />
+                        {withSuspense(<EmployeeCalendarPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -179,7 +188,7 @@ export const router = createBrowserRouter([
                 path: '/employee/appointments',
                 element: (
                     <ProtectedRoute allowedRoles={['EMPLOYEE']}>
-                        <EmployeeAppointmentsPage />
+                        {withSuspense(<EmployeeAppointmentsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -187,7 +196,7 @@ export const router = createBrowserRouter([
                 path: '/employee/schedule',
                 element: (
                     <ProtectedRoute allowedRoles={['EMPLOYEE']}>
-                        <EmployeeSchedulePage />
+                        {withSuspense(<EmployeeSchedulePage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -195,7 +204,7 @@ export const router = createBrowserRouter([
                 path: '/employee/time-offs',
                 element: (
                     <ProtectedRoute allowedRoles={['EMPLOYEE']}>
-                        <EmployeeTimeOffPage />
+                        {withSuspense(<EmployeeTimeOffPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -207,7 +216,7 @@ export const router = createBrowserRouter([
                 path: '/client/booking',
                 element: (
                     <ProtectedRoute allowedRoles={['CLIENT']}>
-                        <BookingPage />
+                        {withSuspense(<BookingPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -215,7 +224,7 @@ export const router = createBrowserRouter([
                 path: '/client/appointments',
                 element: (
                     <ProtectedRoute allowedRoles={['CLIENT']}>
-                        <ClientAppointmentsPage />
+                        {withSuspense(<ClientAppointmentsPage />)}
                     </ProtectedRoute>
                 ),
             },
@@ -223,8 +232,8 @@ export const router = createBrowserRouter([
             // ======================================================
             // ERRORS
             // ======================================================
-            { path: '/access-denied', element: <AccessDeniedPage /> },
-            { path: '*', element: <NotFoundPage /> },
+            { path: '/access-denied', element: withSuspense(<AccessDeniedPage />) },
+            { path: '*', element: withSuspense(<NotFoundPage />) },
         ],
     },
 ]);

@@ -2,11 +2,12 @@ import axiosInstance from '@/api/axios';
 import type { DRFPaginated, Employee } from '@/types';
 
 /**
- * Widok publiczny (CLIENT)
- * Zgodny z EmployeePublicSerializer
+ * Widok publiczny (CLIENT / lookup)
+ * Zgodny z EmployeePublicSerializer (zawiera też employee_number dla czytelnego wyboru pracownika)
  */
 export type EmployeePublic = {
     id: number;
+    employee_number: string | null;
     first_name: string;
     last_name: string;
     full_name: string;
