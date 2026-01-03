@@ -60,8 +60,6 @@ function toErrorMessage(err: unknown): string | undefined {
 export default function AppointmentsPage() {
   const { user } = useAuth();
 
-  /* ===================== STATE ===================== */
-
   const [data, setData] = useState<DRFPaginated<Appointment>>(EMPTY_PAGE);
   const [loading, setLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -95,7 +93,6 @@ export default function AppointmentsPage() {
   const rows = useMemo(() => data.results ?? [], [data.results]);
   const hasUnappliedFilters = ordering !== draftOrdering;
 
-  /* ===================== HELPERS ===================== */
 
   const showSnack = (msg: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, msg, severity });
@@ -103,9 +100,7 @@ export default function AppointmentsPage() {
 
   const getOnlyEmployeeId = (emps: EmployeeSelectItem[]) => {
     if (!emps?.length) return null;
-    // dla EMPLOYEE backend powinien zwrócić tylko 1 profil
     if (emps.length === 1) return emps[0].id;
-    // fallback gdyby zwróciło więcej
     return emps[0].id;
   };
 
@@ -125,7 +120,6 @@ export default function AppointmentsPage() {
     return ids;
   };
 
-  /* ===================== LOAD DATA ===================== */
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -145,7 +139,6 @@ export default function AppointmentsPage() {
     void load();
   }, [load]);
 
-  /* ===================== LOAD LOOKUPS ===================== */
 
   const loadLookups = async (opts?: { keepFormEmployee?: boolean }) => {
     setLoadingLookups(true);
@@ -166,7 +159,6 @@ export default function AppointmentsPage() {
         return {
           id: emp.id,
           label,
-          // backend zwraca skills jako OBIEKTY usług -> mapujemy na ID
           skills: mapEmployeeSkillsToIds(emp.skills),
         };
       });
@@ -191,7 +183,6 @@ export default function AppointmentsPage() {
     }
   };
 
-  /* ===================== FILTERS ===================== */
 
   const applyFilters = () => setOrdering(draftOrdering);
   const clearFilters = () => {
@@ -199,7 +190,6 @@ export default function AppointmentsPage() {
     setOrdering('-start');
   };
 
-  /* ===================== DIALOGS ===================== */
 
   const openCreateDialog = () => {
     setEditMode(false);
@@ -215,8 +205,6 @@ export default function AppointmentsPage() {
   const openEditDialog = (appointment: Appointment) => {
     setEditMode(true);
     setEditId(appointment.id);
-
-    // lepsze niż start: przeszłość dopiero po end
     setIsPastEdit(new Date(appointment.start).getTime() < Date.now());
 
     setFormData({
@@ -240,14 +228,12 @@ export default function AppointmentsPage() {
     setFormError(null);
   };
 
-  /* ===================== SAVE ===================== */
 
   const handleSave = async () => {
     setFormError(null);
     setSubmitting(true);
 
     try {
-      // ================== CREATE ==================
       if (!editMode) {
         if (
           !formData.client ||
@@ -276,13 +262,11 @@ export default function AppointmentsPage() {
         return;
       }
 
-      // ================== EDIT ==================
       if (!editId) {
         setFormError('Brak ID wizyty.');
         return;
       }
 
-      // ✅ PRZESZŁOŚĆ -> tylko notatki (osobny endpoint, bez 500)
       if (isPastEdit) {
         await appointmentsApi.updateNotes(editId, formData.internal_notes ?? '');
         showSnack('Notatki zostały zapisane.');
@@ -291,7 +275,6 @@ export default function AppointmentsPage() {
         return;
       }
 
-      // ✅ PRZYSZŁOŚĆ -> pełna edycja
       if (
         !formData.client ||
         !formData.employee ||
@@ -323,7 +306,6 @@ export default function AppointmentsPage() {
     }
   };
 
-  /* ===================== ACTIONS ===================== */
 
   const patchRow = (id: number, patch: Partial<Appointment>) => {
     setData((prev) => ({
@@ -351,7 +333,6 @@ export default function AppointmentsPage() {
     }
   };
 
-  /* ===================== RENDER ===================== */
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={pl}>

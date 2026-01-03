@@ -82,7 +82,6 @@ export default function AdminTimeOffPage() {
     const [employees, setEmployees] = useState<EmployeeListItem[]>([]);
     const [loadingEmployees, setLoadingEmployees] = useState(true);
 
-    // ---- Draft filters (bez requestów) ----
     const [draftStatusFilter, setDraftStatusFilter] = useState<StatusFilter>('ALL');
     const [draftEmployeeId, setDraftEmployeeId] = useState<string>('');
     const [draftSearch, setDraftSearch] = useState('');
@@ -90,7 +89,6 @@ export default function AdminTimeOffPage() {
     const [draftDateFrom, setDraftDateFrom] = useState<string>('');
     const [draftDateTo, setDraftDateTo] = useState<string>('');
 
-    // ---- Applied filters (to idzie do backendu) ----
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
     const [employeeId, setEmployeeId] = useState<string>('');
     const [search, setSearch] = useState('');
@@ -113,7 +111,6 @@ export default function AdminTimeOffPage() {
 
     const busy = loading || actionLoading;
 
-    // ✅ anti-race tokens
     const employeesReqToken = useRef(0);
     const listReqToken = useRef(0);
 
@@ -139,7 +136,6 @@ export default function AdminTimeOffPage() {
         Boolean(dateFrom) ||
         Boolean(dateTo);
 
-    // --- walidacja dat w draft ---
     const draftDateFromOk = !draftDateFrom || isValidYmd(draftDateFrom);
     const draftDateToOk = !draftDateTo || isValidYmd(draftDateTo);
     const draftDateRangeOk =

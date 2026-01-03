@@ -6,13 +6,6 @@ import type {
   DRFPaginated,
 } from '@/types';
 
-/**
- * Parametry filtrowania dla listy wizyt (AppointmentViewSet)
- *
- * Backend:
- * - filterset_fields = ["status", "employee", "service", "client"]
- * - ordering_fields = ["start", "status", "created_at"]
- */
 type AppointmentListParams = {
   status?: AppointmentStatus;
   employee?: number;
@@ -22,7 +15,6 @@ type AppointmentListParams = {
   page?: number;
 };
 
-/* ===================== PAYLOADS ===================== */
 
 type AppointmentCreatePayload = {
   client: number | null;
@@ -31,11 +23,6 @@ type AppointmentCreatePayload = {
   start: Date | string;
   end: Date | string;
   status?: AppointmentStatus;
-
-  /**
-   * Backend: TextField(blank=True) -> string
-   * Nigdy nie wysyłamy null.
-   */
   internal_notes?: string;
 };
 
@@ -46,21 +33,11 @@ type AppointmentUpdatePayload = Partial<{
   start: Date | string;
   end: Date | string;
   status: AppointmentStatus;
-
-  /**
-   * Backend: TextField(blank=True) -> string
-   * Nigdy nie wysyłamy null.
-   */
   internal_notes: string;
 }>;
 
-/* ===================== API ===================== */
 
 export const appointmentsApi = {
-  /**
-   * GET /api/appointments/
-   * DRF PageNumberPagination -> DRFPaginated<Appointment>
-   */
   list: async (
     params?: AppointmentListParams,
   ): Promise<DRFPaginated<Appointment>> => {
@@ -70,11 +47,6 @@ export const appointmentsApi = {
     );
     return response.data;
   },
-
-  /**
-   * GET /api/appointments/my/
-   * DRF action: AppointmentViewSet.my
-   */
   getMy: async (params?: {
     page?: number;
     ordering?: string;
@@ -85,20 +57,12 @@ export const appointmentsApi = {
     );
     return response.data;
   },
-
-  /**
-   * GET /api/appointments/{id}/
-   */
   get: async (id: number): Promise<Appointment> => {
     const response = await axiosInstance.get<Appointment>(
       `/appointments/${id}/`,
     );
     return response.data;
   },
-
-  /**
-   * POST /api/appointments/
-   */
   create: async (
     data: AppointmentCreatePayload,
   ): Promise<Appointment> => {
@@ -113,10 +77,6 @@ export const appointmentsApi = {
     );
     return response.data;
   },
-
-  /**
-   * PATCH /api/appointments/{id}/
-   */
   update: async (
     id: number,
     data: AppointmentUpdatePayload,
@@ -134,11 +94,6 @@ export const appointmentsApi = {
     );
     return response.data;
   },
-
-  /**
-   * Rezerwacja (booking flow)
-   * POST /api/appointments/book/
-   */
   book: async (payload: BookingCreate): Promise<Appointment> => {
     const response = await axiosInstance.post<Appointment>(
       '/appointments/book/',
@@ -146,40 +101,24 @@ export const appointmentsApi = {
     );
     return response.data;
   },
-
-  /**
-   * POST /api/appointments/{id}/confirm/
-   */
   confirm: async (id: number): Promise<Appointment> => {
     const response = await axiosInstance.post<Appointment>(
       `/appointments/${id}/confirm/`,
     );
     return response.data;
   },
-
-  /**
-   * POST /api/appointments/{id}/cancel/
-   */
   cancel: async (id: number): Promise<Appointment> => {
     const response = await axiosInstance.post<Appointment>(
       `/appointments/${id}/cancel/`,
     );
     return response.data;
   },
-
-  /**
-   * POST /api/appointments/{id}/complete/
-   */
   complete: async (id: number): Promise<Appointment> => {
     const response = await axiosInstance.post<Appointment>(
       `/appointments/${id}/complete/`,
     );
     return response.data;
   },
-
-  /**
-   * POST /api/appointments/{id}/no-show/
-   */
   noShow: async (id: number): Promise<Appointment> => {
     const response = await axiosInstance.post<Appointment>(
       `/appointments/${id}/no-show/`,
@@ -187,10 +126,6 @@ export const appointmentsApi = {
     return response.data;
   },
 
-  /**
-   * PATCH /api/appointments/{id}/notes/
-   * Aktualizacja notatek (dozwolona również dla wizyt z przeszłości).
-   */
   updateNotes: async (id: number, internal_notes: string): Promise<Appointment> => {
     const response = await axiosInstance.patch<Appointment>(
       `/appointments/${id}/notes/`,
@@ -199,16 +134,10 @@ export const appointmentsApi = {
     return response.data;
   },
 
-  /**
-   * DELETE /api/appointments/{id}/
-   */
   remove: async (id: number): Promise<void> => {
     await axiosInstance.delete(`/appointments/${id}/`);
   },
 
-  /**
-   * GET /api/availability/slots/
-   */
   getAvailableSlots: async (
     employeeId: number,
     serviceId: number,
@@ -231,9 +160,6 @@ export const appointmentsApi = {
     return response.data;
   },
 
-  /**
-   * POST /api/appointments/check-availability/
-   */
   checkAvailability: async (
     employeeId: number,
     serviceId: number,

@@ -31,7 +31,7 @@ import {
     ContentCut,
     Person,
     Assessment,
-    BarChart, // ✅ DODANE - ikona dla Statystyki
+    BarChart,
     Settings,
     CalendarMonth,
     Schedule,
@@ -52,7 +52,6 @@ interface MenuItemDef {
 }
 
 const menuItems: MenuItemDef[] = [
-    // WSPÓLNE
     {
         text: 'Dashboard',
         icon: <Dashboard />,
@@ -65,29 +64,22 @@ const menuItems: MenuItemDef[] = [
         path: '/account',
         roles: ['ADMIN', 'EMPLOYEE', 'CLIENT'],
     },
-
-    // ADMIN
     { text: 'Wizyty', icon: <Event />, path: '/admin/appointments', roles: ['ADMIN'] },
     { text: 'Pracownicy', icon: <People />, path: '/admin/employees', roles: ['ADMIN'] },
     { text: 'Grafiki', icon: <Schedule />, path: '/admin/employees-schedule', roles: ['ADMIN'] },
     { text: 'Klienci', icon: <Person />, path: '/admin/clients', roles: ['ADMIN'] },
     { text: 'Usługi', icon: <ContentCut />, path: '/admin/services', roles: ['ADMIN'] },
-
-    // ✅ DODANE - STATYSTYKI
     { text: 'Statystyki', icon: <BarChart />, path: '/admin/statistics', roles: ['ADMIN'] },
-
     { text: 'Raporty', icon: <Assessment />, path: '/admin/reports', roles: ['ADMIN'] },
     { text: 'Ustawienia', icon: <Settings />, path: '/admin/settings', roles: ['ADMIN'] },
     { text: 'Logi', icon: <History />, path: '/admin/logs', roles: ['ADMIN'] },
     { text: 'Urlopy', icon: <Event />, path: '/admin/time-offs', roles: ['ADMIN'] },
 
-    // EMPLOYEE
     { text: 'Terminarz', icon: <CalendarMonth />, path: '/employee/calendar', roles: ['EMPLOYEE'] },
     { text: 'Moje wizyty', icon: <Event />, path: '/employee/appointments', roles: ['EMPLOYEE'] },
     { text: 'Grafik', icon: <Schedule />, path: '/employee/schedule', roles: ['EMPLOYEE'] },
     { text: 'Urlopy', icon: <Event />, path: '/employee/time-offs', roles: ['EMPLOYEE'] },
 
-    // CLIENT
     { text: 'Rezerwacja', icon: <CalendarMonth />, path: '/client/booking', roles: ['CLIENT'] },
     { text: 'Moje wizyty', icon: <Event />, path: '/client/appointments', roles: ['CLIENT'] },
 ];
@@ -148,7 +140,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
     const drawerContent = (
         <>
-            {/* Header */}
             <Toolbar
                 sx={{
                     minHeight: 64,
@@ -175,7 +166,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
             <Divider />
 
-            {/* Menu */}
             <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
                 <Typography
                     variant="overline"
@@ -213,8 +203,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                                             fontWeight: selected ? 700 : 600,
                                             lineHeight: 1.2,
                                         },
-
-                                        // selected styling (bez hard-coded rgba różu)
                                         '&.Mui-selected': {
                                             bgcolor: 'rgba(216, 27, 96, 0.08)',
                                             borderColor: 'rgba(216, 27, 96, 0.18)',
@@ -239,7 +227,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
             <Divider />
 
-            {/* Dolny pasek */}
             <Box sx={{ p: 2 }}>
                 <Card variant="outlined">
                     <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
@@ -268,7 +255,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 </Card>
             </Box>
 
-            {/* Potwierdzenie */}
             <Dialog
                 open={confirmOpen}
                 onClose={() => setConfirmOpen(false)}
@@ -298,8 +284,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
-
-            // mniej "biało" i lepsza separacja od contentu
             bgcolor: 'background.default',
             borderRight: '1px solid rgba(17, 24, 39, 0.12)',
         },
@@ -307,7 +291,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
     return (
         <>
-            {/* Mobile: temporary */}
             <Drawer
                 variant="temporary"
                 open={mobileOpen}
@@ -315,11 +298,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 ModalProps={{ keepMounted: true }}
                 sx={{ ...drawerSx, display: { xs: 'block', sm: 'none' } }}
             >
-                {/* wewnątrz dajemy biały "surface" na content */}
                 <Box sx={{ height: '100%', bgcolor: 'background.paper' }}>{drawerContent}</Box>
             </Drawer>
-
-            {/* Desktop: permanent */}
             <Drawer
                 variant="permanent"
                 sx={{ ...drawerSx, display: { xs: 'none', sm: 'block' } }}

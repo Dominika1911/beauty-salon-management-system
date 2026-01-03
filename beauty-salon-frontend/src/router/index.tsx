@@ -9,23 +9,14 @@ function withSuspense(node: React.ReactNode): React.ReactNode {
     return <Suspense fallback={<LinearProgress />}>{node}</Suspense>;
 }
 
-// =========================
-// PUBLIC (LAZY)
-// =========================
 const HomePage = React.lazy(() => import('@/pages/HomePage'));
 const LoginPage = React.lazy(() => import('@/pages/LoginPage'));
 const AccessDeniedPage = React.lazy(() => import('@/pages/AccessDeniedPage'));
 const NotFoundPage = React.lazy(() => import('@/pages/NotFoundPage'));
 
-// =========================
-// SHARED (LAZY)
-// =========================
 const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'));
 const AccountPage = React.lazy(() => import('@/pages/AccountPage'));
 
-// =========================
-// ADMIN (LAZY)
-// =========================
 const ServicesPage = React.lazy(() => import('@/pages/Admin/Services/ServicesPage'));
 const EmployeesPage = React.lazy(() => import('@/pages/Admin/Employees/EmployeesPage'));
 const EmployeesSchedulePage = React.lazy(() => import('@/pages/Admin/EmployeesSchedulePage'));
@@ -36,10 +27,6 @@ const ReportsPage = React.lazy(() => import('@/pages/Admin/ReportsPage'));
 const SettingsPage = React.lazy(() => import('@/pages/Admin/SettingsPage'));
 const LogsPage = React.lazy(() => import('@/pages/Admin/LogsPage'));
 const AdminTimeOffPage = React.lazy(() => import('@/pages/Admin/AdminTimeOffPage'));
-
-// =========================
-// EMPLOYEE (LAZY)
-// =========================
 const EmployeeAppointmentsPage = React.lazy(
     () => import('@/pages/Employee/Appointments/AppointmentsPage'),
 );
@@ -49,9 +36,6 @@ const EmployeeTimeOffPage = React.lazy(
     () => import('@/pages/Employee/EmployeeTimeOff/EmployeeTimeOffPage'),
 );
 
-// =========================
-// CLIENT (LAZY)
-// =========================
 const ClientAppointmentsPage = React.lazy(() => import('@/pages/Client/Appointments/AppointmentsPage'));
 const BookingPage = React.lazy(() => import('@/pages/Client/Booking/BookingPage'));
 
@@ -59,15 +43,9 @@ export const router = createBrowserRouter([
     {
         element: <Layout />,
         children: [
-            // ======================================================
-            // PUBLIC
-            // ======================================================
+
             { path: '/', element: withSuspense(<HomePage />) },
             { path: '/login', element: withSuspense(<LoginPage />) },
-
-            // ======================================================
-            // DASHBOARD – JEDEN DLA WSZYSTKICH RÓL
-            // ======================================================
             {
                 path: '/dashboard',
                 element: (
@@ -77,9 +55,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ======================================================
-            // ACCOUNT / PROFILE – ZMIANA HASŁA (ALL ROLES)
-            // ======================================================
             {
                 path: '/account',
                 element: (
@@ -89,9 +64,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ======================================================
-            // ADMIN
-            // ======================================================
             {
                 path: '/admin/services',
                 element: (
@@ -173,9 +145,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ======================================================
-            // EMPLOYEE
-            // ======================================================
             {
                 path: '/employee/calendar',
                 element: (
@@ -209,9 +178,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ======================================================
-            // CLIENT
-            // ======================================================
             {
                 path: '/client/booking',
                 element: (
@@ -229,9 +195,6 @@ export const router = createBrowserRouter([
                 ),
             },
 
-            // ======================================================
-            // ERRORS
-            // ======================================================
             { path: '/access-denied', element: withSuspense(<AccessDeniedPage />) },
             { path: '*', element: withSuspense(<NotFoundPage />) },
         ],

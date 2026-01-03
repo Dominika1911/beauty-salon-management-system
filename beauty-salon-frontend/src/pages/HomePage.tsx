@@ -15,20 +15,15 @@ import { useAuth } from '../context/AuthContext';
 const HomePage: React.FC = () => {
     const { isAuthenticated, loading } = useAuth();
     const navigate = useNavigate();
-
-    // awaryjny UX: jeśli z jakiegoś powodu auth "stoi" nienaturalnie długo,
-    // pokazujemy użytkownikowi możliwość przejścia dalej ręcznie
     const [showFallback, setShowFallback] = useState(false);
 
     useEffect(() => {
         if (loading) return;
 
-        // normalna ścieżka
         navigate(isAuthenticated ? '/dashboard' : '/login', { replace: true });
     }, [isAuthenticated, loading, navigate]);
 
     useEffect(() => {
-        // po krótkiej chwili pokazujemy hint + przyciski (nie zmienia backendu, tylko UX)
         const t = window.setTimeout(() => setShowFallback(true), 2500);
         return () => window.clearTimeout(t);
     }, []);

@@ -38,7 +38,7 @@ export function AppointmentDetailsDialog({
   onComplete,
   onCancel,
   onNoShow,
-}: Props): JSX.Element {
+}: Props) {
   const canConfirm = useMemo(() => Boolean(selectedAppt?.can_confirm), [selectedAppt]);
   const canComplete = useMemo(() => Boolean(selectedAppt?.can_complete), [selectedAppt]);
   const canCancel = useMemo(() => Boolean(selectedAppt?.can_cancel), [selectedAppt]);

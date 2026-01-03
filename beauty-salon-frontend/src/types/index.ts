@@ -1,10 +1,3 @@
-/* cSpell:disable */
-// src/types/index.ts
-
-// ============================================================================
-// UŻYTKOWNIK / ROLE
-// ============================================================================
-
 export type UserRole = 'ADMIN' | 'EMPLOYEE' | 'CLIENT';
 
 export interface User {
@@ -30,10 +23,6 @@ export interface User {
     updated_at: string;
 }
 
-// ============================================================================
-// USŁUGI
-// ============================================================================
-
 export interface Service {
     id: number;
     name: string;
@@ -46,10 +35,6 @@ export interface Service {
     created_at: string;
     updated_at: string;
 }
-
-// ============================================================================
-// PRACOWNICY
-// ============================================================================
 
 export interface Employee {
     id: number;
@@ -74,10 +59,6 @@ export interface Employee {
     revenue_completed_total: string;
 }
 
-// ============================================================================
-// KLIENCI
-// ============================================================================
-
 export interface Client {
     id: number;
     user_id: number;
@@ -95,10 +76,6 @@ export interface Client {
     created_at: string;
     updated_at: string;
 }
-
-// ============================================================================
-// WIZYTY
-// ============================================================================
 
 export type AppointmentStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
 
@@ -132,10 +109,6 @@ export interface Appointment {
     updated_at: string;
 }
 
-// ============================================================================
-// REZERWACJA I DOSTĘPNOŚĆ
-// ============================================================================
-
 export interface BookingCreate {
     service_id: number;
     employee_id: number;
@@ -143,14 +116,6 @@ export interface BookingCreate {
     client_id?: number;
 }
 
-export interface AvailableSlot {
-    start: string;
-    end: string;
-}
-
-// ============================================================================
-// DASHBOARDY
-// ============================================================================
 
 export interface AdminDashboard {
     role: 'ADMIN';
@@ -179,10 +144,6 @@ export interface ClientDashboard {
 
 export type DashboardResponse = AdminDashboard | EmployeeDashboard | ClientDashboard;
 
-// ============================================================================
-// RAPORTY
-// ============================================================================
-
 export type ReportType =
     | 'employee-performance'
     | 'revenue-analysis'
@@ -194,10 +155,6 @@ export interface AvailableReport {
     type: ReportType;
     description: string;
 }
-
-// ============================================================================
-// STATYSTYKI
-// ============================================================================
 
 export interface Statistics {
     appointments: {
@@ -236,9 +193,6 @@ export interface Statistics {
         price: number;
     }>;
 }
-// ============================================================================
-// SYSTEM I AUTORYZACJA
-// ============================================================================
 
 export type DRFPaginated<T> = {
     count: number;
@@ -260,13 +214,7 @@ export interface AuthStatusResponse {
     user: User | null;
 }
 
-// ============================================================================
-// TIME OFF
-// ============================================================================
-
 export type TimeOffStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
-
-export const TIME_OFF_STATUSES: TimeOffStatus[] = ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'];
 
 export interface TimeOff {
     id: number;

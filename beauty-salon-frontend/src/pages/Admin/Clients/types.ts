@@ -2,8 +2,8 @@ export interface ClientFormData {
     first_name: string;
     last_name: string;
     phone: string;
-    email: string; // UI string; wysyłamy "" -> null
-    password: string; // Formik initialValues zawsze ma string (przy edycji zostaje "")
+    email: string;
+    password: string;
     internal_notes: string;
     is_active: boolean;
 }

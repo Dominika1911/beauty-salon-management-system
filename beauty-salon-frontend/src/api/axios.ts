@@ -33,7 +33,6 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     if (!isFD) {
         headers.set('Content-Type', 'application/json');
     } else {
-        // przy FormData axios sam ustawi boundary
         headers.delete('Content-Type');
     }
 

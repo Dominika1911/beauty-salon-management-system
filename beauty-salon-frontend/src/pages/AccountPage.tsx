@@ -42,7 +42,6 @@ const ProfilePage: React.FC = () => {
 
     const [saving, setSaving] = useState(false);
 
-    // standard komunikatów
     const [pageError, setPageError] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<PasswordFields>({});
@@ -101,8 +100,6 @@ const ProfilePage: React.FC = () => {
             await refreshUser();
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
-
-            // page/form/field errors wg ustalonego standardu
             setFormError(parsed.message || 'Nie udało się zmienić hasła. Spróbuj ponownie.');
 
             const picked = pickFieldErrors<PasswordFields>(parsed.fieldErrors, {
@@ -179,7 +176,6 @@ const ProfilePage: React.FC = () => {
             )}
 
             <Grid container spacing={2}>
-                {/* ================== DANE UŻYTKOWNIKA ================== */}
                 <Grid item xs={12} md={6}>
                     <Card variant="outlined" sx={{ height: '100%' }}>
                         <CardContent>
@@ -247,7 +243,6 @@ const ProfilePage: React.FC = () => {
                     </Card>
                 </Grid>
 
-                {/* ================== ZMIANA HASŁA ================== */}
                 <Grid item xs={12} md={6}>
                     <Card variant="outlined" sx={{ height: '100%' }}>
                         <CardContent>

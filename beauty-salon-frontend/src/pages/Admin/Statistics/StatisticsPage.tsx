@@ -10,7 +10,7 @@ export default function StatisticsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => { loadStatistics(); }, []);
+    useEffect(() => { void loadStatistics(); }, []);
 
     const loadStatistics = async () => {
         try {
@@ -43,8 +43,6 @@ export default function StatisticsPage() {
                 <StatCard label="Przychód całkowity" value={formatPrice(stats.revenue.total_all_time)} />
                 <StatCard label="Przychód (30 dni)" value={formatPrice(stats.revenue.last_30_days)} />
             </Grid>
-
-            {/* ... tutaj dodaj resztę kart używając <StatCard /> ... */}
 
             <Typography variant="h6" fontWeight={700} sx={{ mt: 4, mb: 2 }}>Popularne Usługi</Typography>
             <TableContainer component={Paper} variant="outlined">

@@ -269,7 +269,7 @@ export default function AppointmentFormDialog({
               disabled={submitting}
               helperText={
                 coreFieldsLocked
-                  ? 'W tej sytuacji tylko notatki są zapisywane po stronie backendu.'
+                  ? 'W tej sytuacji tylko notatki są zapisywane po stronie serwera.'
                   : undefined
               }
             />

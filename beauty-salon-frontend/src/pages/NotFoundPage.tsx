@@ -8,9 +8,6 @@ const NotFoundPage: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { isAuthenticated, loading } = useAuth();
-
-    // W adminie mamy sidebar/navbar -> nie robimy 100vh.
-    // Poza adminem chcemy "Result-like" full-screen.
     const isAdmin = location.pathname.startsWith('/admin');
     const destination = isAuthenticated ? '/dashboard' : '/login';
 

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box, Button, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Button, Chip, Paper, Stack, Typography } from '@mui/material';
 
 import type { Appointment } from '@/types';
 
@@ -62,8 +62,6 @@ export default function AppointmentListItem({
 
   const statusColor = statusColorMap[appointment.status] ?? 'default';
   const priceLabel = safeMoneyFromString(appointment.service_price);
-
-  // po migracji client jest wymagany, ale defensywnie nie zakładamy
   const clientLabel = appointment.client_name ?? (appointment.client ? `#${appointment.client}` : '—');
 
   return (
@@ -74,7 +72,6 @@ export default function AppointmentListItem({
         alignItems={{ xs: 'flex-start', md: 'center' }}
         justifyContent="space-between"
       >
-        {/* LEFT */}
         <Stack spacing={0.75} sx={{ minWidth: 0 }}>
           <Typography variant="subtitle1" fontWeight={700}>
             {dateLabel} • {timeLabel}
@@ -111,7 +108,6 @@ export default function AppointmentListItem({
           )}
         </Stack>
 
-        {/* RIGHT */}
         <Stack spacing={1} alignItems={{ xs: 'flex-start', md: 'flex-end' }}>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
             <Chip label={appointment.status_display} color={statusColor} size="small" />
@@ -120,7 +116,6 @@ export default function AppointmentListItem({
             </Button>
           </Stack>
 
-          {/* Akcje statusowe 1:1 z backendem (can_*) */}
           <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
             <Button
               size="small"

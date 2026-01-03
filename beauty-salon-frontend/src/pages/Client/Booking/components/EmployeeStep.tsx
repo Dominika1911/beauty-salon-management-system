@@ -6,7 +6,7 @@ interface Props {
     employees: EmployeePublic[];
     selectedEmployeeId: number | null;
     onPickEmployee: (e: EmployeePublic) => void;
-    onUserInteraction: () => void; // np. czyszczenie błędu w parent
+    onUserInteraction: () => void;
 }
 
 export const EmployeeStep: React.FC<Props> = ({

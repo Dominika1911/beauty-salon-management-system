@@ -33,7 +33,7 @@ type Props = {
     onDelete: (c: Client) => void;
 };
 
-export default function ClientsTable(props: Props): JSX.Element {
+export default function ClientsTable(props: Props) {
     const { clients, loading, busy, emptyInfo, onView, onEdit, onReset, onDelete } = props;
 
     return (

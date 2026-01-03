@@ -5,8 +5,8 @@ export type EmployeeFormState = {
     phone: string;
     is_active: boolean;
     skill_ids: number[];
-    email: string; // create: wymagany
-    password: string; // create: wymagany
+    email: string;
+    password: string;
 };
 
 export const emptyForm: EmployeeFormState = {

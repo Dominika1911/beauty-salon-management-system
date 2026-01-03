@@ -56,19 +56,16 @@ export default function EmployeesPage(): React.ReactNode {
     const [employeesData, setEmployeesData] = useState<DRFPaginated<Employee> | null>(null);
     const [services, setServices] = useState<Service[]>([]);
 
-    // --- SERVICES LOAD FLAGS (KROK 5) ---
     const [servicesLoaded, setServicesLoaded] = useState(false);
     const [servicesLoadFailed, setServicesLoadFailed] = useState(false);
 
     const [loading, setLoading] = useState(true);
     const [publicDataWarning, setPublicDataWarning] = useState(false);
 
-    // ---- Filtry: draft (bez requestów) ----
     const [draftSearch, setDraftSearch] = useState('');
     const [draftIsActiveFilter, setDraftIsActiveFilter] = useState<IsActiveFilter>('ALL');
     const [draftServiceIdFilter, setDraftServiceIdFilter] = useState<number | ''>('');
 
-    // ---- Filtry: applied (to idzie do backendu) ----
     const [search, setSearch] = useState('');
     const [isActiveFilter, setIsActiveFilter] = useState<IsActiveFilter>('ALL');
     const [serviceIdFilter, setServiceIdFilter] = useState<number | ''>('');
@@ -119,7 +116,6 @@ export default function EmployeesPage(): React.ReactNode {
         draftIsActiveFilter !== isActiveFilter ||
         draftServiceIdFilter !== serviceIdFilter;
 
-    // ---- SERVICES (defensywnie) ----
     const loadAllServices = useCallback(async () => {
         setServicesLoaded(false);
         setServicesLoadFailed(false);
@@ -147,7 +143,6 @@ export default function EmployeesPage(): React.ReactNode {
                 currentPage += 1;
             }
 
-            // limit paginacji: lepiej pokazać niepełne dane niż wieszać UI
             setServices(all);
             setServicesLoaded(true);
             setServicesLoadFailed(true);
@@ -168,7 +163,6 @@ export default function EmployeesPage(): React.ReactNode {
         }
     }, []);
 
-    // ---- EMPLOYEES ----
     const loadEmployees = useCallback(async () => {
         setLoading(true);
         setPageError(null);
@@ -210,7 +204,6 @@ export default function EmployeesPage(): React.ReactNode {
         }
     }, [page, sortModel, search, isActiveFilter, serviceIdFilter]);
 
-    // ---- JEDEN ENTRYPOINT: start + refresh ----
     const loadAll = useCallback(async () => {
         setPageError(null);
         await Promise.all([loadAllServices(), loadEmployees()]);
@@ -224,7 +217,6 @@ export default function EmployeesPage(): React.ReactNode {
     const canPrev = Boolean(employeesData?.previous) && !loading;
     const canNext = Boolean(employeesData?.next) && !loading;
 
-    // --- UI gating (KROK 5) ---
     const canOpenCreate = servicesLoaded && !servicesLoadFailed;
 
     const openCreate = () => {
@@ -403,10 +395,7 @@ export default function EmployeesPage(): React.ReactNode {
         }
     };
 
-    // Busy = blokuje globalne akcje
     const busy = loading || resetLoading || actionLoading;
-
-    // Disabled actions in table if services are missing (żeby edycja nie odpalała dialogu bez usług)
     const actionsDisabled = busy || (servicesLoaded && servicesLoadFailed);
 
     const emptyInfo = useMemo(() => {
@@ -488,7 +477,6 @@ export default function EmployeesPage(): React.ReactNode {
                 </Alert>
             )}
 
-            {/* Jawna informacja dlaczego blokujemy create/edit */}
             {servicesLoaded && servicesLoadFailed && (
                 <Alert severity="info">
                     Nie udało się wczytać listy usług — dodawanie/edycja pracowników jest zablokowana. Odśwież stronę.

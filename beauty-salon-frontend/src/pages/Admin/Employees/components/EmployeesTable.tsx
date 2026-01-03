@@ -21,7 +21,7 @@ type Props = {
     emptyInfo: string | null;
 };
 
-export default function EmployeesTable(props: Props): JSX.Element {
+export default function EmployeesTable(props: Props) {
     const {
         rows,
         columns,

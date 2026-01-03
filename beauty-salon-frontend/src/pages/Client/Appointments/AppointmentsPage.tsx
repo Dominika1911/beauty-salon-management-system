@@ -13,19 +13,16 @@ import { ClientAppointmentCard } from './components/ClientAppointmentCard';
 import { ClientAppointmentFilters } from './components/ClientAppointmentFilters';
 import { CancelAppointmentDialog } from './components/CancelAppointmentDialog';
 
-export default function ClientAppointmentsPage(): JSX.Element {
+export default function ClientAppointmentsPage(){
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Stan danych i paginacji
     const [data, setData] = useState<DRFPaginated<Appointment>>(EMPTY_PAGE);
     const [page, setPage] = useState(1);
 
-    // Filtry zastosowane (do API)
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
     const [ordering, setOrdering] = useState<Ordering>('start');
 
-    // Filtry "robocze" (w UI przed kliknięciem Zastosuj)
     const [draftStatus, setDraftStatus] = useState<StatusFilter>('ALL');
     const [draftOrdering, setDraftOrdering] = useState<Ordering>('start');
 
@@ -43,7 +40,6 @@ export default function ClientAppointmentsPage(): JSX.Element {
     const isDirty = draftStatus !== statusFilter || draftOrdering !== ordering;
     const results = useMemo(() => data.results ?? [], [data.results]);
 
-    // ✅ Obsługa powiadomienia po rezerwacji
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         if (params.get('msg') === 'reserved') {
@@ -53,7 +49,6 @@ export default function ClientAppointmentsPage(): JSX.Element {
         }
     }, [location.pathname, location.search, navigate]);
 
-    // Ładowanie danych
     const load = useCallback(async () => {
         setLoading(true);
         setPageError(null);
@@ -76,7 +71,6 @@ export default function ClientAppointmentsPage(): JSX.Element {
         void load();
     }, [load]);
 
-    // Akcja anulowania
     const confirmCancel = async () => {
         if (!cancelDialog.appt) return;
         const apptId = cancelDialog.appt.id;
@@ -85,7 +79,6 @@ export default function ClientAppointmentsPage(): JSX.Element {
         try {
             const updated = await appointmentsApi.cancel(apptId);
 
-            // Lokalna aktualizacja listy (optymistyczna)
             setData((prev) => ({
                 ...prev,
                 results: prev.results
@@ -102,7 +95,6 @@ export default function ClientAppointmentsPage(): JSX.Element {
         }
     };
 
-    // Obsługa filtrów
     const applyFilters = () => {
         setPage(1);
         setStatusFilter(draftStatus);

@@ -32,7 +32,7 @@ let theme = createTheme({
         MuiCssBaseline: {
             styleOverrides: {
                 body: {
-                    backgroundColor: '#FFF5F7', // Tło całej strony
+                    backgroundColor: '#FFF5F7',
                     color: '#2D2D2D',
                     scrollbarColor: '#D81B60 #FFF5F7',
                     '&::-webkit-scrollbar': {

@@ -7,10 +7,10 @@ import {
     CircularProgress,
     Pagination,
 } from '@mui/material';
-import dayjs, { Dayjs } from 'dayjs';
+import { Dayjs } from 'dayjs';
 
 import { timeOffApi } from '@/api/timeOff';
-import type { DRFPaginated, TimeOff, TimeOffStatus } from '@/types';
+import type { DRFPaginated, TimeOff } from '@/types';
 import { parseDrfError } from '@/utils/drfErrors';
 
 import TimeOffRequestDialog from './components/TimeOffRequestDialog';
@@ -42,7 +42,6 @@ export default function EmployeeTimeOffPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // CREATE
     const [openCreateDialog, setOpenCreateDialog] = useState(false);
     const [startDate, setStartDate] = useState<Dayjs | null>(null);
     const [endDate, setEndDate] = useState<Dayjs | null>(null);
@@ -50,7 +49,6 @@ export default function EmployeeTimeOffPage() {
     const [createLoading, setCreateLoading] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
-    // CANCEL
     const [openCancelDialog, setOpenCancelDialog] = useState(false);
     const [cancelId, setCancelId] = useState<number | null>(null);
     const [cancelLoading, setCancelLoading] = useState(false);
@@ -91,7 +89,6 @@ export default function EmployeeTimeOffPage() {
     };
 
     const handleSubmitCreate = async () => {
-        // WALIDACJA
         if (!startDate || !endDate) {
             setCreateError('Proszę wybrać datę rozpoczęcia i zakończenia.');
             return;

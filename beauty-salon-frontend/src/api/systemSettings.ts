@@ -9,19 +9,11 @@ type SystemSettingsUpdatePayload = {
 };
 
 export const systemSettingsApi = {
-    /**
-     * Tylko ADMIN
-     * GET /api/system-settings/
-     */
     get: async (): Promise<SystemSettings> => {
         const response = await axiosInstance.get<SystemSettings>('/system-settings/');
         return response.data;
     },
 
-    /**
-     * Tylko ADMIN
-     * PATCH /api/system-settings/
-     */
     update: async (data: SystemSettingsUpdatePayload): Promise<SystemSettings> => {
         const response = await axiosInstance.patch<SystemSettings>('/system-settings/', data);
         return response.data;

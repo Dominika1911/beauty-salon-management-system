@@ -26,7 +26,6 @@ const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
             }}
         >
             <Toolbar sx={{ minHeight: 64, gap: 1.5 }}>
-                {/* Hamburger tylko na mobile */}
                 <IconButton
                     onClick={onMenuClick}
                     edge="start"

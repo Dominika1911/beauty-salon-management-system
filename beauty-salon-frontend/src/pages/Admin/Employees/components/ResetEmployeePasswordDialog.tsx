@@ -32,7 +32,7 @@ type Props = {
     onSubmit: () => void;
 };
 
-export default function ResetEmployeePasswordDialog(props: Props): JSX.Element {
+export default function ResetEmployeePasswordDialog(props: Props){
     const {
         open,
         onClose,

@@ -32,13 +32,9 @@ type LoginFieldErrors = {
 const LoginPage: React.FC = () => {
     const { login, user } = useAuth();
     const navigate = useNavigate();
-
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-
     const [loading, setLoading] = useState(false);
-
-    // standard komunikatów
     const [formError, setFormError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
     const [snack, setSnack] = useState<SnackState>({ open: false, msg: '', severity: 'info' });
@@ -66,7 +62,6 @@ const LoginPage: React.FC = () => {
         try {
             await login({ username, password });
             setSnack({ open: true, msg: 'Logowanie…', severity: 'info' });
-            // navigate zrobi useEffect po ustawieniu user
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
 
@@ -109,7 +104,6 @@ const LoginPage: React.FC = () => {
                         mx: 'auto',
                     }}
                 >
-                    {/* header – bardziej “app-like”, jak pozostałe strony */}
                     <Box sx={{ px: { xs: 3, sm: 4 }, py: { xs: 3, sm: 3.5 } }}>
                         <Stack direction="row" spacing={2} alignItems="center">
                             <Box

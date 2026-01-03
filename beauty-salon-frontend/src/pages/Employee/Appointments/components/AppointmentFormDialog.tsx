@@ -43,7 +43,6 @@ type Props = {
   onSubmit: () => void;
 };
 
-// Jeśli masz inne base path, zmień tutaj:
 const SLOTS_URL = '/api/availability/slots/';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -91,8 +90,6 @@ export default function AppointmentFormDialog({
   const [slotsError, setSlotsError] = React.useState<string | null>(null);
   const [slots, setSlots] = React.useState<Slot[]>([]);
   const [slotValue, setSlotValue] = React.useState<string>(''); // value = slot.start
-
-  // --- EMPLOYEE: bierzemy zalogowanego pracownika z formData.employee ---
   const employeeId = formData.employee ?? null;
   const employee = React.useMemo(
     () => employees.find((e) => e.id === employeeId) ?? null,
@@ -104,12 +101,10 @@ export default function AppointmentFormDialog({
   }, [employee]);
 
   const filteredServices = React.useMemo(() => {
-    // Jeśli nie mamy pracownika – pokaż wszystkie (fallback)
     if (!employeeId) return services;
     return services.filter((s) => allowedServiceIds.has(s.id));
   }, [allowedServiceIds, employeeId, services]);
 
-  // Sync local day with formData.start when opening dialog (np. edit)
   React.useEffect(() => {
     if (!open) return;
     const s = formData.start ? new Date(formData.start) : null;
@@ -117,7 +112,6 @@ export default function AppointmentFormDialog({
     setSlotValue(s ? s.toISOString() : '');
     setSlotsError(null);
     setSlots([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const clearSlots = React.useCallback(() => {
@@ -127,7 +121,6 @@ export default function AppointmentFormDialog({
   }, []);
 
   const fetchSlots = React.useCallback(async () => {
-    // ✅ zgodnie z backendem: przy edycji przeszłej wizyty nie interesują nas sloty
     if (editMode && isPastEdit) {
       setSlots([]);
       setSlotsError(null);
@@ -179,7 +172,6 @@ export default function AppointmentFormDialog({
 
       setSlots(newSlots);
 
-      // Jeśli obecny start nie jest w slotach, wyczyść start/end (ALE NIE dla isPastEdit)
       const currentStartIso = formData.start
         ? new Date(formData.start).toISOString()
         : '';
@@ -212,18 +204,14 @@ export default function AppointmentFormDialog({
     setFormData,
   ]);
 
-  // Refetch slots whenever service/day changes (and dialog is open)
   React.useEffect(() => {
     if (!open) return;
     void fetchSlots();
   }, [open, fetchSlots]);
 
-  // Gdy zmienia się pracownik (np. przy pierwszym load) – wyczyść service jeśli nie pasuje do skillów
   React.useEffect(() => {
     if (!open) return;
     if (!employeeId) return;
-
-    // ✅ przy przeszłej edycji nic nie czyścimy – ma zostać jak było
     if (editMode && isPastEdit) return;
 
     if (formData.service && !allowedServiceIds.has(formData.service)) {
@@ -235,18 +223,14 @@ export default function AppointmentFormDialog({
       }));
       clearSlots();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, employeeId]);
 
   const serviceSelected = !!formData.service;
 
   const submitDisabled = React.useMemo(() => {
     if (submitting || loadingLookups || slotsLoading || !employeeId) return true;
-
-    // ✅ przeszła wizyta -> pozwalamy zapisać SAME notatki
     if (editMode && isPastEdit) return false;
 
-    // create / przyszła edycja -> wymagamy pełnych danych
     return (
       !formData.client ||
       !formData.service ||
@@ -285,7 +269,6 @@ export default function AppointmentFormDialog({
               </Alert>
             )}
 
-            {/* EMPLOYEE INFO */}
             <Box>
               <Typography variant="caption" color="text.secondary">
                 Pracownik
@@ -305,7 +288,6 @@ export default function AppointmentFormDialog({
               )}
             </Box>
 
-            {/* Client */}
             <FormControl fullWidth required>
               <InputLabel>Klient</InputLabel>
               <Select
@@ -331,7 +313,6 @@ export default function AppointmentFormDialog({
               </Select>
             </FormControl>
 
-            {/* Service (filtered by employee skills) */}
             <FormControl fullWidth required disabled={!employeeId}>
               <InputLabel>Usługa</InputLabel>
               <Select
@@ -363,7 +344,6 @@ export default function AppointmentFormDialog({
               )}
             </FormControl>
 
-            {/* Day */}
             <DatePicker
               label="Dzień"
               value={day}
@@ -379,7 +359,6 @@ export default function AppointmentFormDialog({
               }}
             />
 
-            {/* Slots */}
             <FormControl
               fullWidth
               required
@@ -445,7 +424,6 @@ export default function AppointmentFormDialog({
               )}
             </FormControl>
 
-            {/* Status */}
             {editMode ? (
               <FormControl fullWidth required>
                 <InputLabel>Status</InputLabel>
@@ -473,7 +451,6 @@ export default function AppointmentFormDialog({
               </Alert>
             )}
 
-            {/* Internal notes */}
             <TextField
               label="Notatki wewnętrzne"
               value={formData.internal_notes ?? ''}

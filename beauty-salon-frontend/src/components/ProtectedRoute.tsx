@@ -13,7 +13,6 @@ interface ProtectedRouteProps {
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
     const { user, loading, isAuthenticated } = useAuth();
 
-    // Ładowanie
     if (loading) {
         return (
             <Box
@@ -28,18 +27,13 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles 
             </Box>
         );
     }
-
-    // Nie zalogowany - przekieruj do logowania
     if (!isAuthenticated) {
         return <Navigate to="/login" replace />;
     }
-
-    // Sprawdź uprawnienia
     if (allowedRoles && user && !allowedRoles.includes(user.role)) {
         return <Navigate to="/access-denied" replace />;
     }
 
-    // Zalogowany i ma uprawnienia
     return <>{children}</>;
 };
 

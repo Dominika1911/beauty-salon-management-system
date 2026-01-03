@@ -12,7 +12,7 @@ type Props = {
   onEventClick: (info: EventClickArg) => void;
 };
 
-export function CalendarView({ events, onEventClick }: Props): JSX.Element {
+export function CalendarView({ events, onEventClick }: Props) {
   const theme = useTheme();
 
   return (
@@ -22,7 +22,6 @@ export function CalendarView({ events, onEventClick }: Props): JSX.Element {
         p: { xs: 1, sm: 2 },
         borderRadius: 2,
 
-        // dopasowanie FC do motywu aplikacji
         '& .fc': {
           '--fc-today-bg-color': 'rgba(216, 27, 96, 0.05)',
           '--fc-now-indicator-color': theme.palette.primary.main,
@@ -46,7 +45,6 @@ export function CalendarView({ events, onEventClick }: Props): JSX.Element {
           color: theme.palette.primary.main,
         },
 
-        // najważniejsze: czytelność eventów
         '& .fc-event': {
           cursor: 'pointer',
           borderRadius: '8px',

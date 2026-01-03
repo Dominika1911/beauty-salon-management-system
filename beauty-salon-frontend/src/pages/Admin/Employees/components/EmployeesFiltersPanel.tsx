@@ -7,7 +7,6 @@ type Props = {
     services: Service[];
     busy: boolean;
 
-    // draft
     draftSearch: string;
     setDraftSearch: (v: string) => void;
 
@@ -17,12 +16,10 @@ type Props = {
     draftServiceIdFilter: number | '';
     setDraftServiceIdFilter: (v: number | '') => void;
 
-    // chips state
     hasActiveFiltersDraft: boolean;
     hasActiveFiltersApplied: boolean;
     hasUnappliedChanges: boolean;
 
-    // actions
     onApply: () => void;
     onReset: () => void;
 
@@ -129,7 +126,6 @@ export default function EmployeesFiltersPanel(props: Props): JSX.Element {
                 </Stack>
 
                 <Box sx={{ display: 'none' }}>
-                    {/* placeholder na ewentualne przyszłe elementy bez ruszania strony */}
                     <Typography variant="caption" />
                 </Box>
             </Stack>

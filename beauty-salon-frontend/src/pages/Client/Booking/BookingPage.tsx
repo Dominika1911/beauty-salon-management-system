@@ -8,7 +8,6 @@ import {
     Button,
     Typography,
     Paper,
-    Stack,
     Alert,
     CircularProgress,
     Divider,
@@ -53,7 +52,6 @@ export default function BookingPage() {
 
     const clearError = () => setError('');
 
-    // === LOAD SERVICES ===
     useEffect(() => {
         (async () => {
             try {
@@ -67,7 +65,6 @@ export default function BookingPage() {
         })();
     }, []);
 
-    // === FILTER + SORT ===
     const visibleServices = useMemo(() => {
         const q = serviceQuery.toLowerCase();
         const list = services.filter((s) => s.name.toLowerCase().includes(q));
@@ -79,12 +76,9 @@ export default function BookingPage() {
         });
     }, [services, serviceQuery, serviceSort]);
 
-    // ✅ wybór usługi: resetuj dalej (pracownik/sloty)
     const pickService = (s: Service) => {
         setError('');
         setSelectedService(s);
-
-        // downstream reset
         setSelectedEmployee(null);
         setEmployees([]);
         setSelectedSlotStart(null);
@@ -92,17 +86,13 @@ export default function BookingPage() {
         setSelectedDate(new Date());
     };
 
-    // ✅ wybór pracownika: resetuj sloty
     const pickEmployee = (e: EmployeePublic) => {
         setError('');
         setSelectedEmployee(e);
-
-        // downstream reset
         setSelectedSlotStart(null);
         setAvailableSlots([]);
     };
 
-    // === LOAD EMPLOYEES ===
     useEffect(() => {
         if (!selectedService) return;
 
@@ -118,14 +108,13 @@ export default function BookingPage() {
         })();
     }, [selectedService]);
 
-    // === LOAD SLOTS ===
     useEffect(() => {
         if (activeStep !== 2 || !selectedEmployee || !selectedService || !selectedDate) return;
 
         (async () => {
             setFetchingSlots(true);
             setError('');
-            setAvailableSlots([]); // ✅ nie pokazuj starych slotów w trakcie pobierania
+            setAvailableSlots([]);
 
             try {
                 const res = await appointmentsApi.getAvailableSlots(
@@ -205,7 +194,6 @@ export default function BookingPage() {
 
                 {error && <Alert severity="error">{error}</Alert>}
 
-                {/* STEP 0 – SERVICES */}
                 {activeStep === 0 && (
                     <ServiceStep
                         serviceQuery={serviceQuery}
@@ -219,7 +207,6 @@ export default function BookingPage() {
                     />
                 )}
 
-                {/* STEP 1 – EMPLOYEES */}
                 {activeStep === 1 && (
                     <EmployeeStep
                         employees={employees}
@@ -229,7 +216,6 @@ export default function BookingPage() {
                     />
                 )}
 
-                {/* STEP 2 – DATE + SLOTS */}
                 {activeStep === 2 && (
                     <DateTimeStep
                         selectedDate={selectedDate}

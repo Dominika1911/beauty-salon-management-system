@@ -18,7 +18,7 @@ interface Props {
     selectedSlotStart: string | null;
     onPickSlotStart: (start: string) => void;
 
-    onUserInteraction: () => void; // np. czyszczenie błędu w parent
+    onUserInteraction: () => void;
 }
 
 export const DateTimeStep: React.FC<Props> = ({

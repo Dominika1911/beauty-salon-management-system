@@ -24,9 +24,6 @@ import type { Appointment, AppointmentStatus, DashboardResponse } from '@/types'
 import { dashboardApi } from '@/api/dashboard';
 import { parseDrfError } from '@/utils/drfErrors';
 
-/* =============================================================================
- * Types
- * ============================================================================= */
 
 type ViewState =
     | { status: 'idle' }
@@ -39,10 +36,6 @@ type SnackState = {
     msg: string;
     severity: AlertColor;
 };
-
-/* =============================================================================
- * Helpers
- * ============================================================================= */
 
 function formatDateTime(iso: string): string {
     const d = new Date(iso);
@@ -94,10 +87,6 @@ function statusChipProps(status: string): {
 function formatMoneyPLN(value: number): string {
     return new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' }).format(value);
 }
-
-/* =============================================================================
- * Page
- * ============================================================================= */
 
 export default function DashboardPage() {
     const [state, setState] = React.useState<ViewState>({ status: 'idle' });
@@ -195,19 +184,11 @@ export default function DashboardPage() {
     );
 }
 
-/* =============================================================================
- * Role switch
- * ============================================================================= */
-
 function RoleDashboard({ data }: { data: DashboardResponse }) {
     if (data.role === 'ADMIN') return <AdminDashboardView data={data} />;
     if (data.role === 'EMPLOYEE') return <EmployeeDashboardView data={data} />;
     return <ClientDashboardView data={data} />;
 }
-
-/* =============================================================================
- * Shared UI
- * ============================================================================= */
 
 function StatCard({
     title,
@@ -312,10 +293,6 @@ function AppointmentsList({
     );
 }
 
-/* =============================================================================
- * ADMIN
- * ============================================================================= */
-
 function AdminDashboardView({
     data,
 }: {
@@ -374,10 +351,6 @@ function AdminDashboardView({
         </Stack>
     );
 }
-
-/* =============================================================================
- * EMPLOYEE
- * ============================================================================= */
 
 function EmployeeDashboardView({
     data,
@@ -446,10 +419,6 @@ function EmployeeDashboardView({
         </Stack>
     );
 }
-
-/* =============================================================================
- * CLIENT
- * ============================================================================= */
 
 function ClientDashboardView({
     data,

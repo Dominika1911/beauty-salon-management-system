@@ -16,7 +16,6 @@ export const ORDERING_OPTIONS: Array<{ value: string; label: string }> = [
     { value: '-id', label: 'ID (malejąco)' },
 ];
 
-/** type-guard: ADMIN ma pełny EmployeeSerializer */
 export function isEmployee(row: EmployeeListItem): row is Employee {
     return (row as Employee).employee_number !== undefined;
 }
@@ -96,7 +95,6 @@ export function mapEmployeeCreateMessage(msg: string): string {
     return msg;
 }
 
-/** Jawna walidacja formularza (UI blokuje wysyłkę). */
 export function validateEmployeeForm(
     form: EmployeeFormState,
     isEdit: boolean,
@@ -121,7 +119,6 @@ export function validateEmployeeForm(
     return { ok: true };
 }
 
-// ------ payload types (zgodne z api/employees.ts) ------
 export type EmployeeCreatePayload = {
     first_name: string;
     last_name: string;
@@ -133,10 +130,6 @@ export type EmployeeCreatePayload = {
 };
 
 export type EmployeeUpdatePayload = Partial<EmployeeCreatePayload>;
-
-/**
- * Overloady są kluczowe: TS wtedy wie, co zwraca funkcja przy true/false.
- */
 export function buildEmployeePayload(form: EmployeeFormState, isEdit: false): EmployeeCreatePayload;
 export function buildEmployeePayload(form: EmployeeFormState, isEdit: true): EmployeeUpdatePayload;
 export function buildEmployeePayload(
@@ -162,7 +155,6 @@ export function buildEmployeePayload(
     return base;
 }
 
-/** Jedno miejsce na „najlepszy” komunikat błędu z DRF. */
 export function getBestErrorMessage(e: unknown): string | undefined {
     const parsed = parseDrfError(e);
     return parsed.message || extractDrfMessage(getResponseData(e));

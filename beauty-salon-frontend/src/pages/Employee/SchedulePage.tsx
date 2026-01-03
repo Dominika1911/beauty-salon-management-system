@@ -54,7 +54,6 @@ function normalizeWeeklyHours(input: unknown): WeeklyHours {
 
 export default function EmployeeSchedulePage() {
     const { user } = useAuth();
-    // employee_profile.id z /api/users/me/ -> pk do /employees/{id}/schedule/
     const employeeId = user?.employee_profile?.id ?? null;
 
     const [schedule, setSchedule] = useState<WeeklyHours>(EMPTY_SCHEDULE);

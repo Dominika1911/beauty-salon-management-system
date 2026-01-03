@@ -26,8 +26,6 @@ const Layout: React.FC = () => {
                 component="main"
                 sx={{
                     flexGrow: 1,
-                    // Na desktop: odsunięcie contentu o sidebar.
-                    // Na mobile: sidebar jest tymczasowy (overlay), więc content ma pełną szerokość.
                     width: {
                         xs: '100%',
                         sm: hasSidebar ? `calc(100% - ${drawerWidth}px)` : '100%',

@@ -17,7 +17,6 @@ import { ORDERING_OPTIONS } from '../utils';
 type Props = {
     busy: boolean;
 
-    // draft
     draftSearch: string;
     setDraftSearch: (v: string) => void;
 
@@ -30,17 +29,15 @@ type Props = {
     draftOrdering: string;
     setDraftOrdering: (v: string) => void;
 
-    // state
     hasActiveFiltersDraft: boolean;
     hasActiveFiltersApplied: boolean;
     hasUnappliedChanges: boolean;
 
-    // actions
     applyFilters: () => void;
     resetFilters: () => void;
 };
 
-export default function ClientsFiltersPanel(props: Props): JSX.Element {
+export default function ClientsFiltersPanel(props: Props) {
     const {
         busy,
         draftSearch,

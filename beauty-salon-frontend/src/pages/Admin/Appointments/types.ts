@@ -10,7 +10,7 @@ export type ClientSelectItem = {
 export type EmployeeSelectItem = {
   id: number;
   label: string;
-  skills: number[]; // lista id usług
+  skills: number[];
 };
 
 export type ServiceSelectItem = {
@@ -30,6 +30,6 @@ export type AdminAppointmentFormData = {
 };
 
 export type Slot = {
-  start: string; // ISO
-  end: string;   // ISO
+  start: string;
+  end: string;
 };

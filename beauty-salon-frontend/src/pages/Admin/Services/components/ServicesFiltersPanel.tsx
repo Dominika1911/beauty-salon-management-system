@@ -18,7 +18,6 @@ import { SORT_OPTIONS } from '../types';
 type Props = {
     busy: boolean;
 
-    // draft values
     draftQuery: string;
     setDraftQuery: (v: string) => void;
 
@@ -34,12 +33,10 @@ type Props = {
     draftSortDir: SortDir;
     setDraftSortDir: (v: SortDir) => void;
 
-    // state chips
     hasActiveFiltersDraft: boolean;
     hasActiveFiltersApplied: boolean;
     hasUnappliedChanges: boolean;
 
-    // actions
     applyFilters: () => void;
     resetFilters: () => void;
 };
@@ -78,7 +75,6 @@ export default function ServicesFiltersPanel(props: Props): JSX.Element {
 
     return (
         <Stack spacing={2}>
-            {/* Filtry (draft) */}
             <Stack
                 direction={{ xs: 'column', md: 'row' }}
                 spacing={2}

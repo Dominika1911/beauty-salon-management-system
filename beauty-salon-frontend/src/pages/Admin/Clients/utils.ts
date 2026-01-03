@@ -47,7 +47,6 @@ export function firstFromDrf(v: unknown): string | null {
     return null;
 }
 
-// -------------------- DRF error helpers --------------------
 type AxiosLikeError = { response?: { data?: unknown } };
 
 export function getResponseData(err: unknown): unknown {
@@ -75,7 +74,6 @@ export function extractDrfMessage(data: unknown): string | undefined {
         const nfe = obj.non_field_errors;
         if (Array.isArray(nfe) && nfe.length && typeof nfe[0] === 'string') return String(nfe[0]);
 
-        // pierwszy string z dowolnego pola
         for (const v of Object.values(obj)) {
             if (typeof v === 'string') return v;
             if (Array.isArray(v) && v.length && typeof v[0] === 'string') return String(v[0]);
@@ -90,7 +88,6 @@ export function getBestErrorMessage(err: unknown): string | undefined {
     return parsed.message || extractDrfMessage(getResponseData(err));
 }
 
-// -------------------- payload helpers (kontrakt FE->BE) --------------------
 type NormalizedClientValues = {
     first_name: string;
     last_name: string;
@@ -98,7 +95,7 @@ type NormalizedClientValues = {
     email: string | null;
     internal_notes: string;
     is_active: boolean;
-    password: string; // tylko create; przy edit ignorujemy
+    password: string;
 };
 
 export function normalizeClientValues(values: ClientFormData): NormalizedClientValues {

@@ -90,7 +90,6 @@ function ensureOpeningHours(oh: SystemSettings['opening_hours'] | undefined): Op
 }
 
 function cleanSlots(slots: Slot[]): Slot[] {
-    // trim + drop empties + stable sort
     const cleaned = slots
         .map((s) => ({ start: String(s.start ?? '').trim(), end: String(s.end ?? '').trim() }))
         .filter((s) => s.start !== '' && s.end !== '');
@@ -211,8 +210,6 @@ const SettingsPage: React.FC = () => {
 
         for (const day of Object.keys(openingHours) as DayKey[]) {
             const slots = openingHours[day] ?? [];
-
-            // walidujemy tylko te sloty, które mają oba pola wpisane
             const candidate = cleanSlots(slots);
 
             for (const slot of candidate) {

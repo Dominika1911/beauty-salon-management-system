@@ -30,13 +30,11 @@ const ClientsPage: React.FC = () => {
     const [data, setData] = useState<DRFPaginated<Client> | null>(null);
     const [page, setPage] = useState(1);
 
-    // ---- Draft (bez requestów) ----
     const [draftSearch, setDraftSearch] = useState('');
     const [draftClientNumber, setDraftClientNumber] = useState('');
     const [draftOnlyActive, setDraftOnlyActive] = useState(false);
     const [draftOrdering, setDraftOrdering] = useState<string>('-created_at');
 
-    // ---- Applied (to idzie do backendu) ----
     const [search, setSearch] = useState('');
     const [clientNumber, setClientNumber] = useState('');
     const [onlyActive, setOnlyActive] = useState(false);
@@ -44,13 +42,11 @@ const ClientsPage: React.FC = () => {
 
     const [loading, setLoading] = useState(true);
 
-    // komunikaty: lista vs formularz
     const [pageError, setPageError] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
 
     const [snack, setSnack] = useState<SnackbarState>({ open: false, msg: '', severity: 'info' });
 
-    // dialogs
     const [formOpen, setFormOpen] = useState(false);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
 
@@ -132,19 +128,16 @@ const ClientsPage: React.FC = () => {
         }
     }, [page, ordering, search, onlyActive, clientNumber]);
 
-    // KROK 3: jeden entrypoint do ładowania (start + refresh)
     const loadAll = useCallback(async () => {
         await loadClients();
     }, [loadClients]);
 
-    // request tylko gdy: page lub applied filtry
     useEffect(() => {
         void loadAll();
     }, [loadAll]);
 
     const clients = useMemo(() => data?.results ?? [], [data]);
 
-    // KROK 2: paginacja blokowana przez busy (nie tylko loading)
     const canPrev = Boolean(data?.previous) && !busy;
     const canNext = Boolean(data?.next) && !busy;
 
@@ -208,7 +201,6 @@ const ClientsPage: React.FC = () => {
             const d = getResponseData(err);
 const nextFieldErrors: Record<string, string> = { ...(fieldErrors || {}) };
 
-// create: jeśli backend zwrócił non_field_errors dot. password, mapujemy w pole password
 if (!editingClient && !nextFieldErrors.password) {
     const obj = d && typeof d === 'object' ? (d as Record<string, unknown>) : undefined;
     const nfe = firstFromDrf(obj?.non_field_errors);
@@ -262,8 +254,6 @@ if (!editingClient && !nextFieldErrors.password) {
 
         try {
             setResetSaving(true);
-
-            // UWAGA: w Twoim backendzie/typach klient ma user_id (tak było w zipie)
             await usersApi.resetPassword(resetTarget.user_id, {
                 new_password: p1,
                 new_password2: p2,
@@ -297,7 +287,6 @@ setResetErr(
 
     return (
         <Stack spacing={2}>
-            {/* Header */}
             <Box
                 sx={{
                     display: 'flex',
@@ -355,7 +344,6 @@ setResetErr(
                 resetFilters={resetFilters}
             />
 
-            {/* Pagination */}
             <Paper variant="outlined" sx={{ p: 2 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
                     <Stack direction="row" spacing={1}>

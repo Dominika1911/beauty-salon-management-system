@@ -20,7 +20,6 @@ export function validateServiceForm(form: FormState): {
     return { valid: Object.keys(next).length === 0, errors: next };
 }
 
-// ---- helpers do DRF error ----
 type AxiosLikeError = { response?: { data?: unknown } };
 export function getResponseData(err: unknown): unknown {
     if (typeof err !== 'object' || err === null) return undefined;
@@ -61,7 +60,6 @@ export function getBestErrorMessage(e: unknown): string | undefined {
     return parsed.message || extractDrfMessage(getResponseData(e));
 }
 
-// ---- payload builder (spójny kontrakt FE->BE) ----
 export type ServiceCreatePayload = {
     name: string;
     category?: string;
@@ -70,17 +68,16 @@ export type ServiceCreatePayload = {
     duration_minutes: number;
     is_active?: boolean;
 };
-export type ServiceUpdatePayload = Partial<ServiceCreatePayload>;
+
 
 export function buildServicePayload(form: FormState): ServiceCreatePayload {
-    // validateServiceForm() gwarantuje, że duration_minutes i price są liczbami >= 0
     const dur = Number(form.duration_minutes);
 
     return {
         name: form.name.trim(),
         category: form.category.trim() || undefined,
         description: form.description.trim() || undefined,
-        price: String(form.price), // DecimalField w DRF przyjmie string/number
+        price: String(form.price),
         duration_minutes: dur,
         is_active: form.is_active,
     };

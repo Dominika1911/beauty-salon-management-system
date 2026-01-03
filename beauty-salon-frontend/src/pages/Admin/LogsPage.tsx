@@ -4,8 +4,6 @@ import {
     Box,
     Button,
     Chip,
-    CircularProgress,
-    Divider,
     FormControl,
     Grid,
     InputLabel,
@@ -29,28 +27,24 @@ import type { DRFPaginated, SystemLog } from '@/types';
 import { auditLogsApi } from '@/api/auditLogs';
 import { parseDrfError } from '@/utils/drfErrors';
 
-// 1. Rozszerzona lista kategorii - teraz z podziałem na Klientów i Pracowników
 type ActionGroup =
     | 'ALL'
     | 'AUTH'
     | 'APPOINTMENTS'
     | 'SERVICES'
-    | 'EMPLOYEES' // Pracownicy
-    | 'CLIENTS' // Klienci
+    | 'EMPLOYEES'
+    | 'CLIENTS'
     | 'TIMEOFF'
     | 'SETTINGS'
     | 'OTHER';
 
 type Ordering = 'timestamp' | '-timestamp';
 
-/**
- * MAPOWANIE ZGODNE Z BACKENDEM (models.py)
- */
+
 function groupFromAction(action: string): ActionGroup {
     if (!action) return 'OTHER';
     const a = action.toUpperCase().trim();
 
-    // Logowanie
     if (
         a.includes('AUTH') ||
         a.includes('LOGIN') ||
@@ -61,32 +55,26 @@ function groupFromAction(action: string): ActionGroup {
         return 'AUTH';
     }
 
-    // Wizyty
     if (a.includes('APPOINTMENT') || a.includes('WIZYT') || a.includes('BOOKING')) {
         return 'APPOINTMENTS';
     }
 
-    // Usługi
     if (a.includes('SERVICE') || a.includes('USŁUG')) {
         return 'SERVICES';
     }
 
-    // PRACOWNICY (Dopasowanie do EMPLOYEE_CREATED, EMPLOYEE_UPDATED)
     if (a.includes('EMPLOYEE') || a.includes('PRAC')) {
         return 'EMPLOYEES';
     }
 
-    // KLIENCI (Dopasowanie do CLIENT_CREATED, CLIENT_UPDATED)
     if (a.includes('CLIENT') || a.includes('KLIENT')) {
         return 'CLIENTS';
     }
 
-    // Urlopy
     if (a.includes('TIMEOFF') || a.includes('URLOP')) {
         return 'TIMEOFF';
     }
 
-    // Ustawienia
     if (a.includes('SETTINGS') || a.includes('USTAWIENIA')) {
         return 'SETTINGS';
     }
@@ -94,7 +82,6 @@ function groupFromAction(action: string): ActionGroup {
     return 'OTHER';
 }
 
-// 2. Kolory i etykiety dla nowych grup
 function chipPropsForGroup(g: ActionGroup) {
     switch (g) {
         case 'AUTH':
@@ -129,18 +116,17 @@ const GROUP_LABEL: Record<ActionGroup, string> = {
 };
 
 function niceActor(s: string | null) {
-    if (!s) return '—';
+    if (!s) return '-';
     return s.replace(/^(.+?)-0+(\d+)$/, '$1-$2');
 }
 
-export default function LogsPage(): JSX.Element {
+export default function LogsPage(){
     const [data, setData] = useState<DRFPaginated<SystemLog> | null>(null);
     const [loading, setLoading] = useState(true);
     const [pageError, setPageError] = useState<string | null>(null);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState<number | null>(null);
 
-    // Filtry
     const [actionFilter, setActionFilter] = useState('');
     const [performedBy, setPerformedBy] = useState<number | ''>('');
     const [targetUser, setTargetUser] = useState<number | ''>('');
@@ -148,7 +134,6 @@ export default function LogsPage(): JSX.Element {
     const [group, setGroup] = useState<ActionGroup>('ALL');
     const [search, setSearch] = useState('');
 
-    // Drafty (do przycisku Zastosuj)
     const [draftActionFilter, setDraftActionFilter] = useState('');
     const [draftPerformedBy, setDraftPerformedBy] = useState<number | ''>('');
     const [draftTargetUser, setDraftTargetUser] = useState<number | ''>('');
@@ -407,7 +392,7 @@ export default function LogsPage(): JSX.Element {
                                                             {niceActor(l.target_user_username)}
                                                         </Typography>
                                                     ) : (
-                                                        '—'
+                                                        '-'
                                                     )}
                                                 </TableCell>
                                             </TableRow>

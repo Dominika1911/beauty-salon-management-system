@@ -1,9 +1,5 @@
 import { AppointmentStatus } from '@/types';
 
-/**
- * Zwraca kolor dla komponentu Chip na podstawie statusu wizyty.
- * Zapobiega duplikacji definicji kolorów w Adminie, Kliencie i Pracowniku.
- */
 export const statusColor = (status: AppointmentStatus): "default" | "success" | "warning" | "error" => {
     switch (status) {
         case 'CONFIRMED':
@@ -21,9 +17,6 @@ export const statusColor = (status: AppointmentStatus): "default" | "success" | 
     }
 };
 
-/**
- * Zwraca czytelną polską etykietę dla statusu wizyty.
- */
 export const statusLabel = (status: AppointmentStatus | string): string => {
     const labels: Record<string, string> = {
         PENDING: 'Oczekuje',
@@ -35,10 +28,6 @@ export const statusLabel = (status: AppointmentStatus | string): string => {
     return labels[status as string] || status;
 };
 
-/**
- * Formatuje wartość liczbową na walutę PLN (np. 150,00 zł).
- * Wykorzystuje Intl.NumberFormat dla poprawnej lokalizacji.
- */
 export const formatPrice = (price?: string | number): string => {
     if (price == null) return '—';
     const n = Number(price);
@@ -49,9 +38,6 @@ export const formatPrice = (price?: string | number): string => {
     }).format(n);
 };
 
-/**
- * Formatuje datę ISO na czytelny format polski (np. 30.12.2025, 18:00).
- */
 export const formatDateTimePL = (iso: string | Date): string => {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -66,10 +52,6 @@ export const formatDateTimePL = (iso: string | Date): string => {
           });
 };
 
-/**
- * Sprawdza, czy wizyta jest z przeszłości.
- * Używane do blokowania edycji historycznych wizyt.
- */
 export const isPastAppointment = (startDate: string | Date): boolean => {
     return new Date(startDate).getTime() < Date.now();
 };

@@ -14,7 +14,7 @@ type Props = {
     actionLoading: boolean;
 };
 
-export default function ConfirmEmployeeDeleteDialog(props: Props): JSX.Element {
+export default function ConfirmEmployeeDeleteDialog(props: Props) {
     const { open, busy, employee, onClose, onConfirm, actionLoading } = props;
 
     return (

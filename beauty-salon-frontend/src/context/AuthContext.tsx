@@ -29,8 +29,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-
-    // Guard na podwójne odpalenie efektu w React 18 StrictMode (DEV)
     const didInit = useRef(false);
 
     const refreshUser = useCallback(async (): Promise<User | null> => {
@@ -51,10 +49,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         const initAuth = async () => {
             try {
-                // CSRF – inicjalizacja cookie (ważne dla Django)
                 await authApi.getCsrf();
-
-                // sprawdzenie sesji
                 await refreshUser();
             } finally {
                 setLoading(false);
@@ -66,13 +61,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const login = useCallback(
         async (credentials: LoginRequest): Promise<User> => {
-            // 1. WYMUŚ pobranie nowego tokena CSRF przed logowaniem
             await authApi.getCsrf();
-
-            // 2. Spróbuj się zalogować
             await authApi.login(credentials.username, credentials.password);
-
-            // 3. Sprawdź, czy sesja została utworzona
             const nextUser = await refreshUser();
             if (!nextUser) throw new Error('Logowanie nieudane - brak sesji.');
             return nextUser;

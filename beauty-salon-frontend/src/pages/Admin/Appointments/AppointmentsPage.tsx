@@ -43,7 +43,6 @@ import {
   toYyyyMmDd,
 } from './utils';
 
-/* ===================== CONST ===================== */
 
 const EMPTY_PAGE: DRFPaginated<Appointment> = {
   count: 0,
@@ -107,11 +106,9 @@ export default function AppointmentsPage() {
     severity: 'success',
   });
 
-  // Confirm dialog state
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Sloty
   const [slotDay, setSlotDay] = useState<Date | null>(startOfDay(new Date()));
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError] = useState<string | null>(null);
@@ -226,7 +223,7 @@ export default function AppointmentsPage() {
     setCoreFieldsLocked(started);
     setCoreFieldsLockMessage(
       started
-        ? 'Ta wizyta już się rozpoczęła — backend pozwala edytować tylko notatki wewnętrzne.'
+        ? 'Ta wizyta już się rozpoczęła, możesz edytować tylko notatki wewnętrzne.'
         : null,
     );
 
@@ -267,8 +264,6 @@ export default function AppointmentsPage() {
     setSelectedSlotStart(null);
   };
 
-  // ========= Filtry services/employees po skills =========
-
   const filteredServices: ServiceSelectItem[] = useMemo(() => {
     if (!formData.employee) return services;
     const emp = employees.find((e) => e.id === formData.employee);
@@ -281,8 +276,6 @@ export default function AppointmentsPage() {
     const sid = formData.service;
     return employees.filter((e) => Array.isArray(e.skills) && e.skills.includes(sid));
   }, [employees, formData.service]);
-
-  // ========= Logika czyszczenia pól przy zmianie filtrów (skills) =========
 
   useEffect(() => {
     if (!dialogOpen || coreFieldsLocked) return;
@@ -310,7 +303,6 @@ export default function AppointmentsPage() {
     }
   }, [dialogOpen, coreFieldsLocked, employees, formData.employee, formData.service]);
 
-  // ========= Sloty: pobieramy tylko gdy mamy employee + service + day =========
 
   const fetchSlots = useCallback(async () => {
     if (!dialogOpen || coreFieldsLocked) return;
@@ -354,8 +346,6 @@ export default function AppointmentsPage() {
     setFormData((p) => ({ ...p, start: isValidDate(d) ? d : null }));
   };
 
-  // ========= Submit enable =========
-
   const canSubmit = useMemo(() => {
     if (loadingLookups || submitting) return false;
     if (!dialogOpen) return true;
@@ -374,8 +364,6 @@ export default function AppointmentsPage() {
     formData.start,
     selectedSlotStart,
   ]);
-
-  // ========= Save =========
 
   const handleSave = async () => {
     setSubmitting(true);
@@ -477,8 +465,6 @@ export default function AppointmentsPage() {
       setSubmitting(false);
     }
   };
-
-  // ========= Status actions (z confirm dialog) =========
 
   const runStatusAction = useCallback(
     async (

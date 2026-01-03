@@ -26,7 +26,7 @@ interface Props {
     selectedServiceId: number | null;
     onPickService: (s: Service) => void;
 
-    onUserInteraction: () => void; // np. czyszczenie błędu w parent
+    onUserInteraction: () => void;
 }
 
 export const ServiceStep: React.FC<Props> = ({

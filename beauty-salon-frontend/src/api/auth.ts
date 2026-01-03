@@ -25,7 +25,6 @@ export const authApi = {
         return response.data;
     },
 
-    // ✅ TO DODAJ
     changePassword: async (data: {
         old_password: string;
         new_password: string;

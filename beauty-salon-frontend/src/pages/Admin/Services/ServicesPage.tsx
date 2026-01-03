@@ -23,32 +23,23 @@ export default function ServicesPage() {
     const [items, setItems] = useState<Service[]>([]);
     const [count, setCount] = useState(0);
     const [pageSize, setPageSize] = useState<number | null>(null);
-
     const [loading, setLoading] = useState(true);
-
-    // Paginacja (realnie odpala load)
     const [page, setPage] = useState(1);
-
-    // UI draft (użytkownik wpisuje — bez requestów)
     const [draftQuery, setDraftQuery] = useState('');
     const [draftIsActive, setDraftIsActive] = useState<IsActiveFilter>('all');
     const [draftCategory, setDraftCategory] = useState('');
     const [draftSortKey, setDraftSortKey] = useState<SortKey>('name');
     const [draftSortDir, setDraftSortDir] = useState<SortDir>('asc');
-
-    // Applied (dopiero to idzie do backendu)
     const [query, setQuery] = useState('');
     const [isActiveFilter, setIsActiveFilter] = useState<IsActiveFilter>('all');
     const [categoryFilter, setCategoryFilter] = useState('');
     const [sortKey, setSortKey] = useState<SortKey>('name');
     const [sortDir, setSortDir] = useState<SortDir>('asc');
 
-    // komunikaty
     const [pageError, setPageError] = useState<string | null>(null);
     const [formError, setFormError] = useState<string | null>(null);
     const [snack, setSnack] = useState<SnackbarState>({ open: false, msg: '', severity: 'info' });
 
-    // dialog / formularz
     const [open, setOpen] = useState(false);
     const [edit, setEdit] = useState<Service | null>(null);
     const [form, setForm] = useState<FormState>(emptyForm);
@@ -123,12 +114,10 @@ export default function ServicesPage() {
         }
     }
 
-    // Request tylko na start / zmianę strony / zmianę APPLIED filtrów (po kliknięciu Zastosuj)
     useEffect(() => {
         void load();
     }, [page, orderingParam, query, is_active_param, categoryFilter]);
 
-    // KROK 2: zmiana sortowania -> wracamy na stronę 1 (żeby nie być na stronie 5 po sortowaniu)
     useEffect(() => {
         if (page !== 1) {
             setPage(1);
