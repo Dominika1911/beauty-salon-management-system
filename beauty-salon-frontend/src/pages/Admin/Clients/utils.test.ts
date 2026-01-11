@@ -9,17 +9,13 @@ import {
   CreateClientSchema,
 } from './utils';
 
-/**
- * TESTY RZECZYWISTEJ LOGIKI BIZNESOWEJ - Clients
- */
-
-describe('Clients Utils: firstFromDrf', () => {
+describe('Narzędzia Klienta: firstFromDrf', () => {
 
   it('Zwraca string bezpośrednio', () => {
     expect(firstFromDrf('Error message')).toBe('Error message');
   });
 
-  it('Zwraca pierwszy element z array', () => {
+  it('Zwraca pierwszy element z tablicy', () => {
     expect(firstFromDrf(['First', 'Second'])).toBe('First');
   });
 
@@ -30,13 +26,13 @@ describe('Clients Utils: firstFromDrf', () => {
   });
 });
 
-describe('Clients Utils: extractDrfMessage', () => {
+describe('Narzędzia Klienta: extractDrfMessage', () => {
 
-  it('Wyciąga z pola detail', () => {
+  it('Wyciąga komunikat z pola detail', () => {
     expect(extractDrfMessage({ detail: 'Detail error' })).toBe('Detail error');
   });
 
-  it('Wyciąga z non_field_errors', () => {
+  it('Wyciąga komunikat z non_field_errors', () => {
     expect(extractDrfMessage({ non_field_errors: ['Error 1'] })).toBe('Error 1');
   });
 
@@ -46,9 +42,9 @@ describe('Clients Utils: extractDrfMessage', () => {
   });
 });
 
-describe('Clients Utils: normalizeClientValues', () => {
+describe('Narzędzia Klienta: normalizeClientValues', () => {
 
-  it('Trimuje wszystkie stringi', () => {
+  it('Usuwa zbędne spacje (trim) ze wszystkich ciągów znaków', () => {
     const result = normalizeClientValues({
       first_name: '  Jan  ',
       last_name: '  Kowalski  ',
@@ -66,7 +62,7 @@ describe('Clients Utils: normalizeClientValues', () => {
     expect(result.internal_notes).toBe('Notatka');
   });
 
-  it('Zamienia pusty email na null', () => {
+  it('Zamienia pusty adres email na null', () => {
     const result = normalizeClientValues({
       first_name: 'Jan',
       last_name: 'Kowalski',
@@ -80,7 +76,7 @@ describe('Clients Utils: normalizeClientValues', () => {
     expect(result.email).toBeNull();
   });
 
-  it('Zamienia puste phone na undefined', () => {
+  it('Zamienia pusty numer telefonu na undefined', () => {
     const result = normalizeClientValues({
       first_name: 'Jan',
       last_name: 'Kowalski',
@@ -95,9 +91,9 @@ describe('Clients Utils: normalizeClientValues', () => {
   });
 });
 
-describe('Clients Utils: buildClientCreatePayload', () => {
+describe('Narzędzia Klienta: buildClientCreatePayload', () => {
 
-  it('Buduje kompletny payload dla nowego klienta', () => {
+  it('Buduje kompletny zestaw danych dla nowego klienta', () => {
     const payload = buildClientCreatePayload({
       first_name: 'Jan',
       last_name: 'Kowalski',
@@ -118,9 +114,9 @@ describe('Clients Utils: buildClientCreatePayload', () => {
   });
 });
 
-describe('Clients Utils: buildClientUpdatePayload', () => {
+describe('Narzędzia Klienta: buildClientUpdatePayload', () => {
 
-  it('Buduje payload bez hasła (edycja)', () => {
+  it('Buduje dane bez hasła (do edycji)', () => {
     const payload = buildClientUpdatePayload({
       first_name: 'Jan',
       last_name: 'Kowalski',
@@ -128,7 +124,7 @@ describe('Clients Utils: buildClientUpdatePayload', () => {
       email: 'new@test.com',
       internal_notes: 'Zmieniona notatka',
       is_active: false,
-      password: 'ignored', // Nie powinno być w payload
+      password: 'ignored',
     });
 
     expect(payload.first_name).toBe('Jan');
@@ -136,7 +132,7 @@ describe('Clients Utils: buildClientUpdatePayload', () => {
   });
 });
 
-describe('Clients Utils: Yup Schemas', () => {
+describe('Narzędzia Klienta: Schematy Yup', () => {
 
   it('BaseClientSchema waliduje imię (min 2 znaki)', async () => {
     await expect(
@@ -156,9 +152,7 @@ describe('Clients Utils: Yup Schemas', () => {
     ).resolves.toBeTruthy();
   });
 
-  it('BaseClientSchema: telefon nie jest walidowany restrykcyjnie (realna implementacja)', async () => {
-    // Ten test jest DOWODOWY: pokazuje faktyczne zachowanie schematu,
-    // zamiast wymuszać regułę, której w kodzie nie ma.
+  it('BaseClientSchema: telefon nie jest walidowany restrykcyjnie', async () => {
     await expect(
       BaseClientSchema.validate({
         first_name: 'Jan',
@@ -179,13 +173,13 @@ describe('Clients Utils: Yup Schemas', () => {
     ).rejects.toMatchObject({ name: 'ValidationError', path: 'password' });
   });
 
-  it('CreateClientSchema wymaga hasła min 8 znaków', async () => {
+  it('CreateClientSchema wymaga hasła o długości min 8 znaków', async () => {
     await expect(
       CreateClientSchema.validate({
         first_name: 'Jan',
         last_name: 'Kowalski',
         is_active: true,
-        password: '1234567', // 7 znaków
+        password: '1234567',
       }),
     ).rejects.toMatchObject({ name: 'ValidationError', path: 'password' });
   });

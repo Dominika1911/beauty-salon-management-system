@@ -32,13 +32,17 @@ function makeUser(role: UserRole): User {
 
 type AuthMock = ReturnType<typeof useAuth>;
 
+
 function mockAuth(value: Partial<AuthMock>) {
     vi.mocked(useAuth).mockReturnValue({
         user: null,
         loading: false,
         isAuthenticated: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+        refreshUser: vi.fn(),
         ...value,
-    });
+    } as AuthMock);
 }
 
 function renderWithRoutes(
@@ -56,12 +60,12 @@ function renderWithRoutes(
     );
 }
 
-describe('components/ProtectedRoute', () => {
+describe('Komponenty: ProtectedRoute', () => {
     beforeEach(() => {
         vi.clearAllMocks();
     });
 
-    it('gdy loading=true -> nie renderuje children ani redirectów', () => {
+    it('gdy ładowanie trwa (loading=true) to nie wyświetla treści ani przekierowań', () => {
         mockAuth({
             loading: true,
             isAuthenticated: false,
@@ -73,7 +77,6 @@ describe('components/ProtectedRoute', () => {
             </ProtectedRoute>,
         );
 
-        // spinner jest jedynym renderem
         expect(screen.getByRole('progressbar')).toBeInTheDocument();
 
         expect(screen.queryByText('SECRET')).not.toBeInTheDocument();
@@ -81,7 +84,7 @@ describe('components/ProtectedRoute', () => {
         expect(screen.queryByText('ACCESS_DENIED_PAGE')).not.toBeInTheDocument();
     });
 
-    it('gdy isAuthenticated=false -> redirect do /login', () => {
+    it('gdy użytkownik nie jest zalogowany to przekierowuje do strony logowania', () => {
         mockAuth({
             user: null,
             loading: false,
@@ -98,7 +101,7 @@ describe('components/ProtectedRoute', () => {
         expect(screen.queryByText('SECRET')).not.toBeInTheDocument();
     });
 
-    it('gdy rola nie jest dozwolona -> redirect do /access-denied', () => {
+    it('gdy rola użytkownika nie jest dozwolona to przekierowuje do access-denied', () => {
         mockAuth({
             user: makeUser('CLIENT'),
             isAuthenticated: true,
@@ -114,7 +117,7 @@ describe('components/ProtectedRoute', () => {
         expect(screen.queryByText('SECRET')).not.toBeInTheDocument();
     });
 
-    it('gdy rola jest dozwolona -> renderuje children', () => {
+    it('gdy rola jest dozwolona to wyświetla chronioną zawartość', () => {
         mockAuth({
             user: makeUser('ADMIN'),
             isAuthenticated: true,

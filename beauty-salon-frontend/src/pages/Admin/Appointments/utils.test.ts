@@ -9,14 +9,14 @@ import {
 } from "./utils";
 import { APPOINTMENT_STATUSES } from "@/types";
 
-describe("Admin/Appointments/utils – normalizeStatus", () => {
-  it("returns the same status when value is a valid appointment status", () => {
+describe("Narzędzia Admina: normalizeStatus", () => {
+  it("zwraca ten sam status, gdy wartość jest poprawnym statusem wizyty", () => {
     for (const status of APPOINTMENT_STATUSES) {
       expect(normalizeStatus(status)).toBe(status);
     }
   });
 
-  it("returns null for null/undefined and non-string values", () => {
+  it("zwraca null dla wartości null/undefined oraz typów innych niż string", () => {
     expect(normalizeStatus(null)).toBeNull();
     expect(normalizeStatus(undefined)).toBeNull();
     expect(normalizeStatus(123)).toBeNull();
@@ -24,41 +24,41 @@ describe("Admin/Appointments/utils – normalizeStatus", () => {
     expect(normalizeStatus([])).toBeNull();
   });
 
-  it("returns null for strings outside APPOINTMENT_STATUSES", () => {
+  it("zwraca null dla tekstów spoza listy APPOINTMENT_STATUSES", () => {
     expect(normalizeStatus("")).toBeNull();
-    expect(normalizeStatus("__NOT_A_STATUS__")).toBeNull();
+    expect(normalizeStatus("__NIE_STATUS__")).toBeNull();
   });
 });
 
-describe("Admin/Appointments/utils – canEmployeeDoService", () => {
-  it("returns false when employeeSkills is undefined", () => {
+describe("Narzędzia Admina: canEmployeeDoService", () => {
+  it("zwraca false, gdy umiejętności pracownika (employeeSkills) są niezdefiniowane", () => {
     expect(canEmployeeDoService(undefined, 1)).toBe(false);
   });
 
-  it("returns false when employeeSkills is not an array", () => {
+  it("zwraca false, gdy umiejętności pracownika nie są tablicą", () => {
     expect(canEmployeeDoService(null, 1)).toBe(false);
     expect(canEmployeeDoService({}, 1)).toBe(false);
   });
 
-  it("returns false when employeeSkills is an empty array", () => {
+  it("zwraca false, gdy tablica umiejętności pracownika jest pusta", () => {
     expect(canEmployeeDoService([], 1)).toBe(false);
   });
 
-  it("returns true when employee has the service", () => {
+  it("zwraca true, gdy pracownik posiada przypisaną usługę", () => {
     expect(canEmployeeDoService([1, 2, 3], 2)).toBe(true);
   });
 
-  it("returns false when employee does not have the service", () => {
+  it("zwraca false, gdy pracownik nie posiada przypisanej usługi", () => {
     expect(canEmployeeDoService([1, 2, 3], 4)).toBe(false);
   });
 
-  it("does not coerce types (number vs string)", () => {
+  it("nie wymusza konwersji typów (liczba vs string)", () => {
     expect(canEmployeeDoService([1, 2, 3], "2")).toBe(false);
   });
 });
 
-describe("Admin/Appointments/utils – isValidDate", () => {
-  it("returns false for non-Date values", () => {
+describe("Narzędzia Admina: isValidDate", () => {
+  it("zwraca false dla wartości niebędących obiektem Date", () => {
     expect(isValidDate(null)).toBe(false);
     expect(isValidDate(undefined)).toBe(false);
     expect(isValidDate("2024-01-01")).toBe(false);
@@ -66,43 +66,43 @@ describe("Admin/Appointments/utils – isValidDate", () => {
     expect(isValidDate({})).toBe(false);
   });
 
-  it("returns false for invalid Date instances", () => {
+  it("zwraca false dla nieprawidłowych instancji Date (Invalid Date)", () => {
     expect(isValidDate(new Date("invalid"))).toBe(false);
     expect(isValidDate(new Date(NaN))).toBe(false);
   });
 
-  it("returns true for valid Date instances", () => {
+  it("zwraca true dla prawidłowych instancji Date", () => {
     expect(isValidDate(new Date("2024-01-01T00:00:00Z"))).toBe(true);
     expect(isValidDate(new Date("2024-01-01T10:00:00Z"))).toBe(true);
   });
 });
 
-describe("Admin/Appointments/utils – toIsoString", () => {
-  it("returns date.toISOString()", () => {
+describe("Narzędzia Admina: toIsoString", () => {
+  it("zwraca datę w formacie ISO (toISOString)", () => {
     const d = new Date("2024-01-02T03:04:05.000Z");
     expect(toIsoString(d)).toBe(d.toISOString());
   });
 });
 
-describe("Admin/Appointments/utils – toYyyyMmDd", () => {
-  it("formats as YYYY-MM-DD using local date parts", () => {
-    const d = new Date(2024, 0, 2); // Jan 2, 2024 in local time
+describe("Narzędzia Admina: toYyyyMmDd", () => {
+  it("formatuje datę jako RRRR-MM-DD używając lokalnych części daty", () => {
+    const d = new Date(2024, 0, 2); // 2 stycznia 2024 czasu lokalnego
     expect(toYyyyMmDd(d)).toBe("2024-01-02");
   });
 
-  it("pads month and day with zeros", () => {
-    const d = new Date(2024, 8, 7); // Sep 7, 2024
+  it("uzupełnia miesiąc i dzień zerami (padding)", () => {
+    const d = new Date(2024, 8, 7); // 7 września 2024
     expect(toYyyyMmDd(d)).toBe("2024-09-07");
   });
 });
 
-describe("Admin/Appointments/utils – friendlyAvailabilityError", () => {
-  it("returns provided reason when it is non-empty after trimming", () => {
+describe("Narzędzia Admina: friendlyAvailabilityError", () => {
+  it("zwraca podany powód, jeśli nie jest pusty po usunięciu spacji", () => {
     expect(friendlyAvailabilityError("Brak wolnych terminów")).toBe("Brak wolnych terminów");
     expect(friendlyAvailabilityError("  OK  ")).toBe("  OK  ");
   });
 
-  it("returns default message when reason is missing/empty/whitespace", () => {
+  it("zwraca domyślny komunikat, gdy powód jest nieobecny, pusty lub zawiera tylko spacje", () => {
     const expected =
       "Wybrany termin jest niedostępny. Wybierz inny termin lub innego pracownika.";
 

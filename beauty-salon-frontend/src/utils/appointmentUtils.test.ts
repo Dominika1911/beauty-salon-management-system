@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   formatPrice,
   formatDateTimePL,
   isPastAppointment,
+  statusColor,
+  statusLabel,
 } from "./appointmentUtils";
 
 const normalizeNbsp = (s: string) => s.replace(/\u00A0/g, " ");
@@ -28,20 +30,27 @@ describe("utils/appointmentUtils – formatPrice", () => {
 });
 
 describe("utils/appointmentUtils – formatDateTimePL", () => {
-  it("formats Date using pl-PL locale (robust for leading-zero differences)", () => {
-    const d = new Date("2024-01-02T10:30:00");
-    const result = formatDateTimePL(d);
+  it("formats Date using pl-PL locale (contract = toLocaleString short/short)", () => {
+    // UTC -> brak różnic timezone
+    const d = new Date(Date.UTC(2024, 0, 2, 10, 30, 0));
 
-    // Kontrakt: toLocaleString('pl-PL', { dateStyle:'short', timeStyle:'short' })
-    // W zależności od środowiska dzień może być "2.01..." albo "02.01..."
-    expect(result).toMatch(/(^|[^\d])0?2\.01\.2024/);
-    expect(result).toContain("10:30");
+    const expected = d.toLocaleString("pl-PL", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+
+    expect(formatDateTimePL(d)).toBe(expected);
   });
 
-  it("accepts ISO string", () => {
-    const result = formatDateTimePL("2024-01-02T10:30:00");
-    expect(result).toMatch(/(^|[^\d])0?2\.01\.2024/);
-    expect(result).toContain("10:30");
+  it("accepts ISO string (timezone-stable)", () => {
+    const iso = "2024-01-02T10:30:00Z";
+
+    const expected = new Date(iso).toLocaleString("pl-PL", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+
+    expect(formatDateTimePL(iso)).toBe(expected);
   });
 
   it("returns '—' for falsy input and invalid dates", () => {
@@ -54,12 +63,12 @@ describe("utils/appointmentUtils – formatDateTimePL", () => {
 });
 
 describe("utils/appointmentUtils – isPastAppointment", () => {
-  beforeAll(() => {
+  beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-01-10T12:00:00Z"));
   });
 
-  afterAll(() => {
+  afterEach(() => {
     vi.useRealTimers();
   });
 
@@ -79,5 +88,25 @@ describe("utils/appointmentUtils – isPastAppointment", () => {
     expect(isPastAppointment(undefined as unknown as string)).toBe(false);
     expect(isPastAppointment("invalid-date")).toBe(false);
     expect(isPastAppointment(new Date("invalid"))).toBe(false);
+  });
+});
+
+describe("utils/appointmentUtils – statusColor/statusLabel", () => {
+  it("statusColor(): mapuje statusy na kolory (logika biznesowa)", () => {
+    expect(statusColor("CONFIRMED" as any)).toBe("success");
+    expect(statusColor("COMPLETED" as any)).toBe("success");
+    expect(statusColor("PENDING" as any)).toBe("warning");
+    expect(statusColor("CANCELLED" as any)).toBe("error");
+    expect(statusColor("NO_SHOW" as any)).toBe("error");
+    expect(statusColor("SOMETHING_NEW" as any)).toBe("default");
+  });
+
+  it("statusLabel(): mapuje status na etykietę i zwraca wejście dla nieznanego", () => {
+    expect(statusLabel("PENDING")).toBe("Oczekuje");
+    expect(statusLabel("CONFIRMED")).toBe("Potwierdzona");
+    expect(statusLabel("COMPLETED")).toBe("Zakończona");
+    expect(statusLabel("CANCELLED")).toBe("Anulowana");
+    expect(statusLabel("NO_SHOW")).toBe("No-show");
+    expect(statusLabel("SOMETHING_NEW")).toBe("SOMETHING_NEW");
   });
 });

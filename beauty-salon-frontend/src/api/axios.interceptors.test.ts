@@ -20,7 +20,7 @@ async function expectAxiosRejectStatus<T>(p: Promise<T>, status: number) {
     throw new Error(`Oczekiwano reject (status ${status}), ale promise się spełnił.`);
   } catch (err: unknown) {
     if (!isAxiosLikeError(err)) {
-      throw err; // nie jest to błąd z axiosa – nie maskujemy
+      throw err;
     }
     expect(err.response?.status).toBe(status);
     return err;
@@ -30,10 +30,7 @@ async function expectAxiosRejectStatus<T>(p: Promise<T>, status: number) {
 describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/403)', () => {
   const originalLocation = window.location;
 
-  // Kontrolowany URL (MSW/XHR potrzebują absolutnego href/origin)
   let loc = new URL('http://localhost/');
-
-  // Nasz „rejestr” przekierowań
   let assignMock: ReturnType<typeof vi.fn<(url: string) => void>>;
 
   function ustawSciezke(pathname: string) {
@@ -46,11 +43,9 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
 
     loc = new URL('http://localhost/');
     assignMock = vi.fn((next: string) => {
-      // symulacja location.assign
       loc = new URL(next, loc.href);
     });
 
-    // U Ciebie location.assign nie da się spy’ować, więc podmieniamy cały obiekt location
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: {
@@ -98,6 +93,18 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
     expect(res.data).toEqual({ ok: true });
   });
 
+  it('gdy NIE ma cookie csrftoken -> NIE dokleja nagłówka X-CSRFToken (gałąź getCookie=null)', async () => {
+    server.use(
+      http.post('*/api/no-csrf', ({ request }) => {
+        expect(request.headers.get('x-csrftoken')).toBeNull();
+        return HttpResponse.json({ ok: true }, { status: 200 });
+      }),
+    );
+
+    const res = await axiosInstance.post('/no-csrf', { a: 1 });
+    expect(res.status).toBe(200);
+  });
+
   it('dla FormData NIE ustawia Content-Type: application/json (usuwa go w interceptorze)', async () => {
     const fd = new FormData();
     fd.append('file', new Blob(['hello'], { type: 'text/plain' }), 'hello.txt');
@@ -132,12 +139,18 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
     expect(assignMock).not.toHaveBeenCalled();
   });
 
-  it('na 401 NIE przekierowuje na /login dla endpointów auth (np. /api/auth/status/)', async () => {
+  it.each([
+    ['/auth/status/'],
+    ['/auth/login/'],
+    ['/auth/logout/'],
+    ['/auth/csrf/'],
+  ])('na 401 NIE przekierowuje na /login dla endpointu auth: %s', async (path) => {
     ustawSciezke('/dashboard');
 
-    server.use(http.get('*/api/auth/status/', () => HttpResponse.json({}, { status: 401 })));
+    // MSW: endpoint "auth" zwraca 401
+    server.use(http.get(`*/api${path}`, () => HttpResponse.json({}, { status: 401 })));
 
-    await expectAxiosRejectStatus(axiosInstance.get('/auth/status/'), 401);
+    await expectAxiosRejectStatus(axiosInstance.get(path.replace('/auth/', '/auth/')), 401);
     expect(assignMock).not.toHaveBeenCalled();
   });
 
