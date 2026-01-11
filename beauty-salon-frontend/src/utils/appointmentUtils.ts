@@ -1,5 +1,16 @@
 import { AppointmentStatus } from '@/types';
 
+const PLN_FORMATTER = new Intl.NumberFormat("pl-PL", {
+  style: "currency",
+  currency: "PLN",
+});
+
+function isValidDate(d: Date): boolean {
+  return d instanceof Date && !Number.isNaN(d.getTime());
+}
+
+// --- Funkcje brakujące, które przywracamy z GitHub ---
+
 export const statusColor = (status: AppointmentStatus): "default" | "success" | "warning" | "error" => {
     switch (status) {
         case 'CONFIRMED':
@@ -28,30 +39,29 @@ export const statusLabel = (status: AppointmentStatus | string): string => {
     return labels[status as string] || status;
 };
 
-export const formatPrice = (price?: string | number): string => {
-    if (price == null) return '—';
-    const n = Number(price);
-    if (Number.isNaN(n)) return '—';
-    return new Intl.NumberFormat('pl-PL', {
-        style: 'currency',
-        currency: 'PLN',
-    }).format(n);
-};
+// --- Reszta Twoich funkcji ---
 
-export const formatDateTimePL = (iso: string | Date): string => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime())
-        ? String(iso)
-        : d.toLocaleString('pl-PL', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-};
+export function formatPrice(price?: string | number): string {
+  if (price === null || price === undefined) return "—";
+  const n = typeof price === "string" ? Number(price) : price;
+  if (!Number.isFinite(n)) return "—";
+  return PLN_FORMATTER.format(n);
+}
 
-export const isPastAppointment = (startDate: string | Date): boolean => {
-    return new Date(startDate).getTime() < Date.now();
-};
+export function formatDateTimePL(iso: string | Date): string {
+  if (!iso) return "—";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (!isValidDate(d)) return "—";
+
+  return d.toLocaleString("pl-PL", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+export function isPastAppointment(startDate: string | Date): boolean {
+  if (!startDate) return false;
+  const d = startDate instanceof Date ? startDate : new Date(startDate);
+  if (!isValidDate(d)) return false;
+  return d.getTime() < Date.now();
+}

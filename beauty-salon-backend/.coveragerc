@@ -1,0 +1,13 @@
+[run]
+source = beauty_salon
+omit =
+    */migrations/*
+    */tests/*
+    */venv/*
+    */env/*
+    */__init__.py
+    beauty_salon/management/commands/seed_database.py
+
+[report]
+skip_covered = True
+show_missing = True

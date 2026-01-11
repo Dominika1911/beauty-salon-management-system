@@ -539,7 +539,8 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         return Response(TimeOffSerializer(obj, context={"request": request}).data)
 
 class ClientViewSet(viewsets.ModelViewSet):
-    queryset = ClientProfile.objects.all().order_by("id")
+    # Pokazuj domyślnie tylko aktywnych klientów (po "usunięciu" znikają z listy)
+    queryset = ClientProfile.objects.filter(is_active=True).order_by("id")
     serializer_class = ClientSerializer
     filter_backends = [
         DjangoFilterBackend,
@@ -577,6 +578,23 @@ class ClientViewSet(viewsets.ModelViewSet):
             performed_by=self.request.user,
             target_user=getattr(obj, "user", None),
         )
+
+    # "Usuń" klienta = dezaktywuj (soft-delete), żeby nie kasować historii wizyt
+    def destroy(self, request, *args, **kwargs):
+        client = self.get_object()
+
+        if client.is_active:
+            client.is_active = False
+            client.save(update_fields=["is_active"])
+
+            # Logujemy jako update (bo w Twoim SystemLog nie ma CLIENT_DISABLED)
+            SystemLog.log(
+                action=SystemLog.Action.CLIENT_UPDATED,
+                performed_by=request.user,
+                target_user=getattr(client, "user", None),
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], url_path="me")
     def me(self, request):
@@ -638,7 +656,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return qs
 
     def _lock_appt(self, pk):
-        base_qs = self.get_queryset().select_related(None)  # usuwa joiny z get_queryset()
+        base_qs = self.get_queryset().select_related(None)
 
         try:
             return base_qs.select_for_update().get(pk=pk)

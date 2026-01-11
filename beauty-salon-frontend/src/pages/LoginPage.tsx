@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Alert,
@@ -39,6 +39,10 @@ const LoginPage: React.FC = () => {
     const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
     const [snack, setSnack] = useState<SnackState>({ open: false, msg: '', severity: 'info' });
 
+    // Extra guard against double-submit: state updates may not disable the button
+    // quickly enough to prevent rapid double clicks / Enter spamming.
+    const submittingRef = useRef(false);
+
     const canSubmit = useMemo(
         () => username.trim().length > 0 && password.length > 0 && !loading,
         [username, password, loading],
@@ -56,6 +60,14 @@ const LoginPage: React.FC = () => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Guard: form submit can still be triggered via Enter even when the button is disabled.
+        if (!canSubmit) return;
+
+        // Guard: prevent concurrent submissions even if React state hasn't updated yet.
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+
         clearErrors();
 
         setLoading(true);
@@ -80,6 +92,7 @@ const LoginPage: React.FC = () => {
             }
         } finally {
             setLoading(false);
+            submittingRef.current = false;
         }
     };
 
@@ -164,6 +177,7 @@ const LoginPage: React.FC = () => {
                                         fullWidth
                                         label="Hasło"
                                         type="password"
+                                        inputProps={{ 'data-testid': 'password-input' }}
                                         value={password}
                                         onChange={(e) => {
                                             setPassword(e.target.value);

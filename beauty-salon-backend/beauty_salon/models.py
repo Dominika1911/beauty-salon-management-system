@@ -66,6 +66,10 @@ class CustomUser(AbstractUser):
 
     def clean(self) -> None:
         super().clean()
+
+        if self.pk is not None:
+            return
+
         if not self.username:
             raise ValidationError({"username": _("Nazwa użytkownika jest wymagana.")})
 

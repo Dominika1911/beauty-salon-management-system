@@ -52,8 +52,7 @@ const ProfilePage: React.FC = () => {
     const roleChip = useMemo(() => {
         if (!user) return { label: '—', color: 'default' as const };
         if (user.role === 'ADMIN') return { label: user.role_display, color: 'error' as const };
-        if (user.role === 'EMPLOYEE')
-            return { label: user.role_display, color: 'primary' as const };
+        if (user.role === 'EMPLOYEE') return { label: user.role_display, color: 'primary' as const };
         return { label: user.role_display, color: 'success' as const };
     }, [user]);
 
@@ -69,14 +68,36 @@ const ProfilePage: React.FC = () => {
         return null;
     };
 
+    // Client-side helper texts (żeby nie czekać na submit)
+    const clientErrors = useMemo(() => {
+        const errs: Partial<PasswordFields> = {};
+
+        // Nie pokazuj błędu długości, gdy pole puste – UX lepszy, a nie zmienia wymagań
+        if (newPassword && newPassword.length < 8) {
+            errs.new_password = 'Nowe hasło musi mieć co najmniej 8 znaków.';
+        }
+
+        // Mismatch pokazujemy dopiero gdy użytkownik coś wpisał w powtórzenie
+        if (newPassword2 && newPassword !== newPassword2) {
+            errs.new_password2 = 'Nowe hasło i powtórzenie muszą być identyczne.';
+        }
+
+        return errs;
+    }, [newPassword, newPassword2]);
+
     const canSubmit =
-        Boolean(oldPassword) && Boolean(newPassword) && Boolean(newPassword2) && !busy;
+        Boolean(oldPassword) &&
+        Boolean(newPassword) &&
+        Boolean(newPassword2) &&
+        !busy &&
+        Object.keys(clientErrors).length === 0;
 
     const handleChangePassword = async () => {
         if (!user) return;
 
         clearErrors();
 
+        // Ochrona na wypadek ręcznego odpalenia handlera mimo disabled
         const v = validateClient();
         if (v) {
             setFormError(v);
@@ -293,8 +314,12 @@ const ProfilePage: React.FC = () => {
                                     }}
                                     autoComplete="new-password"
                                     disabled={busy}
-                                    error={Boolean(fieldErrors.new_password)}
-                                    helperText={fieldErrors.new_password || 'Minimum 8 znaków.'}
+                                    error={Boolean(fieldErrors.new_password || clientErrors.new_password)}
+                                    helperText={
+                                        fieldErrors.new_password ||
+                                        clientErrors.new_password ||
+                                        'Minimum 8 znaków.'
+                                    }
                                 />
 
                                 <TextField
@@ -309,8 +334,8 @@ const ProfilePage: React.FC = () => {
                                     }}
                                     autoComplete="new-password"
                                     disabled={busy}
-                                    error={Boolean(fieldErrors.new_password2)}
-                                    helperText={fieldErrors.new_password2 || ' '}
+                                    error={Boolean(fieldErrors.new_password2 || clientErrors.new_password2)}
+                                    helperText={fieldErrors.new_password2 || clientErrors.new_password2 || ' '}
                                 />
 
                                 <Divider />
@@ -320,9 +345,7 @@ const ProfilePage: React.FC = () => {
                                         variant="contained"
                                         onClick={() => void handleChangePassword()}
                                         disabled={!canSubmit}
-                                        startIcon={
-                                            saving ? <CircularProgress size={18} /> : undefined
-                                        }
+                                        startIcon={saving ? <CircularProgress size={18} /> : undefined}
                                         fullWidth
                                     >
                                         {saving ? 'Zapisywanie…' : 'Zaktualizuj hasło'}

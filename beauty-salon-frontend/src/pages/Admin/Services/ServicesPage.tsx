@@ -248,7 +248,12 @@ export default function ServicesPage() {
                     </Typography>
                 </Box>
 
-                <Button variant="contained" onClick={openCreate} disabled={busy}>
+                <Button
+                    variant="contained"
+                    onClick={openCreate}
+                    disabled={busy}
+                    aria-label="Dodaj usługę (nagłówek)"
+                >
                     Dodaj usługę
                 </Button>
             </Stack>

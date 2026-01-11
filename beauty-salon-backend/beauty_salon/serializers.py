@@ -1007,44 +1007,60 @@ class BookingCreateSerializer(serializers.Serializer):
         start = validated_data["start"]
         end = validated_data["end"]
 
-        employee = EmployeeProfile.objects.select_for_update().get(pk=validated_data["employee"].pk, is_active=True)
-        client = ClientProfile.objects.select_for_update().get(pk=validated_data["client"].pk, is_active=True)
+        try:
+            employee = EmployeeProfile.objects.select_for_update().get(
+                pk=validated_data["employee"].pk,
+                is_active=True,
+            )
+        except EmployeeProfile.DoesNotExist:
+            raise serializers.ValidationError(
+                {"employee_id": "Nie znaleziono aktywnego pracownika."}
+            )
+
+        try:
+            client = ClientProfile.objects.select_for_update().get(
+                pk=validated_data["client"].pk,
+                is_active=True,
+            )
+        except ClientProfile.DoesNotExist:
+            raise serializers.ValidationError(
+                {"client_id": "Nie znaleziono aktywnego klienta."}
+            )
 
         if (
-            TimeOff.objects.select_for_update()
-            .filter(
-                employee=employee,
-                status=TimeOff.Status.APPROVED,
-                date_from__lte=start.date(),
-                date_to__gte=start.date(),
-            )
-            .exists()
+                TimeOff.objects.select_for_update()
+                        .filter(
+                    employee=employee,
+                    date_from__lt=end,
+                    date_to__gt=start,
+                )
+                        .exists()
         ):
-            raise serializers.ValidationError({"start": "Pracownik jest nieobecny w tym dniu (zmiana w trakcie rezerwacji)."})
+            raise serializers.ValidationError(
+                {"non_field_errors": "Wybrany termin jest niedostępny."}
+            )
 
-        emp_conflicts = Appointment.objects.select_for_update().filter(
+        if (
+                Appointment.objects.select_for_update()
+                        .filter(
+                    employee=employee,
+                    start__lt=end,
+                    end__gt=start,
+                    status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+                )
+                        .exists()
+        ):
+            raise serializers.ValidationError(
+                {"non_field_errors": "Wybrany termin jest już zajęty."}
+            )
+
+        appointment = Appointment.objects.create(
             employee=employee,
-            start__lt=end,
-            end__gt=start,
-            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-        )
-        if emp_conflicts.exists():
-            raise serializers.ValidationError({"start": "Niestety, ten termin został właśnie zarezerwowany."})
-
-        client_conflicts = Appointment.objects.select_for_update().filter(
             client=client,
-            start__lt=end,
-            end__gt=start,
-            status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-        )
-        if client_conflicts.exists():
-            raise serializers.ValidationError({"start": "Masz już wizytę w tym czasie (równoległa rezerwacja)."})
-
-        return Appointment.objects.create(
-            client=client,
-            employee=employee,
             service=validated_data["service"],
             start=start,
             end=end,
-            status=Appointment.Status.PENDING,
+            status=Appointment.Status.CONFIRMED,
         )
+
+        return appointment

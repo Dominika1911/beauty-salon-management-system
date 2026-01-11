@@ -1,10 +1,13 @@
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.middleware.csrf import CsrfViewMiddleware
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+
 
 from .models import SystemLog
 from .serializers import PasswordChangeSerializer, UserDetailSerializer
@@ -22,6 +25,16 @@ class SessionLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        # === WYMUSZENIE CSRF NA LOGIN ===
+        csrf_mw = CsrfViewMiddleware(get_response=lambda r: None)
+        csrf_failure = csrf_mw.process_view(request, None, (), {})
+        if csrf_failure is not None:
+            return Response(
+                {"detail": "CSRF Failed."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        # === KONIEC CSRF CHECK ===
+
         username = request.data.get("username")
         password = request.data.get("password")
 
@@ -55,7 +68,10 @@ class SessionLoginView(APIView):
         return Response(
             {
                 "detail": "Zalogowano pomyślnie.",
-                "user": UserDetailSerializer(user, context={"request": request}).data,
+                "user": UserDetailSerializer(
+                    user,
+                    context={"request": request},
+                ).data,
             },
             status=status.HTTP_200_OK,
         )

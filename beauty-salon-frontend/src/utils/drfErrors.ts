@@ -1,74 +1,118 @@
 export type DrfParsedError = {
-    message?: string;
-    fieldErrors?: Record<string, string>;
+    /** Human-readable message suitable for showing to the user (always present). */
+    message: string;
+    /** Field-level errors: fieldName -> first error message */
+    fieldErrors: Record<string, string>;
+    /** HTTP status when available */
+    status?: number;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return Boolean(value) && typeof value === 'object';
-}
+type AxiosLikeError = {
+    message?: unknown;
+    response?: {
+        status?: number;
+        data?: unknown;
+    };
+};
 
-function firstStringFromUnknown(value: unknown): string | undefined {
+function firstString(value: unknown): string | undefined {
+    if (!value) return undefined;
     if (typeof value === 'string') return value;
-    if (Array.isArray(value) && value.length > 0) {
+    if (Array.isArray(value)) {
         const first = value[0];
-        return typeof first === 'string' ? first : String(first);
+        return typeof first === 'string' ? first : first != null ? String(first) : undefined;
     }
     return undefined;
 }
 
+/**
+ * Parses DRF-style error responses (and also handles generic JS/axios errors) into a deterministic structure.
+ *
+ * Rules (in order):
+ * - If response.data is a string -> message = that string
+ * - If response.data.detail is a string -> message = detail
+ * - If response.data.non_field_errors is an array -> message = first item
+ * - Field errors are collected from other keys (excluding detail/non_field_errors)
+ * - If message still empty but there are field errors -> message = first field error
+ * - Fallback -> Error.message or "Wystąpił błąd."
+ */
 export function parseDrfError(err: unknown): DrfParsedError {
-    const e = err as { message?: unknown; response?: { data?: unknown } };
+    const e: AxiosLikeError = (typeof err === 'object' && err !== null ? (err as AxiosLikeError) : {}) as any;
+
+    const status = e.response?.status;
     const data = e.response?.data;
 
-    if (!data) {
-        return { message: typeof e.message === 'string' ? e.message : 'Wystąpił błąd.' };
-    }
-
-    if (typeof data === 'string') {
-        return { message: data };
-    }
-
-    if (!isRecord(data)) {
-        return { message: 'Wystąpił błąd.' };
-    }
-
-    const fieldErrors: Record<string, string> = {};
-
-    for (const [key, value] of Object.entries(data)) {
-        if (key === 'detail' || key === 'non_field_errors') continue;
-
-        const msg = firstStringFromUnknown(value);
-        if (msg) fieldErrors[key] = msg;
-    }
-
-    const detail = typeof data.detail === 'string' ? data.detail : undefined;
-    const nonField =
-        Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0
-            ? String(data.non_field_errors[0])
-            : undefined;
-
-    const message = detail ?? nonField;
-
-    return {
-        message,
-        fieldErrors: Object.keys(fieldErrors).length ? fieldErrors : undefined,
+    const out: DrfParsedError = {
+        status,
+        fieldErrors: {},
+        message: 'Wystąpił błąd.',
     };
-}
 
-export function pickFieldErrors<T extends Record<string, unknown>>(
-    fieldErrors: Record<string, string> | undefined,
-    template: T,
-): Partial<Record<keyof T, string>> {
-    if (!fieldErrors) return {};
+    // If we have no response data at all, fall back to error.message when present.
+    if (data === undefined) {
+        if (typeof e.message === 'string' && e.message.trim()) out.message = e.message;
+        return out;
+    }
 
-    const out: Partial<Record<keyof T, string>> = {};
+    // response.data as a plain string
+    if (typeof data === 'string') {
+        out.message = data;
+        return out;
+    }
 
-    for (const [k, v] of Object.entries(fieldErrors)) {
-        if (Object.prototype.hasOwnProperty.call(template, k)) {
-            (out as Record<string, string>)[k] = v;
-        }
+    // Unexpected primitive / array / null shapes: keep deterministic fallback message.
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+        if (typeof e.message === 'string' && e.message.trim()) out.message = e.message;
+        return out;
+    }
+
+    const obj = data as Record<string, unknown>;
+
+    // Prefer detail
+    const detail = obj.detail;
+    if (typeof detail === 'string' && detail.trim()) {
+        out.message = detail;
+    }
+
+    // Or non_field_errors
+    if (out.message === 'Wystąpił błąd.') {
+        const nfe = obj.non_field_errors;
+        const nfeMsg = firstString(nfe);
+        if (nfeMsg) out.message = nfeMsg;
+    }
+
+    // Field errors: collect only real fields (exclude detail/non_field_errors)
+    for (const [k, v] of Object.entries(obj)) {
+        if (k === 'detail' || k === 'non_field_errors') continue;
+        const msg = firstString(v);
+        if (msg) out.fieldErrors[k] = msg;
+    }
+
+    // If we still don't have a specific message, use the first field error.
+    if (out.message === 'Wystąpił błąd.') {
+        const firstField = Object.values(out.fieldErrors)[0];
+        if (firstField) out.message = firstField;
+        else if (typeof e.message === 'string' && e.message.trim()) out.message = e.message;
     }
 
     return out;
 }
 
+/**
+ * Picks only known fields from parsed.fieldErrors.
+ * The `shape` object is the source of truth: if a field is not in shape, it is ignored.
+ */
+export function pickFieldErrors<T extends Record<string, unknown>>(
+    fieldErrors: Record<string, string> | undefined,
+    shape: T,
+): Partial<Record<keyof T, string>> {
+    const out: Partial<Record<keyof T, string>> = {};
+    if (!fieldErrors) return out;
+
+    for (const k of Object.keys(shape) as Array<keyof T>) {
+        const msg = fieldErrors[String(k)];
+        if (typeof msg === 'string' && msg.trim()) out[k] = msg;
+    }
+
+    return out;
+}

@@ -41,6 +41,14 @@ export const DateTimeStep: React.FC<Props> = ({
                         onUserInteraction();
                         onDateChange(d);
                     }}
+                    slotProps={{
+                        textField: {
+                            id: 'booking-date',
+                            inputProps: {
+                                'data-testid': 'booking-date-input',
+                            },
+                        },
+                    }}
                 />
 
                 {fetchingSlots ? (

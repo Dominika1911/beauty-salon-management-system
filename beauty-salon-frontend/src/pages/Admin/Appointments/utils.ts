@@ -1,7 +1,6 @@
 import type { AppointmentStatus } from '@/types';
 import { APPOINTMENT_STATUSES } from '@/types';
 
-
 export function isValidDate(d: unknown): d is Date {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
@@ -22,8 +21,9 @@ export function normalizeStatus(status: unknown): AppointmentStatus | null {
   return (APPOINTMENT_STATUSES as string[]).includes(status) ? (status as AppointmentStatus) : null;
 }
 
-export function canEmployeeDoService(employeeSkills: number[] | undefined, serviceId: number): boolean {
+export function canEmployeeDoService(employeeSkills: unknown, serviceId: unknown): boolean {
   if (!Array.isArray(employeeSkills)) return false;
+  if (typeof serviceId !== 'number') return false;
   return employeeSkills.includes(serviceId);
 }
 

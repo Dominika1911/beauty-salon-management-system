@@ -16,22 +16,25 @@ export const EmployeeStep: React.FC<Props> = ({
     onUserInteraction,
 }) => {
     return (
-        <Stack spacing={2}>
+        <Stack spacing={2} data-testid="employee-step">
             {employees.length === 0 ? (
                 <Alert severity="info">Brak dostępnych specjalistów.</Alert>
             ) : (
-                employees.map((e) => (
-                    <Button
-                        key={e.id}
-                        variant={selectedEmployeeId === e.id ? 'contained' : 'outlined'}
-                        onClick={() => {
-                            onUserInteraction();
-                            onPickEmployee(e);
-                        }}
-                    >
-                        {e.full_name}
-                    </Button>
-                ))
+                <Stack spacing={2} data-testid="employee-list">
+                    {employees.map((e) => (
+                        <Button
+                            key={e.id}
+                            data-testid={`employee-btn-${e.id}`}
+                            variant={selectedEmployeeId === e.id ? 'contained' : 'outlined'}
+                            onClick={() => {
+                                onUserInteraction();
+                                onPickEmployee(e);
+                            }}
+                        >
+                            {e.full_name}
+                        </Button>
+                    ))}
+                </Stack>
             )}
         </Stack>
     );

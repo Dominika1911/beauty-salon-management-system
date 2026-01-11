@@ -2,7 +2,23 @@ export type TimePeriod = { start: string; end: string };
 
 const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-export function isHHMM(value: string): boolean {
+function normalizeToHHMM(value: unknown): string | null {
+    const raw = String(value ?? '').trim();
+
+    const m = raw.match(/^([0-2]?\d):([0-5]\d)(?::[0-5]\d)?$/);
+    if (!m) return null;
+
+    const hour = Number(m[1]);
+    const minute = m[2];
+
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+
+    const hh = String(hour).padStart(2, '0');
+    const hhmm = `${hh}:${minute}`;
+    return HHMM_RE.test(hhmm) ? hhmm : null;
+}
+
+export function isHHMM(value: unknown): boolean {
     return HHMM_RE.test(String(value ?? '').trim());
 }
 
@@ -15,8 +31,7 @@ export function sortPeriods<T extends TimePeriod>(periods: T[]): T[] {
     return [...periods].sort((a, b) => {
         const aStart = hhmmToMinutes(a.start);
         const bStart = hhmmToMinutes(b.start);
-        if (aStart !== bStart) return aStart - bStart;
-        return hhmmToMinutes(a.end) - hhmmToMinutes(b.end);
+        return aStart - bStart;
     });
 }
 
@@ -38,8 +53,11 @@ export function sanitizePeriods(input: unknown): TimePeriod[] {
         if (!item || typeof item !== 'object') continue;
         const anyItem = item as { start?: unknown; end?: unknown };
 
-        const start = typeof anyItem.start === 'string' ? anyItem.start.trim() : '';
-        const end = typeof anyItem.end === 'string' ? anyItem.end.trim() : '';
+        const startRaw = typeof anyItem.start === 'string' ? anyItem.start : '';
+        const endRaw = typeof anyItem.end === 'string' ? anyItem.end : '';
+
+        const start = normalizeToHHMM(startRaw);
+        const end = normalizeToHHMM(endRaw);
         if (!start || !end) continue;
 
         out.push({ start, end });
