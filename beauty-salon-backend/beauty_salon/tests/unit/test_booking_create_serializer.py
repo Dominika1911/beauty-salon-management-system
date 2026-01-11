@@ -1,7 +1,3 @@
-"""
-Unit tests for BookingCreateSerializer validations
-Location: beauty_salon/tests/unit/test_booking_create_serializer.py
-"""
 import pytest
 from datetime import timedelta
 from django.utils import timezone
@@ -76,7 +72,6 @@ class TestBookingCreateSerializer:
     def test_employee_must_have_skill_for_service(self, client_user, service):
         from beauty_salon.serializers import BookingCreateSerializer
 
-        # employee WITHOUT skills
         employee_user = baker.make(
             "beauty_salon.CustomUser", role="EMPLOYEE", is_active=True
         )

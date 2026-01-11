@@ -18,11 +18,7 @@ def test_password_is_hashed_and_check_password_works():
     user.set_password(raw)
     user.save(update_fields=["password"])
 
-    # Hasło nie jest przechowywane w plain-text
     assert user.password != raw
-    # Django zapisuje hasło w formacie z segmentami oddzielonymi "$" (hasher$salt$hash)
     assert "$" in user.password
-
-    # check_password weryfikuje poprawność
     assert user.check_password(raw) is True
     assert user.check_password("WrongPassword123!") is False

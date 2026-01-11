@@ -4,9 +4,19 @@ omit =
     */migrations/*
     */tests/*
     */venv/*
+    */.venv/*
     */env/*
     */__init__.py
+    */__pycache__/*
+    */.pytest_cache/*
+    */.mypy_cache/*
+    */site-packages/*
+    manage.py
+    beauty_salon/wsgi.py
+    beauty_salon/asgi.py
+    beauty_salon/settings*.py
     beauty_salon/management/commands/seed_database.py
+    beauty_salon/management/commands/seed_e2e.py
 
 [report]
 skip_covered = True

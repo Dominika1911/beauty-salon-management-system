@@ -1,7 +1,3 @@
-"""
-Unit tests for DRF serializers
-Location: beauty_salon/tests/unit/test_serializers.py
-"""
 import pytest
 
 
@@ -10,7 +6,6 @@ import pytest
 class TestServiceSerializer:
 
     def test_serialize_service(self, service):
-        """Test serializing service model"""
         from beauty_salon.serializers import ServiceSerializer
 
         serializer = ServiceSerializer(service)
@@ -22,7 +17,6 @@ class TestServiceSerializer:
         assert data["is_active"] is True
 
     def test_deserialize_valid_service(self):
-        """Test creating service from valid data"""
         from beauty_salon.serializers import ServiceSerializer
 
         data = {
@@ -44,7 +38,6 @@ class TestServiceSerializer:
 class TestAppointmentSerializer:
 
     def test_serialize_appointment(self, appointment):
-        """Test serializing appointment model"""
         from beauty_salon.serializers import AppointmentSerializer
 
         serializer = AppointmentSerializer(appointment)
@@ -61,7 +54,6 @@ class TestAppointmentSerializer:
 class TestEmployeeSerializer:
 
     def test_serialize_employee(self, employee_profile):
-        """Test serializing employee profile"""
         from beauty_salon.serializers import EmployeeSerializer
 
         serializer = EmployeeSerializer(employee_profile)
@@ -78,7 +70,6 @@ class TestEmployeeSerializer:
 class TestClientSerializer:
 
     def test_serialize_client(self, client_profile):
-        """Test serializing client profile"""
         from beauty_salon.serializers import ClientSerializer
 
         serializer = ClientSerializer(client_profile)
@@ -95,7 +86,6 @@ class TestClientSerializer:
 class TestTimeOffSerializer:
 
     def test_serialize_timeoff(self, pending_timeoff):
-        """Test serializing time-off request"""
         from beauty_salon.serializers import TimeOffSerializer
 
         serializer = TimeOffSerializer(pending_timeoff)

@@ -1,7 +1,3 @@
-"""
-Integration tests for CheckAvailabilityView
-Location: beauty_salon/tests/integration/test_api_check_availability.py
-"""
 import pytest
 from datetime import timedelta
 from django.utils import timezone
@@ -39,7 +35,6 @@ class TestCheckAvailabilityAPI:
         assert response.data["available"] is False
 
     def test_employee_timeoff_returns_not_available(self, client_api_client, employee_profile, service):
-        # employee must have skill for service otherwise we hit different validation
         employee_profile.skills.add(service)
 
         start_dt = timezone.now() + timedelta(days=2)

@@ -34,6 +34,5 @@ def test_login_sql_injection_attempts_are_rejected(csrf_client):
             HTTP_X_CSRFTOKEN=csrf_token,
         )
 
-        # Najważniejsze: brak logowania i brak 500
         assert resp.status_code in (400, 401, 403)
         assert resp.status_code != 500

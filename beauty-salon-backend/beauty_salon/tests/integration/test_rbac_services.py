@@ -19,7 +19,6 @@ def _get_csrf(client: APIClient) -> str:
 
 
 def _login(client: APIClient, username: str, password: str):
-    # upewnij się, że mamy CSRF przed loginem
     csrf = _get_csrf(client)
     r = client.post(
         "/api/auth/login/",
@@ -29,7 +28,6 @@ def _login(client: APIClient, username: str, password: str):
     )
     assert r.status_code == 200
 
-    # po loginie bierzemy AKTUALNY token z cookies (na wypadek rotacji)
     assert "csrftoken" in client.cookies
     return client.cookies["csrftoken"].value
 
@@ -70,7 +68,6 @@ def test_services_create_forbidden_for_regular_user(csrf_client):
 
 
 def test_services_create_allowed_for_admin(csrf_client, admin_user):
-    # admin_user w Twoim conftest ma role="ADMIN"
     csrf = _login(csrf_client, admin_user.username, "testpass123")
 
     payload = {
@@ -84,6 +81,5 @@ def test_services_create_allowed_for_admin(csrf_client, admin_user):
 
     r = csrf_client.post("/api/services/", payload, format="json", HTTP_X_CSRFTOKEN=csrf)
 
-    # create w ServiceViewSet wymaga IsAdminOrEmployee (Twoje permissions.py)
     assert r.status_code == 201
     assert r.data["name"] == payload["name"]

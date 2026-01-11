@@ -16,19 +16,17 @@ class TestBookingWorkflow:
         employee_schedule,
         system_settings,
     ):
-        # 1) usługi
+
         response = client_api_client.get("/api/services/")
         assert response.status_code == status.HTTP_200_OK
         assert "results" in response.data
         assert len(response.data["results"]) > 0
 
-        # dzień roboczy w przyszłości
         date = timezone.localdate() + timedelta(days=7)
         while date.weekday() >= 5:
             date += timedelta(days=1)
         date_str = date.isoformat()
 
-        # 2) sloty
         url = (
             f"/api/availability/slots/"
             f"?employee_id={employee_profile.id}&service_id={service.id}&date={date_str}"
@@ -47,7 +45,6 @@ class TestBookingWorkflow:
         first_slot = response.data["slots"][0]
         assert "start" in first_slot and "end" in first_slot
 
-        # 3) booking (klient)
         booking_data = {
             "service_id": service.id,
             "employee_id": employee_profile.id,
@@ -62,7 +59,6 @@ class TestBookingWorkflow:
         appointment_id = response.data.get("id") or response.data.get("appointment_id")
         assert appointment_id is not None
 
-        # 4) cancel (ADMIN) — zgodne z typowym RBAC: zmiana statusu zasobu jest operacją uprzywilejowaną
         response = admin_api_client.patch(
             f"/api/appointments/{appointment_id}/",
             {"status": "CANCELLED"},

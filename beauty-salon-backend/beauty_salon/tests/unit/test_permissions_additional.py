@@ -1,7 +1,3 @@
-"""
-Additional unit tests for permissions
-Location: beauty_salon/tests/unit/test_permissions_additional.py
-"""
 import pytest
 from datetime import timedelta
 from django.utils import timezone

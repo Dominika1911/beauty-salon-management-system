@@ -15,12 +15,6 @@ pytestmark = pytest.mark.integration
 def test_race_condition_double_booking_same_slot_results_in_single_appointment(
     admin_user, employee_profile, client_profile, service
 ):
-    """
-    Dwie równoległe rezerwacje tego samego slotu:
-    - jedna powinna przejść (201)
-    - druga powinna zostać odrzucona (400)
-    - w bazie ma zostać dokładnie 1 appointment dla (employee,start)
-    """
 
     start = timezone.now() + timedelta(days=3, hours=10)
     payload = {

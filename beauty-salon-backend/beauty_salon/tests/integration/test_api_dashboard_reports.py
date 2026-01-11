@@ -1,7 +1,3 @@
-"""
-Integration tests for DashboardView and ReportView
-Location: beauty_salon/tests/integration/test_api_dashboard_reports.py
-"""
 import pytest
 from datetime import timedelta
 from django.utils import timezone
@@ -14,7 +10,6 @@ from model_bakery import baker
 class TestDashboardAndReportsAPI:
 
     def test_dashboard_admin(self, admin_api_client, service, employee_profile, client_profile):
-        # add some completed appointment for revenue fields
         start_dt = timezone.now() - timedelta(days=1)
         baker.make(
             "beauty_salon.Appointment",
@@ -56,7 +51,6 @@ class TestDashboardAndReportsAPI:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_reports_pdf_returns_pdf(self, admin_api_client):
-        # this endpoint returns pdf content
         response = admin_api_client.get("/api/reports/employee-performance/")
         assert response.status_code == status.HTTP_200_OK
         assert response["Content-Type"] == "application/pdf"
