@@ -1,9 +1,8 @@
 import { execSync } from 'node:child_process';
-import path from 'node:path';
+import * as path from 'node:path';
 
 export default async function globalSetup() {
-  // Ten setup seeduje osobnych userów dla projektów: Desktop/Tablet/Mobile,
-  // żeby testy nie gryzły się rezerwacjami.
+
   const backendDir =
     process.env.E2E_BACKEND_DIR ||
     path.resolve(process.cwd(), '../beauty-salon-backend');

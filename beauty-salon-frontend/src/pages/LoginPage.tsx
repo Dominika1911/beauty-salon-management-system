@@ -39,8 +39,6 @@ const LoginPage: React.FC = () => {
     const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
     const [snack, setSnack] = useState<SnackState>({ open: false, msg: '', severity: 'info' });
 
-    // Extra guard against double-submit: state updates may not disable the button
-    // quickly enough to prevent rapid double clicks / Enter spamming.
     const submittingRef = useRef(false);
 
     const canSubmit = useMemo(
@@ -61,10 +59,8 @@ const LoginPage: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Guard: form submit can still be triggered via Enter even when the button is disabled.
         if (!canSubmit) return;
 
-        // Guard: prevent concurrent submissions even if React state hasn't updated yet.
         if (submittingRef.current) return;
         submittingRef.current = true;
 

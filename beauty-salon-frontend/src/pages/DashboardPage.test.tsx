@@ -32,8 +32,6 @@ describe("pages/DashboardPage – integracja UI z API (MSW)", () => {
       </MemoryRouter>
     );
 
-    // Nie łapiemy "Ładowanie danych…" bo może zniknąć zbyt szybko (flaky).
-    // Czekamy na stabilny element po zakończonym fetchu.
     expect(await screen.findByText("Nadchodzące wizyty")).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Odśwież" }));

@@ -12,7 +12,6 @@ type ClientFormValues = {
 };
 
 type NormalizedClientValues = Omit<ClientFormValues, 'email'> & {
-    /** Always explicit: either a trimmed string or null. Never undefined. */
     email: string | null;
 };
 
@@ -22,18 +21,13 @@ type AxiosLikeError = {
 
 export type OrderingOption = { value: string; label: string };
 
-/**
- * Keep ordering options strictly based on values already used in code.
- * Labels intentionally mirror values to avoid guessing UI copy.
- */
-export const ORDERING_OPTIONS: OrderingOption[] = [{ value: '-created_at', label: '-created_at' }];
 
-/** Backwards-compatible alias used by UI. */
+export const ORDERING_OPTIONS: OrderingOption[] = [{ value: '-created_at', label: 'Data utworzenia (od najnowszych)' }];
+
 export function getResponseData(err: unknown): unknown {
     return (err as AxiosLikeError | null | undefined)?.response?.data;
 }
 
-/** Backwards-compatible helper used by UI. */
 export function getBestErrorMessage(err: unknown): string | undefined {
     const parsed = parseDrfError(err);
     return typeof parsed.message === 'string' && parsed.message.trim() ? parsed.message : undefined;
@@ -90,10 +84,6 @@ export function getDrfData(err: unknown): unknown {
     return (err as AxiosLikeError).response?.data;
 }
 
-/**
- * Helper used in tests (and optionally in UI) to get the first human-readable string
- * from DRF error payload shapes.
- */
 export function firstFromDrf(value: unknown): string | null {
     if (!value) return null;
     if (typeof value === 'string') return value;
@@ -154,5 +144,4 @@ export const CreateClientSchema = BaseClientSchema.shape({
     password: yup.string().min(8).required(),
 });
 
-/** Same rules as base schema; password is handled only for create. */
 export const EditClientSchema = BaseClientSchema;

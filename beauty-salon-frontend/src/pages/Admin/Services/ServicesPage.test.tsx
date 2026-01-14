@@ -43,7 +43,7 @@ describe("pages/Admin/Services/ServicesPage", () => {
     vi.clearAllMocks();
   });
 
-  it("renderuje listę usług z servicesApi.list() (DRF results)", async () => {
+  it("renderuje listę usług z servicesApi.list() ", async () => {
     const payload: DRFPaginated<Service> = {
       count: 1,
       next: null,
@@ -74,7 +74,7 @@ describe("pages/Admin/Services/ServicesPage", () => {
     expect(servicesApi.list).toHaveBeenCalledTimes(1);
   });
 
-  it("przy niepoprawnych danych NIE wywołuje create() i pokazuje błąd formularza (bez zgadywania treści walidacji)", async () => {
+  it("przy niepoprawnych danych NIE wywołuje create() i pokazuje błąd formularza", async () => {
     const payload: DRFPaginated<Service> = {
       count: 0,
       next: null,
@@ -110,7 +110,7 @@ describe("pages/Admin/Services/ServicesPage", () => {
     expect(getHelperTextEl(durationInput).textContent?.trim().length).toBeGreaterThan(0);
   });
 
-  it("gdy create() zwróci 400 z błędem pola -> mapuje go do helperText (parseDrfError + pickFieldErrors) [stabilne]", async () => {
+  it("gdy create() zwróci 400 z błędem pola -> mapuje go do helperText (parseDrfError + pickFieldErrors)", async () => {
     const payload: DRFPaginated<Service> = {
       count: 0,
       next: null,
@@ -139,7 +139,6 @@ describe("pages/Admin/Services/ServicesPage", () => {
     const priceInput = d.getByRole("textbox", { name: /Cena \(zł\)/i });
     const durationInput = d.getByRole("textbox", { name: /Czas \(min\)/i });
 
-    // przechodzimy walidację lokalną:
     await user.clear(nameInput);
     await user.type(nameInput, "X");
 
@@ -151,24 +150,21 @@ describe("pages/Admin/Services/ServicesPage", () => {
 
     await user.click(d.getByRole("button", { name: "Zapisz" }));
 
-    // 1) Dowód, że dotarliśmy do backendowego błędu (create było wywołane)
     await waitFor(() => {
       expect(servicesApi.create).toHaveBeenCalledTimes(1);
     });
 
-    // 2) Sedno testu: mapowanie błędu pola -> helperText konkretnego inputa
     await waitFor(() => {
       expect(getHelperTextEl(nameInput)).toHaveTextContent("To pole jest wymagane.");
     });
 
-    // 3) Alert w dialogu jest mile widziany, ale nie robimy z niego punktu krytycznego (żeby nie było flaky)
     const maybeAlert = d.queryByRole("alert");
     if (maybeAlert) {
       expect(maybeAlert).toHaveTextContent("To pole jest wymagane.");
     }
   });
 
-  it("gdy list() rzuci błąd z detail -> pokazuje Alert z tą wiadomością (odporność na 500/itp)", async () => {
+  it("gdy list() rzuci błąd z detail -> pokazuje Alert z tą wiadomością", async () => {
     vi.mocked(servicesApi.list).mockRejectedValue({
       response: {
         data: {

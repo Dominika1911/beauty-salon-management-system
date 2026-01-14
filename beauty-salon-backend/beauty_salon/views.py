@@ -5,7 +5,7 @@ import os
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
-# Django imports
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -539,7 +539,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         return Response(TimeOffSerializer(obj, context={"request": request}).data)
 
 class ClientViewSet(viewsets.ModelViewSet):
-    # Pokazuj domyślnie tylko aktywnych klientów (po "usunięciu" znikają z listy)
     queryset = ClientProfile.objects.filter(is_active=True).order_by("id")
     serializer_class = ClientSerializer
     filter_backends = [
@@ -579,7 +578,6 @@ class ClientViewSet(viewsets.ModelViewSet):
             target_user=getattr(obj, "user", None),
         )
 
-    # "Usuń" klienta = dezaktywuj (soft-delete), żeby nie kasować historii wizyt
     def destroy(self, request, *args, **kwargs):
         client = self.get_object()
 
@@ -587,7 +585,6 @@ class ClientViewSet(viewsets.ModelViewSet):
             client.is_active = False
             client.save(update_fields=["is_active"])
 
-            # Logujemy jako update (bo w Twoim SystemLog nie ma CLIENT_DISABLED)
             SystemLog.log(
                 action=SystemLog.Action.CLIENT_UPDATED,
                 performed_by=request.user,

@@ -43,7 +43,7 @@ export default function ClientAppointmentsPage(){
     useEffect(() => {
         const params = new URLSearchParams(location.search);
         if (params.get('msg') === 'reserved') {
-            setSnack({ open: true, msg: 'Wizyta została zarezerwowana.', severity: 'success' });
+            setSnack({ open: true, msg: 'Wizyta została zarezerwowana. Oczekuje na potwierdzenie przez pracownika.', severity: 'info' });
             params.delete('msg');
             navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
         }

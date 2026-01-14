@@ -1,7 +1,6 @@
 import { http, HttpResponse } from "msw";
 
 export const handlers = [
-  // --- AUTH (często odpalany w providerach / inicjalizacji aplikacji) ---
   http.get("/api/auth/csrf/", async () => {
     return HttpResponse.json({ detail: "CSRF ok" }, { status: 200 });
   }),

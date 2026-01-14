@@ -347,7 +347,7 @@ void loadSchedule();
 
                                                 {periods.length === 0 ? (
                                                     <Typography variant="body2" color="text.secondary">
-                                                        Brak godzin — dzień wolny.
+                                                        Brak godzin - dzień wolny.
                                                     </Typography>
                                                 ) : (
                                                     periods.map((p, idx) => (
@@ -392,7 +392,6 @@ void loadSchedule();
                                 {saving ? <CircularProgress size={20} /> : 'Zapisz'}
                             </Button>
                             <Typography variant="body2" color="text.secondary">
-                                Uwaga: backend waliduje godziny względem godzin otwarcia salonu.
                             </Typography>
                         </Stack>
                     </Stack>

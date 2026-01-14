@@ -2,13 +2,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-/**
- * Test kontraktu konfiguracji routingu:
- * sprawdzamy, że trasy wymagające ochrony są opakowane w ProtectedRoute
- * i mają poprawne allowedRoles.
- *
- * Nie inicjalizujemy prawdziwego routera (żeby nie było timeoutów).
- */
+
 
 vi.mock("./index", async () => {
   const routes = [
@@ -17,10 +11,7 @@ vi.mock("./index", async () => {
       children: [
         { path: "/", element: <div /> },
         { path: "/login", element: <div /> },
-
-        // ProtectedRoute wymaga children, więc dajemy <div />
         { path: "/dashboard", element: <ProtectedRoute><div /></ProtectedRoute> },
-
         { path: "/admin/services", element: <ProtectedRoute allowedRoles={["ADMIN"]}><div /></ProtectedRoute> },
         { path: "/employee/calendar", element: <ProtectedRoute allowedRoles={["EMPLOYEE"]}><div /></ProtectedRoute> },
         { path: "/client/booking", element: <ProtectedRoute allowedRoles={["CLIENT"]}><div /></ProtectedRoute> },

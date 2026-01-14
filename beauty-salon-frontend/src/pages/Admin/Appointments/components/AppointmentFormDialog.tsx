@@ -192,7 +192,7 @@ export default function AppointmentFormDialog({
                     fullWidth: true,
                     required: true,
                     helperText:
-                      'Godziny poniżej wynikają z grafiku + dostępności pracownika oraz godzin otwarcia salonu (backend).',
+                      'Dostępne godziny wynikają z grafiku, dostępności pracownika oraz godzin otwarcia salonu.',
                   },
                 }}
               />
@@ -269,7 +269,7 @@ export default function AppointmentFormDialog({
               disabled={submitting}
               helperText={
                 coreFieldsLocked
-                  ? 'W tej sytuacji tylko notatki są zapisywane po stronie serwera.'
+                  ? 'W tej sytuacji tylko notatki są zapisywane.'
                   : undefined
               }
             />

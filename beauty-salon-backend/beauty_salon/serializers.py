@@ -1054,13 +1054,23 @@ class BookingCreateSerializer(serializers.Serializer):
                 {"non_field_errors": "Wybrany termin jest już zajęty."}
             )
 
+
+        request = self.context.get("request")
+        user_role = getattr(request.user, "role", None) if request else None
+
+
+        if user_role == "CLIENT":
+            initial_status = Appointment.Status.PENDING
+        else:
+            initial_status = Appointment.Status.CONFIRMED
+
         appointment = Appointment.objects.create(
             employee=employee,
             client=client,
             service=validated_data["service"],
             start=start,
             end=end,
-            status=Appointment.Status.CONFIRMED,
+            status=initial_status,
         )
 
         return appointment

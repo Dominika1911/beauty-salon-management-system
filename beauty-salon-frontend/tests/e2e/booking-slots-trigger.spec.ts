@@ -16,7 +16,6 @@ test.describe('Booking – slot loading regression', () => {
 
     const { username, password } = creds(testInfo);
 
-    // --- LOGIN ---
     await page.goto('/login');
     await page.getByRole('textbox', { name: 'Nazwa użytkownika' }).fill(username);
     await page.getByLabel('Hasło').fill(password);
@@ -26,7 +25,6 @@ test.describe('Booking – slot loading regression', () => {
       (r) => r.url().includes('/api/auth/status/') && r.status() === 200,
     );
 
-    // --- BOOKING ---
     const [servicesResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
@@ -44,7 +42,6 @@ test.describe('Booking – slot loading regression', () => {
     expect(Array.isArray(services)).toBeTruthy();
     expect(services.length).toBeGreaterThan(0);
 
-    // ⬇️ bierzemy REALNĄ nazwę usługi z backendu
     const serviceName: string = services[0].name;
 
     await expect(page.getByText('Wybierz usługę')).toBeVisible({ timeout: 10_000 });
@@ -54,7 +51,6 @@ test.describe('Booking – slot loading regression', () => {
     await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
     await nextBtn.click();
 
-    // --- SPECJALISTA ---
     await expect(page.getByText('Wybierz specjalistę')).toBeVisible({ timeout: 10_000 });
 
     const employeeList = page.getByTestId('employee-list');
@@ -66,7 +62,6 @@ test.describe('Booking – slot loading regression', () => {
     await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
     await nextBtn.click();
 
-    // --- KLUCZOWA ASERCJA ---
     await expect(page.getByText('Termin wizyty')).toBeVisible({ timeout: 10_000 });
 
     const slotsResponse = await page.waitForResponse(
