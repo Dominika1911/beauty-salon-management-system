@@ -150,7 +150,11 @@ class UserCreateSerializer(serializers.ModelSerializer):
         else:
             user.set_password(secrets.token_urlsafe(8))
 
-        user.full_clean()
+        try:
+            user.full_clean()
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.message_dict)
+
         user.save()
         return user
 

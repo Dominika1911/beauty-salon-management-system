@@ -300,9 +300,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             obj = serializer.save()
 
         SystemLog.log(
-            action=SystemLog.Action.APPOINTMENT_CREATED,
+            action=SystemLog.Action.EMPLOYEE_CREATED,
             performed_by=user,
-            target_user=getattr(getattr(obj, "client", None), "user", None),
+            target_user=getattr(obj, "user", None),
         )
 
     def perform_update(self, serializer):
@@ -470,7 +470,11 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         obj.status = TimeOff.Status.APPROVED
         obj.decided_by = request.user
         obj.decided_at = timezone.now()
-        obj.full_clean()
+
+        try:
+            obj.full_clean()
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict)
 
         obj.save(update_fields=["status", "decided_by", "decided_at"])
 
