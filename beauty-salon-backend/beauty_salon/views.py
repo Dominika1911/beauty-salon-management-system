@@ -13,6 +13,8 @@ from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce, ExtractWeekDay
 from django.http import Http404, HttpResponse
 from django.utils import timezone
+from django.core.exceptions import ValidationError as DjangoValidationError
+
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, permissions, status, viewsets
