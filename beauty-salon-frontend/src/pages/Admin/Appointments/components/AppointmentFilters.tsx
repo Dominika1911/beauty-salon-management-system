@@ -35,7 +35,7 @@ export default function AppointmentFilters({
           <MenuItem value="CONFIRMED">Potwierdzone</MenuItem>
           <MenuItem value="COMPLETED">Zakończone</MenuItem>
           <MenuItem value="CANCELLED">Anulowane</MenuItem>
-          <MenuItem value="NO_SHOW">Nie przyszedł</MenuItem>
+          <MenuItem value="NO_SHOW">Nieobecność</MenuItem>
         </Select>
       </FormControl>
 

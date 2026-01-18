@@ -68,7 +68,7 @@ export default function ResetEmployeePasswordDialog(props: Props){
                         value={resetPass1}
                         onChange={(e) => setResetPass1(e.target.value)}
                         fullWidth
-                        helperText="Minimum 8 znaków"
+                        helperText="Wybierz mocne hasło"
                         disabled={resetLoading}
                         autoComplete="new-password"
                     />

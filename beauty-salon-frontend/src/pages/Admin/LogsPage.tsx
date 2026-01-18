@@ -41,17 +41,15 @@ type ActionGroup =
 type Ordering = 'timestamp' | '-timestamp';
 
 
-function groupFromAction(action: string): ActionGroup {
-    if (!action) return 'OTHER';
-    const a = action.toUpperCase().trim();
+function groupFromAction(display: string, rawAction: string): ActionGroup {
+    // 1. Najpierw sprawdzamy surowy kod (np. AUTH_LOGIN) - to najpewniejsza metoda
+    const raw = (rawAction || '').toUpperCase();
+    if (raw.startsWith('AUTH_')) return 'AUTH';
+    if (raw.startsWith('SETTINGS_')) return 'SETTINGS';
 
-    if (
-        a.includes('AUTH') ||
-        a.includes('LOGIN') ||
-        a.includes('LOGOUT') ||
-        a.includes('PASSWORD') ||
-        a.includes('HASŁO')
-    ) {
+    // 2. Jeśli kod nie pasuje, szukamy w nazwie wyświetlanej (np. "Zalogowano...")
+    const a = (display || '').toUpperCase().trim();
+    if (a.includes('LOGIN') || a.includes('LOGOUT') || a.includes('HASŁO') || a.includes('PASSWORD')) {
         return 'AUTH';
     }
 
@@ -233,7 +231,7 @@ export default function LogsPage(){
         const base = data?.results ?? [];
         const s = search.trim().toLowerCase();
         return base.filter((l) => {
-            const g = groupFromAction(l.action_display || l.action);
+            const g = groupFromAction(l.action_display, l.action);
             if (group !== 'ALL' && g !== group) return false;
             if (!s) return true;
             const hay = [
@@ -350,7 +348,7 @@ export default function LogsPage(){
                                 ) : (
                                     rows.map((l) => {
                                         const badge = chipPropsForGroup(
-                                            groupFromAction(l.action_display || l.action),
+                                            groupFromAction(l.action_display, l.action)
                                         );
                                         return (
                                             <TableRow key={l.id} hover>

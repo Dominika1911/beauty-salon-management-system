@@ -39,7 +39,7 @@ def _humanize_password_errors(exc: DjangoValidationError) -> list[str]:
         elif "This password is entirely numeric" in s_norm:
             out.append("Hasło nie może składać się wyłącznie z cyfr.")
         elif "is too similar to the" in s_norm:
-            out.append("Hasło jest zbyt podobne do danych użytkownika (np. login/e-mail).")
+            out.append("Hasło jest zbyt podobne do danych użytkownika (login/e-mail).")
         else:
             out.append(s_norm)
 

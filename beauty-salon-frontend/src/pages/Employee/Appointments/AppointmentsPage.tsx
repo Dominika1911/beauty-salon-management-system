@@ -73,8 +73,8 @@ export default function AppointmentsPage() {
     severity: 'success',
   });
 
-  const [ordering, setOrdering] = useState<Ordering>('-start');
-  const [draftOrdering, setDraftOrdering] = useState<Ordering>('-start');
+  const [ordering, setOrdering] = useState<Ordering>('start');
+  const [draftOrdering, setDraftOrdering] = useState<Ordering>('start');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -186,8 +186,8 @@ export default function AppointmentsPage() {
 
   const applyFilters = () => setOrdering(draftOrdering);
   const clearFilters = () => {
-    setDraftOrdering('-start');
-    setOrdering('-start');
+    setDraftOrdering('start');
+    setOrdering('start');
   };
 
 
@@ -353,8 +353,8 @@ export default function AppointmentsPage() {
                 value={draftOrdering}
                 onChange={(e) => setDraftOrdering(e.target.value as Ordering)}
               >
-                <MenuItem value="-start">{orderingLabel('-start')}</MenuItem>
-                <MenuItem value="start">{orderingLabel('start')}</MenuItem>
+                <MenuItem value="start">{orderingLabel('-start')}</MenuItem>
+                <MenuItem value="-start">{orderingLabel('start')}</MenuItem>
                 <MenuItem value="-created_at">{orderingLabel('-created_at')}</MenuItem>
                 <MenuItem value="created_at">{orderingLabel('created_at')}</MenuItem>
                 <MenuItem value="-status">{orderingLabel('-status')}</MenuItem>

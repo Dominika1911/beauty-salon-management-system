@@ -43,7 +43,7 @@ export default function ResetClientPasswordDialog(props: {
                     onChange={(e) => setP1(e.target.value)}
                     disabled={!client || saving}
                     fullWidth
-                    helperText="Minimum 8 znaków"
+                    helperText="Hasło musi być mocne"
                 />
                 <TextField
                     label="Powtórz nowe hasło"

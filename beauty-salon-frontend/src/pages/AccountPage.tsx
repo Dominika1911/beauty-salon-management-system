@@ -318,7 +318,7 @@ const ProfilePage: React.FC = () => {
                                     helperText={
                                         fieldErrors.new_password ||
                                         clientErrors.new_password ||
-                                        'Minimum 8 znaków.'
+                                        'Wybierz mocne hasło.'
                                     }
                                 />
 

@@ -14,7 +14,7 @@ from django.db.models.functions import Coalesce, ExtractWeekDay
 from django.http import Http404, HttpResponse
 from django.utils import timezone
 from django.core.exceptions import ValidationError as DjangoValidationError
-
+from django.db.models import Case, When, Value, IntegerField
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, permissions, status, viewsets
@@ -260,26 +260,25 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not user.is_authenticated or not hasattr(user, "role"):
             return qs.none()
 
+        service_id = self.request.query_params.get("service_id")
+        if service_id not in (None, ""):
+            try:
+                service_id_int = int(service_id)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    {"service_id": "Nieprawidłowa wartość. Oczekiwano liczby całkowitej."}
+                )
+            qs = qs.filter(skills__id=service_id_int).distinct()
+
         if user.role == "CLIENT":
             qs = qs.filter(is_active=True)
-
-            service_id = self.request.query_params.get("service_id")
-            if service_id not in (None, ""):
-                try:
-                    service_id_int = int(service_id)
-                except (TypeError, ValueError):
-                    raise ValidationError(
-                        {"service_id": "Nieprawidłowa wartość. Oczekiwano liczby całkowitej."}
-                    )
-
-                qs = qs.filter(skills__id=service_id_int).distinct()
-
             return qs
 
         if user.role == "EMPLOYEE":
             return qs.filter(user=user, is_active=True)
 
         return qs
+
 
     def get_permissions(self):
         if self.action == "schedule":
@@ -351,7 +350,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         filters.SearchFilter,
     ]
     filterset_fields = ["status", "employee"]
-    ordering_fields = ["created_at", "date_from", "date_to", "status"]
+    ordering_fields = ["created_at", "date_from", "date_to"]
     search_fields = ["reason", "employee__first_name", "employee__last_name"]
 
     def get_permissions(self):
@@ -372,20 +371,25 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        qs = TimeOff.objects.select_related(
+        # 1. ZMIANA: Dodajemy priorytety statusów, aby sortowały się alfabetycznie po polsku
+        qs = TimeOff.objects.annotate(
+            status_priority=Case(
+                When(status=TimeOff.Status.CANCELLED, then=Value(1)),  # Anulowany
+                When(status=TimeOff.Status.PENDING, then=Value(2)),  # Oczekuje
+                When(status=TimeOff.Status.REJECTED, then=Value(3)),  # Odrzucony
+                When(status=TimeOff.Status.APPROVED, then=Value(4)),  # Zaakceptowany
+                default=Value(5),
+                output_field=IntegerField(),
+            )
+        ).select_related(
             "employee", "employee__user", "requested_by", "decided_by"
-        ).order_by("-created_at")
+        )
 
         user = self.request.user
-
-        if not user.is_authenticated:
-            return qs.none()
-
-        if not hasattr(user, "role"):
+        if not user.is_authenticated or not hasattr(user, "role"):
             return qs.none()
 
         role = user.role
-
         if role == "CLIENT":
             return qs.none()
 
@@ -395,6 +399,7 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 return qs.none()
             qs = qs.filter(employee=emp)
 
+        # Filtry dat (bez zmian)
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
 
@@ -402,21 +407,28 @@ class TimeOffViewSet(viewsets.ModelViewSet):
             try:
                 df = datetime.strptime(date_from, "%Y-%m-%d").date()
             except (ValueError, TypeError):
-                raise ValidationError(
-                    {"date_from": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}
-                )
+                raise ValidationError({"date_from": "Nieprawidłowy format daty."})
             qs = qs.filter(date_to__gte=df)
 
         if date_to:
             try:
                 dt = datetime.strptime(date_to, "%Y-%m-%d").date()
             except (ValueError, TypeError):
-                raise ValidationError(
-                    {"date_to": "Nieprawidłowy format daty. Użyj YYYY-MM-DD."}
-                )
+                raise ValidationError({"date_to": "Nieprawidłowy format daty."})
             qs = qs.filter(date_from__lte=dt)
 
-        return qs
+        # 2. ZMIANA: Obsługa parametrów sortowania przesyłanych z frontendu
+        ordering = self.request.query_params.get('ordering')
+
+        if ordering == 'status':
+            # Jeśli A -> Z, sortujemy po priorytetach (1, 2, 3...)
+            return qs.order_by('status_priority')
+        elif ordering == '-status':
+            # Jeśli Z -> A, odwracamy kolejność
+            return qs.order_by('-status_priority')
+
+        # Domyślne sortowanie (jeśli nic nie wybrano)
+        return qs.order_by("-created_at")
 
     def perform_create(self, serializer):
         user = self.request.user

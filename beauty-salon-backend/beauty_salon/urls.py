@@ -56,7 +56,7 @@ urlpatterns = [
     path("statistics/", StatisticsView.as_view(), name="statistics"),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
     path("reports/", ReportView.as_view(), name="reports-list"),
-    path("reports/<str:report_type>/", ReportView.as_view(), name="report-json"),
+    path("reports/<str:report_type>/", ReportView.as_view(), name="report"),
     path("reports/<str:report_type>/pdf/", ReportView.as_view(), name="report-pdf"),
     path("", include(router.urls)),
 ]

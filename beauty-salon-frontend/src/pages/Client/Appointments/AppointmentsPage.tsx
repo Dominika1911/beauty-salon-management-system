@@ -21,10 +21,10 @@ export default function ClientAppointmentsPage(){
     const [page, setPage] = useState(1);
 
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
-    const [ordering, setOrdering] = useState<Ordering>('start');
+    const [ordering, setOrdering] = useState<Ordering>('-start');
 
     const [draftStatus, setDraftStatus] = useState<StatusFilter>('ALL');
-    const [draftOrdering, setDraftOrdering] = useState<Ordering>('start');
+    const [draftOrdering, setDraftOrdering] = useState<Ordering>('-start');
 
     const [loading, setLoading] = useState(true);
     const [busyCancelId, setBusyCancelId] = useState<number | null>(null);
@@ -103,9 +103,9 @@ export default function ClientAppointmentsPage(){
 
     const clearFilters = () => {
         setDraftStatus('ALL');
-        setDraftOrdering('start');
+        setDraftOrdering('-start');
         setStatusFilter('ALL');
-        setOrdering('start');
+        setOrdering('-start');
         setPage(1);
     };
 

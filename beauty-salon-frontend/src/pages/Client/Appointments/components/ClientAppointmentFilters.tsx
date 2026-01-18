@@ -73,8 +73,8 @@ export const ClientAppointmentFilters: React.FC<Props> = ({
                             value={ordering}
                             onChange={(e) => onOrderingChange(e.target.value as Ordering)}
                         >
-                            <MenuItem value="start">Najbliższe terminy</MenuItem>
-                            <MenuItem value="-start">Najdalsze terminy</MenuItem>
+                            <MenuItem value="-start">Najbliższe terminy</MenuItem>
+                            <MenuItem value="start">Najdalsze terminy</MenuItem>
                             <MenuItem value="-created_at">Najnowsze rezerwacje</MenuItem>
                             <MenuItem value="created_at">Najstarsze rezerwacje</MenuItem>
                         </Select>

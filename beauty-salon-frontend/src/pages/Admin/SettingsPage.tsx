@@ -262,6 +262,8 @@ const SettingsPage: React.FC = () => {
             setOpeningHours(ensureOpeningHours(saved.opening_hours));
 
             setSnack({ open: true, msg: 'Ustawienia zapisane.', severity: 'success' });
+            window.dispatchEvent(new Event('system-settings-updated'));
+
         } catch (e: unknown) {
             const parsed = parseDrfError(e);
 

@@ -228,21 +228,26 @@ export default function EmployeesPage(): React.ReactNode {
     };
 
     const openEdit = (emp: Employee) => {
-        setIsEdit(true);
-        setForm({
-            id: emp.id,
-            first_name: emp.first_name || '',
-            last_name: emp.last_name || '',
-            phone: emp.phone || '',
-            is_active: Boolean(emp.is_active),
-            skill_ids: (emp.skills || []).map((s) => s.id),
-            email: '',
-            password: '',
-        });
-        setFormError(null);
-        setFormFieldErrors({});
-        setDialogOpen(true);
-    };
+    setIsEdit(true);
+    const activeServiceIds = new Set(services.map((s) => s.id));
+    const employeeActiveSkills = (emp.skills || [])
+        .filter((skill) => activeServiceIds.has(skill.id))
+        .map((skill) => skill.id);
+
+    setForm({
+        id: emp.id,
+        first_name: emp.first_name || '',
+        last_name: emp.last_name || '',
+        phone: emp.phone || '',
+        is_active: Boolean(emp.is_active),
+        skill_ids: employeeActiveSkills,  // ← Tylko aktywne usługi
+        email: '',
+        password: '',
+    });
+    setFormError(null);
+    setFormFieldErrors({});
+    setDialogOpen(true);
+};
 
     const closeDialog = () => {
         setDialogOpen(false);

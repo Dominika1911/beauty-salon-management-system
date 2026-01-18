@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
     Drawer,
@@ -40,6 +40,7 @@ import {
 } from '@mui/icons-material';
 
 import { useAuth } from '@/context/AuthContext';
+import { systemSettingsApi } from '@/api/systemSettings';
 import type { UserRole } from '@/types';
 
 const drawerWidth = 240;
@@ -117,6 +118,33 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
     const [confirmOpen, setConfirmOpen] = useState(false);
 
+    // --- salon name from system settings ---
+    const [salonName, setSalonName] = useState<string>('Beauty Salon');
+
+    useEffect(() => {
+        let mounted = true;
+
+        const load = async () => {
+            try {
+                const s = await systemSettingsApi.get();
+                if (mounted) setSalonName(String(s.salon_name || 'Beauty Salon'));
+            } catch {
+                // ignore, keep default
+            }
+        };
+
+        void load();
+
+        const onUpdated = () => void load();
+        window.addEventListener('system-settings-updated', onUpdated);
+
+        return () => {
+            mounted = false;
+            window.removeEventListener('system-settings-updated', onUpdated);
+        };
+    }, []);
+    // --- end salon name ---
+
     const filteredItems = useMemo(() => {
         if (!user) return [];
         return menuItems.filter((item) => item.roles.includes(user.role));
@@ -155,7 +183,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                             noWrap
                             sx={{ fontWeight: 800, letterSpacing: 0.2 }}
                         >
-                            Beauty Salon
+                            {salonName}
                         </Typography>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }} noWrap>
                             Management System

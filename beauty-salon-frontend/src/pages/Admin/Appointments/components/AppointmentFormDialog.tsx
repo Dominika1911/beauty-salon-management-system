@@ -255,7 +255,7 @@ export default function AppointmentFormDialog({
                   <MenuItem value="CONFIRMED">Potwierdzona</MenuItem>
                   <MenuItem value="CANCELLED">Anulowana</MenuItem>
                   <MenuItem value="COMPLETED">Zakończona</MenuItem>
-                  <MenuItem value="NO_SHOW">Nie przyszedł</MenuItem>
+                  <MenuItem value="NO_SHOW">Nieobecność</MenuItem>
                 </Select>
               </FormControl>
             )}
