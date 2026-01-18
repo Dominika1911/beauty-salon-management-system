@@ -66,14 +66,32 @@ export default function BookingPage() {
     })();
   }, []);
 
-  const visibleServices = useMemo(() => {
+const visibleServices = useMemo(() => {
     const q = serviceQuery.toLowerCase();
 
-    const base = (services ?? []).filter((s) => s.name.toLowerCase().includes(q));
+      const base = (services ?? []).filter((s) => {
+      const nameMatch = s.name.toLowerCase().includes(q);
+      const priceMatch = s.price?.toString().includes(q);
+      return nameMatch || priceMatch;
+    });
 
-    // obecnie masz sort po nazwie; zostawiamy to 1:1
-    // (serviceSort jest w deps jak wcześniej – nie zmieniam logiki sortowania bez potrzeby)
-    return base.sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+    return [...base].sort((a: any, b: any) => {
+      if (serviceSort === 'name') {
+        return a.name.localeCompare(b.name, 'pl');
+      }
+
+      if (serviceSort === 'price') {
+        return (Number(a.price) || 0) - (Number(b.price) || 0);
+      }
+
+      if (serviceSort === 'duration') {
+        const timeA = a.duration || a.duration_minutes || a.time || 0;
+        const timeB = b.duration || b.duration_minutes || b.time || 0;
+        return timeA - timeB;
+      }
+
+      return 0;
+    });
   }, [services, serviceQuery, serviceSort]);
 
   /* ---------------- LOAD EMPLOYEES ---------------- */

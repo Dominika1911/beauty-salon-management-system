@@ -64,6 +64,9 @@ export default function AppointmentListItem({
   const priceLabel = safeMoneyFromString(appointment.service_price);
   const clientLabel = appointment.client_name ?? (appointment.client ? `#${appointment.client}` : '—');
 
+  // POPRAWKA: Nie można edytować wizyt zakończonych/anulowanych
+  const canEdit = !['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(appointment.status);
+
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
       <Stack
@@ -103,7 +106,6 @@ export default function AppointmentListItem({
 
           {started && (
             <Typography variant="body2" color="text.secondary">
-              Edycja ograniczona: tylko notatki
             </Typography>
           )}
         </Stack>
@@ -111,7 +113,13 @@ export default function AppointmentListItem({
         <Stack spacing={1} alignItems={{ xs: 'flex-start', md: 'flex-end' }}>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
             <Chip label={appointment.status_display} color={statusColor} size="small" />
-            <Button size="small" variant="outlined" onClick={() => onEdit(appointment)}>
+            {/* POPRAWKA: Przycisk disabled dla zakończonych wizyt */}
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => onEdit(appointment)}
+              disabled={!canEdit}
+            >
               {started ? 'Edytuj notatki' : 'Edytuj'}
             </Button>
           </Stack>
