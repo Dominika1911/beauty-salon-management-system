@@ -31,7 +31,6 @@ describe("utils/appointmentUtils – formatPrice", () => {
 
 describe("utils/appointmentUtils – formatDateTimePL", () => {
   it("formats Date using pl-PL locale (contract = toLocaleString short/short)", () => {
-    // UTC -> brak różnic timezone
     const d = new Date(Date.UTC(2024, 0, 2, 10, 30, 0));
 
     const expected = d.toLocaleString("pl-PL", {

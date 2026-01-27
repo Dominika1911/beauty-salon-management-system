@@ -131,7 +131,6 @@ describe('pages/LoginPage', () => {
         expect(loginMock).toHaveBeenCalledTimes(1);
         expect(loginMock).toHaveBeenCalledWith({ username: 'user', password: 'pass' });
 
-        // dowód zachowania: w trakcie logowania submit jest zablokowany
         expect(submit).toBeDisabled();
 
         expect(resolveLogin).not.toBeNull();
@@ -224,11 +223,8 @@ describe('pages/LoginPage', () => {
 
         await user.click(screen.getByRole('button', { name: 'Zaloguj się' }));
 
-        // dowód: błąd jest przypięty do konkretnego pola (MUI helperText → aria-describedby)
         expect(getUsernameInput()).toHaveAccessibleDescription('Za krótka nazwa użytkownika.');
         expect(getPasswordInput()).toHaveAccessibleDescription('Hasło jest za słabe.');
-
-        // i istnieje formError (Alert)
         expect(await screen.findByRole('alert')).toBeInTheDocument();
     });
 

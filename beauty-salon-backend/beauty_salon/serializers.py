@@ -1044,24 +1044,38 @@ class BookingCreateSerializer(serializers.Serializer):
                 {"non_field_errors": "Wybrany termin jest niedostępny."}
             )
 
-        if (
-                Appointment.objects.select_for_update()
-                        .filter(
-                    employee=employee,
-                    start__lt=end,
-                    end__gt=start,
-                    status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
-                )
-                        .exists()
-        ):
+        conflicting_employee_appointments = list(
+            Appointment.objects.select_for_update()
+            .filter(
+                employee=employee,
+                start__lt=end,
+                end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+            )[:1]
+        )
+
+        if conflicting_employee_appointments:
             raise serializers.ValidationError(
                 {"non_field_errors": "Wybrany termin jest już zajęty."}
             )
 
+        conflicting_client_appointments = list(
+            Appointment.objects.select_for_update()
+            .filter(
+                client=client,
+                start__lt=end,
+                end__gt=start,
+                status__in=[Appointment.Status.PENDING, Appointment.Status.CONFIRMED],
+            )[:1]
+        )
+
+        if conflicting_client_appointments:
+            raise serializers.ValidationError(
+                {"non_field_errors": "Klient ma już zarezerwowaną wizytę w tym czasie."}
+            )
 
         request = self.context.get("request")
         user_role = getattr(request.user, "role", None) if request else None
-
 
         if user_role == "CLIENT":
             initial_status = Appointment.Status.PENDING

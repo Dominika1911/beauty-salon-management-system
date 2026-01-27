@@ -1,6 +1,3 @@
-# =========================
-# Logs
-# =========================
 logs
 *.log
 npm-debug.log*
@@ -8,33 +5,17 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-# =========================
-# Node / frontend
-# =========================
 node_modules/
 dist/
 dist-ssr/
 *.local
-
-# npm lock (nie używamy, bo pnpm)
 package-lock.json
-
-# pnpm
 .pnpm-store/
-
-# =========================
-# Playwright / E2E artifacts
-# =========================
 test-results/
 playwright-report/
 blob-report/
 .trace/
 **/*.trace
-
-# =========================
-# Python / backend / pytest
-# =========================
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -45,16 +26,10 @@ __pycache__/
 coverage/
 htmlcov/
 
-# =========================
-# Environment
-# =========================
 .env
 .env.*
 !.env.example
 
-# =========================
-# Editor / OS
-# =========================
 .vscode/*
 !.vscode/extensions.json
 .idea/

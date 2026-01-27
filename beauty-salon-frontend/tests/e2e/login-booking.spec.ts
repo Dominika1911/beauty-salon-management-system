@@ -161,22 +161,18 @@ async function ensureBaseSlotsRequest(page: Page, testInfo: TestInfo) {
   const d1 = new Date();
   d1.setDate(d1.getDate() + baseOffset);
 
-  // 1) próba
   let r = await setDateInPicker(page, d1);
   if (r.slotsUrl) return r.slotsUrl;
 
-  // 2) „touch” tej samej daty (często dopiero wtedy UI odpala fetch)
   r = await setDateInPicker(page, d1);
   if (r.slotsUrl) return r.slotsUrl;
 
-  // 3) +1 dzień
   const d2 = new Date(d1);
   d2.setDate(d2.getDate() + 1);
 
   r = await setDateInPicker(page, d2);
   if (r.slotsUrl) return r.slotsUrl;
 
-  // 4) wróć do d1 (zmiana tam i z powrotem potrafi odpalić effect)
   r = await setDateInPicker(page, d1);
   if (r.slotsUrl) return r.slotsUrl;
 
@@ -200,7 +196,6 @@ async function pickDayWithSlotsFast(page: Page, testInfo: TestInfo, baseSlotsUrl
     last = { status, json, dateISO };
 
     if (status === 200 && Array.isArray(json?.slots) && json.slots.length > 0) {
-      // ustawiamy znalezioną datę w UI (realna interakcja)
       await setDateInPicker(page, d);
       return json;
     }
@@ -215,14 +210,12 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
 
     const { username, password } = creds(testInfo);
 
-    // --- LOGIN ---
     await page.goto('/login');
     await page.getByRole('textbox', { name: 'Nazwa użytkownika' }).fill(username);
     await page.getByLabel('Hasło').fill(password);
     await page.getByRole('button', { name: 'Zaloguj się' }).click();
     await expectLoginOk(page);
 
-    // --- BOOKING ---
     const [servicesResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
@@ -245,8 +238,6 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
     const nextBtn = page.getByTestId('booking-next');
     await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
     await nextBtn.click();
-
-    // --- specjalista ---
     await expect(page.getByText('Wybierz specjalistę')).toBeVisible({ timeout: 10_000 });
     const employeeList = page.getByTestId('employee-list');
     await expect(employeeList).toBeVisible({ timeout: 10_000 });
@@ -261,18 +252,14 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
     await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
     await nextBtn.click();
 
-    // --- termin / sloty ---
     await expect(page.getByText('Termin wizyty')).toBeVisible({ timeout: 10_000 });
 
-    // Tablet/Mobile: slots request może nie polecieć sam → wymuszamy realnym wyborem daty,
-    // a bazowy URL łapiemy z request-listenera.
     const baseSlotsUrl = await ensureBaseSlotsRequest(page, testInfo);
 
     const slotsData = await pickDayWithSlotsFast(page, testInfo, baseSlotsUrl);
     expect(Array.isArray(slotsData.slots)).toBeTruthy();
     expect(slotsData.slots.length).toBeGreaterThan(0);
 
-    // --- booking (retry na konflikt 400) ---
     const confirmBtn = page.getByTestId('booking-next');
     await expect(confirmBtn).toBeVisible({ timeout: 10_000 });
 
@@ -303,7 +290,6 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
 
       lastError = `BOOK FAILED ${st} ${bookResp.url()} content-type=${contentType}\n${bodySnippet}`;
 
-      // Slot-specyficzne błędy (konflikt/walidacja) -> próbujemy kolejny slot.
       if (st === 400 || st === 409) continue;
 
       throw new Error(lastError);

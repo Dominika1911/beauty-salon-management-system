@@ -9,9 +9,6 @@ import {
   mapEmployeeCreateMessage,
 } from './utils';
 
-/**
- * TESTY RZECZYWISTEJ LOGIKI BIZNESOWEJ - Employees
- */
 
 describe('Employees Utils: formatPLN', () => {
 
@@ -280,7 +277,6 @@ describe('Employees Utils: mapEmployeeCreateMessage', () => {
     const msg = 'nie mozna wygenerowac loginu';
     const result = mapEmployeeCreateMessage(msg);
 
-    // Ten komunikat zawiera słowa kluczowe więc powinien być zmapowany
     expect(result).toContain('system');
   });
 });

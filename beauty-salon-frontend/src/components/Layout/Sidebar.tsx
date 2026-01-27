@@ -118,7 +118,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
 
     const [confirmOpen, setConfirmOpen] = useState(false);
 
-    // --- salon name from system settings ---
     const [salonName, setSalonName] = useState<string>('Beauty Salon');
 
     useEffect(() => {
@@ -129,7 +128,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
                 const s = await systemSettingsApi.get();
                 if (mounted) setSalonName(String(s.salon_name || 'Beauty Salon'));
             } catch {
-                // ignore, keep default
             }
         };
 
@@ -143,7 +141,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onMobileClose }) => {
             window.removeEventListener('system-settings-updated', onUpdated);
         };
     }, []);
-    // --- end salon name ---
 
     const filteredItems = useMemo(() => {
         if (!user) return [];

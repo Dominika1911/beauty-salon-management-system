@@ -3,7 +3,6 @@ import { isHHMM, hhmmToMinutes, sanitizePeriods, hasOverlaps } from "./time";
 
 describe("utils/time – isHHMM", () => {
   it("returns false for values that are not valid HH:MM when coerced to string", () => {
-    // isHHMM uses String(value ?? '').trim()
     expect(isHHMM(null)).toBe(false);
     expect(isHHMM(undefined)).toBe(false);
     expect(isHHMM(123)).toBe(false);
@@ -57,11 +56,11 @@ describe("utils/time – sanitizePeriods", () => {
     const input = [
       null,
       {},
-      { start: "09:00" }, // missing end
-      { end: "10:00" }, // missing start
-      { start: 900, end: "10:00" }, // start not string
-      { start: "09:00", end: 1000 }, // end not string
-      { start: "09:00", end: "10:00" }, // valid
+      { start: "09:00" },
+      { end: "10:00" },
+      { start: 900, end: "10:00" },
+      { start: "09:00", end: 1000 },
+      { start: "09:00", end: "10:00" },
     ];
 
     expect(sanitizePeriods(input)).toEqual([{ start: "09:00", end: "10:00" }]);
@@ -69,11 +68,11 @@ describe("utils/time – sanitizePeriods", () => {
 
   it("normalizes H:MM and HH:MM:SS to HH:MM and drops invalid times", () => {
     const input = [
-      { start: " 9:00 ", end: "10:00" }, // hour padded
-      { start: "09:00:00", end: "10:00:59" }, // seconds ignored
-      { start: "09:00", end: "10:60" }, // invalid minutes -> dropped
-      { start: "24:00", end: "10:00" }, // invalid hour -> dropped
-      { start: "ab:cd", end: "10:00" }, // invalid -> dropped
+      { start: " 9:00 ", end: "10:00" },
+      { start: "09:00:00", end: "10:00:59" },
+      { start: "09:00", end: "10:60" },
+      { start: "24:00", end: "10:00" },
+      { start: "ab:cd", end: "10:00" },
     ];
 
     expect(sanitizePeriods(input)).toEqual([

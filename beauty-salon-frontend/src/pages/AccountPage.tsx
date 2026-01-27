@@ -68,16 +68,13 @@ const ProfilePage: React.FC = () => {
         return null;
     };
 
-    // Client-side helper texts (żeby nie czekać na submit)
     const clientErrors = useMemo(() => {
         const errs: Partial<PasswordFields> = {};
 
-        // Nie pokazuj błędu długości, gdy pole puste – UX lepszy, a nie zmienia wymagań
         if (newPassword && newPassword.length < 8) {
             errs.new_password = 'Nowe hasło musi mieć co najmniej 8 znaków.';
         }
 
-        // Mismatch pokazujemy dopiero gdy użytkownik coś wpisał w powtórzenie
         if (newPassword2 && newPassword !== newPassword2) {
             errs.new_password2 = 'Nowe hasło i powtórzenie muszą być identyczne.';
         }
@@ -97,7 +94,6 @@ const ProfilePage: React.FC = () => {
 
         clearErrors();
 
-        // Ochrona na wypadek ręcznego odpalenia handlera mimo disabled
         const v = validateClient();
         if (v) {
             setFormError(v);

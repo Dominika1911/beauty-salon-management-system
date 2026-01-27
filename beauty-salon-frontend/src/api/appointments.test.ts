@@ -59,7 +59,6 @@ describe("api/appointments – kontrakty i normalizacja payloadów (MSW)", () =>
     server.use(
       http.post("/api/appointments/", async ({ request }) => {
         const body: any = await request.json();
-        // kontrakt z Twojego kodu: internal_notes: data.internal_notes ?? ''
         expect(body.internal_notes).toBe("");
 
         return HttpResponse.json({ id: 1 }, { status: 201 });
@@ -99,7 +98,6 @@ describe("api/appointments – kontrakty i normalizacja payloadów (MSW)", () =>
     server.use(
       http.patch("/api/appointments/124/", async ({ request }) => {
         const body: any = await request.json();
-        // kontrakt z Twojego kodu: internal_notes: data.internal_notes ?? ''
         expect(body.internal_notes).toBe("");
 
         return HttpResponse.json(

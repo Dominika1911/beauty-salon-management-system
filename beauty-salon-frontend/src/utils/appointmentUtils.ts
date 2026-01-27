@@ -9,8 +9,6 @@ function isValidDate(d: Date): boolean {
   return d instanceof Date && !Number.isNaN(d.getTime());
 }
 
-// --- Funkcje brakujące, które przywracamy z GitHub ---
-
 export const statusColor = (status: AppointmentStatus): "default" | "success" | "warning" | "error" => {
     switch (status) {
         case 'CONFIRMED':
@@ -39,7 +37,6 @@ export const statusLabel = (status: AppointmentStatus | string): string => {
     return labels[status as string] || status;
 };
 
-// --- Reszta Twoich funkcji ---
 
 export function formatPrice(price?: string | number): string {
   if (price === null || price === undefined) return "—";

@@ -25,7 +25,6 @@ class SessionLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # === WYMUSZENIE CSRF NA LOGIN ===
         csrf_mw = CsrfViewMiddleware(get_response=lambda r: None)
         csrf_failure = csrf_mw.process_view(request, None, (), {})
         if csrf_failure is not None:
@@ -33,7 +32,6 @@ class SessionLoginView(APIView):
                 {"detail": "CSRF Failed."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        # === KONIEC CSRF CHECK ===
 
         username = request.data.get("username")
         password = request.data.get("password")

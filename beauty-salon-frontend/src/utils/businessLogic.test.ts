@@ -25,8 +25,8 @@ describe('Admin/Clients/utils – normalizacja i budowanie payloadów', () => {
         expect(normalizeClientValues(values)).toEqual({
             first_name: 'Jan',
             last_name: 'Kowalski',
-            phone: undefined, // kontrakt z kodu
-            email: null, // kontrakt z kodu
+            phone: undefined,
+            email: null,
             internal_notes: 'notatka',
             is_active: true,
             password: 'Pass123!',
@@ -47,7 +47,6 @@ describe('Admin/Clients/utils – normalizacja i budowanie payloadów', () => {
         const createPayload = buildClientCreatePayload(values);
         const updatePayload = buildClientUpdatePayload(values);
 
-        // Dowód: oba payloady są oparte o normalizację (trim email / imion)
         expect(createPayload).toMatchObject({
             first_name: 'Anna',
             last_name: 'Nowak',
@@ -66,7 +65,6 @@ describe('Admin/Clients/utils – normalizacja i budowanie payloadów', () => {
             is_active: false,
         });
 
-        // Dowód kontraktu: create ma password, update nie ma password
         expect(createPayload).toHaveProperty('password', 'Secret123!');
         expect(updatePayload).not.toHaveProperty('password');
     });
@@ -76,12 +74,10 @@ describe('Admin/Clients/utils – normalizacja i budowanie payloadów', () => {
             first_name: 'Ala',
             last_name: 'Makota',
             is_active: true,
-            // email celowo pomijamy
         };
 
         const out = normalizeClientValues(values);
 
-        // Kontrakt z kodu: email zawsze istnieje na wyjściu (null jeśli brak/puste)
         expect(out).toHaveProperty('email');
         expect(out.email).toBeNull();
     });

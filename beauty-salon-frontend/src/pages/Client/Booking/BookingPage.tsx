@@ -51,7 +51,6 @@ export default function BookingPage() {
 
   const clearError = () => setError('');
 
-  /* ---------------- LOAD SERVICES ---------------- */
   useEffect(() => {
     (async () => {
       try {
@@ -94,7 +93,6 @@ const visibleServices = useMemo(() => {
     });
   }, [services, serviceQuery, serviceSort]);
 
-  /* ---------------- LOAD EMPLOYEES ---------------- */
   useEffect(() => {
     if (!selectedService) return;
 
@@ -109,7 +107,6 @@ const visibleServices = useMemo(() => {
     })();
   }, [selectedService]);
 
-  /* ---------------- LOAD SLOTS (FIX) ---------------- */
   const loadSlots = useCallback(async () => {
     if (!selectedEmployee || !selectedService || !selectedDate) return;
 
@@ -132,20 +129,17 @@ const visibleServices = useMemo(() => {
     }
   }, [selectedEmployee, selectedService, selectedDate]);
 
-  // fallback (np. zmiana daty)
   useEffect(() => {
     if (activeStep === 2) {
       loadSlots();
     }
   }, [activeStep, loadSlots]);
 
-  /* ---------------- NAVIGATION ---------------- */
   const goNext = () => {
     clearError();
     setActiveStep((s) => {
       const next = s + 1;
       if (next === 2) {
-        //  KLUCZOWA LINIA – wymuszenie fetchu slotów
         setTimeout(loadSlots, 0);
       }
       return next;
@@ -157,7 +151,6 @@ const visibleServices = useMemo(() => {
     setActiveStep((s) => s - 1);
   };
 
-  /* ---------------- BOOK ---------------- */
   const handleConfirmBooking = async () => {
     if (!selectedService || !selectedEmployee || !selectedSlotStart) return;
 

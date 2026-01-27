@@ -10,7 +10,6 @@ import { appointmentsApi } from "@/api/appointments";
 const getMyMock = vi.mocked(appointmentsApi.getMy);
 const confirmMock = vi.mocked(appointmentsApi.confirm);
 
-// Mock FullCalendar wrapper: renderujemy eventy jako przyciski z tytułem
 vi.mock("./components/CalendarView", () => {
   return {
     CalendarView: ({
@@ -161,18 +160,15 @@ describe("pages/Employee/Calendar/CalendarPage", () => {
 
         expect(await screen.findByText("Szczegóły wizyty")).toBeInTheDocument();
 
-        // zawężamy asercje do samego dialogu, żeby uniknąć konfliktów z innymi elementami
         const dialog = screen.getByRole("dialog");
         const d = within(dialog);
 
         expect(d.getByText("Usługa")).toBeInTheDocument();
         expect(d.getByText("Manicure")).toBeInTheDocument();
 
-        // "Klient" występuje jako label i jako fallback value -> co najmniej 2 wystąpienia
         const klientOccurrences = d.getAllByText("Klient");
         expect(klientOccurrences.length).toBeGreaterThanOrEqual(2);
 
-        // akcje zależne od can_*
         expect(d.getByRole("button", { name: "Potwierdź" })).toBeEnabled();
         expect(d.queryByRole("button", { name: "Zakończ" })).toBeNull();
         expect(d.getByRole("button", { name: "Anuluj" })).toBeEnabled();

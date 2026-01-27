@@ -13,7 +13,6 @@ describe("pages/Employee/Calendar/utils – statusChipColor", () => {
   });
 
   it("returns default for unknown status (defensive)", () => {
-    // nie używamy `any`; symulujemy nieznaną wartość jako wejście typu funkcji
     expect(statusChipColor("__UNKNOWN__" as StatusInput)).toBe("default");
   });
 });

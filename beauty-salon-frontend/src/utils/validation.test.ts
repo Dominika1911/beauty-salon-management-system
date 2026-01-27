@@ -38,15 +38,12 @@ describe('Walidacja formularza klienta (Yup schemas)', () => {
             is_active: true,
         };
 
-        // brak hasła
         await expect(CreateClientSchema.validate(base)).rejects.toMatchObject({ name: 'ValidationError' });
 
-        // hasło za krótkie
         await expect(CreateClientSchema.validate({ ...base, password: '1234567' }, { abortEarly: false })).rejects.toMatchObject(
             { name: 'ValidationError' },
         );
 
-        // poprawne hasło
         await expect(CreateClientSchema.validate({ ...base, password: '12345678' })).resolves.toMatchObject({
             first_name: 'Anna',
             last_name: 'Nowak',

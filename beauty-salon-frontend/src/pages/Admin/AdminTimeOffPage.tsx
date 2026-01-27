@@ -35,7 +35,6 @@ function isValidYmd(s: string): boolean {
 }
 
 function compareYmd(a: string, b: string): number {
-    // YYYY-MM-DD porównywalne leksykograficznie
     if (a === b) return 0;
     return a < b ? -1 : 1;
 }

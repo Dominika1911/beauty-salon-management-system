@@ -9,14 +9,11 @@ import { useAuth } from '@/context/AuthContext';
 import type { User, UserRole } from '@/types';
 
 declare global {
-    // sterowanie trybem mobile w testach (bez as any)
-    // eslint-disable-next-line no-var
     var __TEST_IS_MOBILE__: boolean | undefined;
 }
 
 const navigateMock = vi.fn();
 
-// sterowanie trybem mobile w mocku MUI
 function setIsMobile(v: boolean) {
     globalThis.__TEST_IS_MOBILE__ = v;
 }
@@ -33,9 +30,6 @@ vi.mock('react-router-dom', async (importOriginal) => {
     };
 });
 
-// Stabilizacja: w testach nie chcemy 2 Drawerów w DOM (temporary + permanent),
-// bo to powoduje duplikaty tekstów.
-// Dodatkowo: w trybie mobile renderujemy tylko temporary, w desktop tylko permanent.
 vi.mock('@mui/material', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mui/material')>();
 
@@ -144,15 +138,10 @@ describe('Sidebar – RBAC (menu per rola) + mobile close + logout', () => {
         const drawer = screen.getByTestId('drawer');
         const d = within(drawer);
 
-        // Dane użytkownika (stopka)
         expect(d.getByText('Ada Admin')).toBeInTheDocument();
         expect(d.getByText('Administrator')).toBeInTheDocument();
-
-        // Wspólne
         expect(d.getByText('Dashboard')).toBeInTheDocument();
         expect(d.getByText('Moje konto')).toBeInTheDocument();
-
-        // Admin-only (z Sidebar.tsx)
         expect(d.getByText('Wizyty')).toBeInTheDocument();
         expect(d.getByText('Pracownicy')).toBeInTheDocument();
         expect(d.getByText('Grafiki')).toBeInTheDocument();
@@ -163,13 +152,9 @@ describe('Sidebar – RBAC (menu per rola) + mobile close + logout', () => {
         expect(d.getByText('Ustawienia')).toBeInTheDocument();
         expect(d.getByText('Logi')).toBeInTheDocument();
         expect(d.getByText('Urlopy')).toBeInTheDocument();
-
-        // Employee-only nie powinny istnieć
         expect(d.queryByText('Terminarz')).not.toBeInTheDocument();
         expect(d.queryByText('Moje wizyty')).not.toBeInTheDocument();
         expect(d.queryByText('Grafik')).not.toBeInTheDocument();
-
-        // Client-only nie powinno istnieć
         expect(d.queryByText('Rezerwacja')).not.toBeInTheDocument();
     });
 
@@ -248,7 +233,6 @@ describe('Sidebar – RBAC (menu per rola) + mobile close + logout', () => {
         const drawer = screen.getByTestId('drawer');
         const d = within(drawer);
 
-        // element menu jest Linkiem, więc ma rolę link
         await userEvent.setup().click(d.getByRole('link', { name: 'Dashboard' }));
 
         expect(onMobileClose).toHaveBeenCalledTimes(1);

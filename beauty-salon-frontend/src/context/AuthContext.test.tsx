@@ -123,7 +123,6 @@ describe("context/AuthContext", () => {
   it("refreshUser(): gdy getStatus rzuci -> czyści user (gałąź catch)", async () => {
     vi.mocked(authApi.getCsrf).mockResolvedValue({ detail: "CSRF cookie set" } as any);
 
-    // init: start jako zalogowany
     vi.mocked(authApi.getStatus).mockResolvedValueOnce({
       isAuthenticated: true,
       user: makeUser("CLIENT"),
@@ -135,7 +134,6 @@ describe("context/AuthContext", () => {
     await waitFor(() => expect(screen.getByTestId("loading").textContent).toBe("false"));
     expect(screen.getByTestId("user").textContent).toBe("u");
 
-    // refresh: getStatus rzuca
     vi.mocked(authApi.getStatus).mockRejectedValueOnce(new Error("network"));
 
     await captured!.refreshUser();
@@ -148,13 +146,11 @@ describe("context/AuthContext", () => {
   it("login(): robi getCsrf -> login -> refreshUser(getStatus) i zwraca user", async () => {
     vi.mocked(authApi.getCsrf).mockResolvedValue({ detail: "CSRF cookie set" } as any);
 
-    // init: niezalogowany
     vi.mocked(authApi.getStatus).mockResolvedValueOnce({
       isAuthenticated: false,
       user: null,
     } as any);
 
-    // po login: zalogowany
     vi.mocked(authApi.getStatus).mockResolvedValueOnce({
       isAuthenticated: true,
       user: makeUser("EMPLOYEE"),
@@ -184,13 +180,11 @@ describe("context/AuthContext", () => {
   it("login(): gdy po login() refreshUser zwróci null -> rejects z błędem (bez unhandled rejection)", async () => {
     vi.mocked(authApi.getCsrf).mockResolvedValue({ detail: "CSRF cookie set" } as any);
 
-    // init: niezalogowany
     vi.mocked(authApi.getStatus).mockResolvedValueOnce({
       isAuthenticated: false,
       user: null,
     } as any);
 
-    // po login: nadal brak sesji
     vi.mocked(authApi.getStatus).mockResolvedValueOnce({
       isAuthenticated: false,
       user: null,
@@ -207,7 +201,6 @@ describe("context/AuthContext", () => {
       captured!.login({ username: "test", password: "test" })
     ).rejects.toThrow(/Logowanie nieudane - brak sesji/);
 
-    // user nadal pusty
     expect(screen.getByTestId("user").textContent).toBe("brak");
   });
 
@@ -237,7 +230,6 @@ describe("context/AuthContext", () => {
 
   it("useAuth(): poza AuthProvider rzuca czytelny błąd (guard)", () => {
     function Outside() {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
       useAuth();
       return null;
     }

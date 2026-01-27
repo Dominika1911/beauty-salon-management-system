@@ -371,13 +371,12 @@ class TimeOffViewSet(viewsets.ModelViewSet):
         return [IsAdminOrEmployee()]
 
     def get_queryset(self):
-        # 1. ZMIANA: Dodajemy priorytety statusów, aby sortowały się alfabetycznie po polsku
         qs = TimeOff.objects.annotate(
             status_priority=Case(
                 When(status=TimeOff.Status.CANCELLED, then=Value(1)),  # Anulowany
-                When(status=TimeOff.Status.PENDING, then=Value(2)),  # Oczekuje
-                When(status=TimeOff.Status.REJECTED, then=Value(3)),  # Odrzucony
-                When(status=TimeOff.Status.APPROVED, then=Value(4)),  # Zaakceptowany
+                When(status=TimeOff.Status.PENDING, then=Value(2)),
+                When(status=TimeOff.Status.REJECTED, then=Value(3)),
+                When(status=TimeOff.Status.APPROVED, then=Value(4)),
                 default=Value(5),
                 output_field=IntegerField(),
             )
@@ -399,7 +398,6 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 return qs.none()
             qs = qs.filter(employee=emp)
 
-        # Filtry dat (bez zmian)
         date_from = self.request.query_params.get("date_from")
         date_to = self.request.query_params.get("date_to")
 
@@ -417,17 +415,12 @@ class TimeOffViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"date_to": "Nieprawidłowy format daty."})
             qs = qs.filter(date_from__lte=dt)
 
-        # 2. ZMIANA: Obsługa parametrów sortowania przesyłanych z frontendu
         ordering = self.request.query_params.get('ordering')
 
         if ordering == 'status':
-            # Jeśli A -> Z, sortujemy po priorytetach (1, 2, 3...)
             return qs.order_by('status_priority')
         elif ordering == '-status':
-            # Jeśli Z -> A, odwracamy kolejność
             return qs.order_by('-status_priority')
-
-        # Domyślne sortowanie (jeśli nic nie wybrano)
         return qs.order_by("-created_at")
 
     def perform_create(self, serializer):

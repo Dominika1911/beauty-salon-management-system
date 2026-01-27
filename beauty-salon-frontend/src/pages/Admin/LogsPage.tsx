@@ -42,12 +42,10 @@ type Ordering = 'timestamp' | '-timestamp';
 
 
 function groupFromAction(display: string, rawAction: string): ActionGroup {
-    // 1. Najpierw sprawdzamy surowy kod (np. AUTH_LOGIN) - to najpewniejsza metoda
     const raw = (rawAction || '').toUpperCase();
     if (raw.startsWith('AUTH_')) return 'AUTH';
     if (raw.startsWith('SETTINGS_')) return 'SETTINGS';
 
-    // 2. Jeśli kod nie pasuje, szukamy w nazwie wyświetlanej (np. "Zalogowano...")
     const a = (display || '').toUpperCase().trim();
     if (a.includes('LOGIN') || a.includes('LOGOUT') || a.includes('HASŁO') || a.includes('PASSWORD')) {
         return 'AUTH';

@@ -28,10 +28,6 @@ vi.mock('@/api/appointments', () => ({
     },
 }));
 
-/**
- * Flow test: NIE zgadujemy DOM childów.
- * Mockujemy kroki tylko po to, aby deterministycznie wywołać callbacki BookingPage.
- */
 vi.mock('./components/ServiceStep', () => ({
     ServiceStep: ({ onPickService }: { onPickService: (s: { id: number; name: string }) => void }) => {
         return (

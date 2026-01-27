@@ -37,8 +37,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--username", default="e2e-client")
         parser.add_argument("--password", default="E2Epass123!")
-
-        # Ile dni do przodu czyścimy rezerwacje E2E (wystarczy pod testy)
         parser.add_argument("--cleanup-days", type=int, default=60)
 
     def handle(self, *args, **options):
@@ -48,14 +46,11 @@ class Command(BaseCommand):
 
         User = get_user_model()
 
-        # --- System settings (deterministycznie, ZAWSZE) ---
         settings_obj = SystemSettings.get_settings()
         settings_obj.opening_hours = OPENING_HOURS
         settings_obj.slot_minutes = 15
         settings_obj.buffer_minutes = 0
         settings_obj.save()
-
-        # --- E2E service (zawsze aktywna, deterministyczna) ---
         service, service_created = Service.objects.get_or_create(
             name="E2E - Usługa testowa",
             defaults={
@@ -66,7 +61,6 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        # Utrzymaj deterministyczne parametry także przy kolejnych uruchomieniach:
         changed_service = False
         if service.category != "E2E":
             service.category = "E2E"
@@ -86,7 +80,6 @@ class Command(BaseCommand):
         if changed_service:
             service.save()
 
-        # --- E2E employee ---
         emp_username = "pracownik-00000001"
         emp_user, emp_user_created = User.objects.get_or_create(username=emp_username)
         emp_user.set_password(password)
@@ -111,25 +104,15 @@ class Command(BaseCommand):
         if changed_emp:
             emp_profile.save()
 
-        # Skills: ustaw deterministycznie (żeby nie zostały śmieciowe umiejętności)
-        # Jeśli w Twojej domenie pracownik może mieć wiele usług, to i tak warto zapewnić,
-        # że E2E-usługa jest na pewno przypisana.
         emp_profile.skills.add(service)
 
-        # Schedule: ZAWSZE nadpisz weekly_hours dla deterministyczności
         schedule, schedule_created = EmployeeSchedule.objects.get_or_create(employee=emp_profile)
         schedule.weekly_hours = WEEKLY_HOURS
         schedule.save()
 
-        # --- Reset konfliktów E2E: usuń rezerwacje i nieobecności testowego pracownika ---
-        # To jest kluczowe: zapewnia, że /availability/slots/ ma co zwrócić,
-        # a /appointments/book/ nie dostaje "termin niedostępny" po kilku runach.
         now = timezone.now()
         window_end = now + timedelta(days=cleanup_days)
 
-        # Jeśli Appointment ma inne pola niż 'employee' i 'start', dopasuj filtr.
-        # W Twoich logach booking dotyczy konkretnego pracownika i slotu w przyszłości,
-        # więc czyszczenie z okna czasowego jest najbezpieczniejsze.
         deleted_appointments = Appointment.objects.filter(
             employee=emp_profile,
             start__gte=now - timedelta(days=1),
@@ -138,7 +121,6 @@ class Command(BaseCommand):
 
         deleted_timeoffs = TimeOff.objects.filter(employee=emp_profile).delete()[0]
 
-        # --- E2E client users + profiles ---
         usernames = [
             base_username,
             f"{base_username}-desktop",

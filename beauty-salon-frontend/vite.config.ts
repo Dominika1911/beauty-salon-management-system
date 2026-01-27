@@ -1,4 +1,3 @@
-/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tsconfigPaths from 'vite-tsconfig-paths';
@@ -25,10 +24,8 @@ export default defineConfig({
     css: true,
     clearMocks: true,
 
-    // ✅ DODAJĘ include - mówi gdzie szukać testów
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
 
-    // ✅ exclude tylko dla node_modules i e2e
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
@@ -41,7 +38,6 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
 
-      // ✅ W coverage ZOSTAWIAMY exclude - nie chcemy raportować samych testów
       exclude: [
         '**/node_modules/**',
         '**/dist/**',
