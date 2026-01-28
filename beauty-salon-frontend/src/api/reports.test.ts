@@ -46,7 +46,6 @@ describe("api/reports – kontrakt i download PDF (MSW)", () => {
       })
     );
 
-    // jsdom/happy-dom: dopinamy metody jeśli środowisko ich nie ma
     if (!(window.URL as any).createObjectURL) {
       (window.URL as any).createObjectURL = () => "blob:mock-url";
     }

@@ -38,7 +38,6 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
   }
 
   beforeEach(() => {
-    // czyścimy cookie CSRF
     document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
 
     loc = new URL('http://localhost/');
@@ -147,7 +146,6 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
   ])('na 401 NIE przekierowuje na /login dla endpointu auth: %s', async (path) => {
     ustawSciezke('/dashboard');
 
-    // MSW: endpoint "auth" zwraca 401
     server.use(http.get(`*/api${path}`, () => HttpResponse.json({}, { status: 401 })));
 
     await expectAxiosRejectStatus(axiosInstance.get(path.replace('/auth/', '/auth/')), 401);

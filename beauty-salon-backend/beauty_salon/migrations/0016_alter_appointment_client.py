@@ -6,19 +6,14 @@ from django.utils import timezone
 
 
 def forwards_fix_null_clients(apps, schema_editor):
-    """
-    Tworzy klienta systemowego i przypina go do wszystkich Appointment(client IS NULL),
-    żeby dało się bezpiecznie zrobić NOT NULL (PROTECT) na polu client.
-    """
+
     Appointment = apps.get_model("beauty_salon", "Appointment")
     ClientProfile = apps.get_model("beauty_salon", "ClientProfile")
     CustomUser = apps.get_model("beauty_salon", "CustomUser")
 
-    # Jeśli nie ma NULL-i, nic nie rób
     if not Appointment.objects.filter(client__isnull=True).exists():
         return
 
-    # Znajdź wolny username zgodny z patternem klient-00000000
     username = None
     for i in range(0, 10000):
         candidate = f"klient-{i:08d}"

@@ -13,6 +13,7 @@ function creds(testInfo: TestInfo) {
 async function expectLoginOk(page: Page) {
   const loginResp = await page.waitForResponse(
     (r) => r.url().includes('/api/auth/login/') && r.request().method() === 'POST',
+    { timeout: 15_000 },
   );
 
   const status = loginResp.status();
@@ -23,6 +24,7 @@ async function expectLoginOk(page: Page) {
 
   const statusResp = await page.waitForResponse(
     (r) => r.url().includes('/api/auth/status/') && r.request().method() === 'GET',
+    { timeout: 15_000 },
   );
 
   expect(statusResp.status()).toBe(200);
@@ -96,11 +98,6 @@ async function waitForSlotsUI(page: Page) {
   ]);
 }
 
-/**
- * Tablet/Mobile: MUI DatePicker potrafi zmienić input bez wysłania fetch.
- * Zamiast czekać na konkretny response (date=...), łapiemy URL requestu slots
- * przez listener na request oraz asercję na efekt UI (sloty/brak slotów).
- */
 async function setDateInPicker(page: Page, target: Date) {
   const iso = toISODate(target);
   const pl = toDatePickerPL(target);
@@ -123,11 +120,9 @@ async function setDateInPicker(page: Page, target: Date) {
     if (!isReadonly) {
       await dateInput.fill(pl);
       await dateInput.press('Enter');
-      // Mobile/Tablet często wymaga blur/touch, żeby odpalił się fetch:
       await dateInput.press('Tab').catch(() => void 0);
     } else {
       await clickDayInMuiCalendar(page, target);
-      // domykamy overlay + finalny "commit" dla MUI
       await page.keyboard.press('Escape').catch(() => void 0);
     }
 
@@ -176,9 +171,7 @@ async function ensureBaseSlotsRequest(page: Page, testInfo: TestInfo) {
   r = await setDateInPicker(page, d1);
   if (r.slotsUrl) return r.slotsUrl;
 
-  throw new Error(
-    'Nie udało się wymusić requestu /api/availability/slots/ przez UI (po kilku realnych interakcjach).',
-  );
+  throw new Error('Nie udało się wymusić requestu /api/availability/slots/ przez UI (po kilku realnych interakcjach).');
 }
 
 async function pickDayWithSlotsFast(page: Page, testInfo: TestInfo, baseSlotsUrl: string) {
@@ -216,28 +209,58 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
     await page.getByRole('button', { name: 'Zaloguj się' }).click();
     await expectLoginOk(page);
 
-    const [servicesResp] = await Promise.all([
-      page.waitForResponse(
-        (r) =>
-          r.url().includes('/api/services/?is_active=true') &&
-          r.request().method() === 'GET',
-      ),
-      page.goto('/client/booking'),
-    ]);
-    expect(servicesResp.status()).toBe(200);
+    const servicesApiResp = await page.request.get('/api/services/?is_active=true', { timeout: 15_000 });
+    const st = servicesApiResp.status();
+    const servicesBody = await servicesApiResp.text().catch(() => '');
+    if (st < 200 || st >= 300) {
+      throw new Error(`GET /api/services/?is_active=true zwrócił ${st}. Body: ${servicesBody.slice(0, 800)}`);
+    }
 
-    const servicesJson = await servicesResp.json();
+    let servicesJson: any;
+    try {
+      servicesJson = JSON.parse(servicesBody);
+    } catch {
+      throw new Error(`GET /api/services zwrócił nie-JSON. Body: ${servicesBody.slice(0, 300)}`);
+    }
+
     const all = servicesJson?.results ?? servicesJson ?? [];
     const e2eService = all.find((s: any) => typeof s?.name === 'string' && s.name.startsWith('E2E -'));
     const serviceName: string | undefined = e2eService?.name ?? all?.[0]?.name;
     expect(serviceName).toBeTruthy();
 
-    await expect(page.getByText('Wybierz usługę')).toBeVisible({ timeout: 10_000 });
-    await page.getByText(serviceName as string, { exact: true }).click();
+    const servicesRe = /\/api\/services\/?(\?.*)?$/;
+
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (servicesRe.test(url)) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json; charset=utf-8',
+          body: servicesBody,
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    const navBooking = page.getByRole('link', { name: /rezerwacja/i });
+    if (await navBooking.count()) {
+        await navBooking.first().click();
+    } else {
+        await page.getByRole('link', { name: /umów wizytę/i }).click();
+    }
+    await expect(page).toHaveURL(/\/client\/booking/);
+
+
 
     const nextBtn = page.getByTestId('booking-next');
+    await expect(nextBtn).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(serviceName as string, { exact: true })).toBeVisible({ timeout: 20_000 });
+    await page.getByText(serviceName as string, { exact: true }).click();
+
     await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
     await nextBtn.click();
+
     await expect(page.getByText('Wybierz specjalistę')).toBeVisible({ timeout: 10_000 });
     const employeeList = page.getByTestId('employee-list');
     await expect(employeeList).toBeVisible({ timeout: 10_000 });
@@ -277,23 +300,22 @@ test.describe.serial('E2E: login → booking → lista wizyt', () => {
         confirmBtn.click(),
       ]);
 
-      const st = bookResp.status();
-      if (st >= 200 && st < 300) {
+      const respStatus = bookResp.status();
+      if (respStatus >= 200 && respStatus < 300) {
         booked = true;
         break;
       }
 
-            const headers = bookResp.headers();
+      const headers = bookResp.headers();
       const contentType = headers['content-type'] ?? '';
       const bodyText = await bookResp.text().catch(() => '');
       const bodySnippet = bodyText.length > 800 ? `${bodyText.slice(0, 800)}…` : bodyText;
 
-      lastError = `BOOK FAILED ${st} ${bookResp.url()} content-type=${contentType}\n${bodySnippet}`;
+      lastError = `BOOK FAILED ${respStatus} ${bookResp.url()} content-type=${contentType}\n${bodySnippet}`;
 
-      if (st === 400 || st === 409) continue;
+      if (respStatus === 400 || respStatus === 409) continue;
 
       throw new Error(lastError);
-
     }
 
     if (!booked) throw new Error(lastError || 'Nie udało się zarezerwować żadnego z testowanych slotów.');

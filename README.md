@@ -48,9 +48,6 @@ Serwer backendowy będzie dostępny pod adresem:
 # instalacja zależności
 pnpm install
 
-# skopiowanie pliku ze zmiennymi środowiskowymi
-cp .env.example .env
-
 # uruchomienie serwera deweloperskiego
 pnpm dev
 ```
@@ -69,17 +66,13 @@ Pliki należy skopiować do `.env` i skonfigurować.
 **Backend** (`beauty-salon-backend/.env.example`):
 - Dane dostępowe do bazy danych
 - Klucz tajny Django
-
-**Frontend** (`beauty-salon-frontend/.env.example`):
-- Adres URL API
-
 ---
 
 ## Testowanie
 
 - **Backend**: `pytest`
 - **Frontend**: `pnpm test:run`
-- **E2E**: `pnpm test:e2e`
+- **E2E**: `pnpm e2e`
 
 ---
 
