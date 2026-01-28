@@ -31,7 +31,7 @@ cp .env.example .env
 python manage.py migrate
 python manage.py seed_database
 
-# utworzenie konta administratora (opcjonalne - seed_database juz stworzy)
+# utworzenie konta administratora (opcjonalne - seed_database już stworzy)
 python manage.py createsuperuser
 
 # uruchomienie serwera
@@ -48,6 +48,9 @@ Serwer backendowy będzie dostępny pod adresem:
 # instalacja zależności
 pnpm install
 
+# skopiowanie pliku ze zmiennymi środowiskowymi
+cp .env.example .env
+
 # uruchomienie serwera deweloperskiego
 pnpm dev
 ```
@@ -60,7 +63,7 @@ Aplikacja frontendowa będzie dostępna pod adresem:
 ## Konfiguracja środowiska
 
 Pliki ze zmiennymi środowiskowymi nie są zawarte w repozytorium.  
-Przykładowy plik konfiguracyjny znajdują się jako `.env.example`.  
+Przykładowe pliki konfiguracyjne znajdują się jako `.env.example`.  
 Pliki należy skopiować do `.env` i skonfigurować.
 
 **Backend** (`beauty-salon-backend/.env.example`):
@@ -70,11 +73,23 @@ Pliki należy skopiować do `.env` i skonfigurować.
 
 ## Testowanie
 
-- **Backend**: `pytest`
-- **Frontend**: `pnpm test:run`
-- przed testami e2e nalezy uruchomić 
-- python manage.py seed_e2e
-- **E2E**: `pnpm e2e`
+### Backend
+```bash
+pytest                     # Uruchomienie testów
+pytest --cov=beauty_salon  # Testy z pokryciem kodu
+```
+
+### Frontend
+```bash
+pnpm test:run             # Uruchomienie testów
+```
+
+### E2E
+Przed uruchomieniem testów E2E:
+1. Uruchom backend: `python manage.py runserver`
+2. Załaduj dane testowe: `python manage.py seed_e2e`
+3. Uruchom frontend w nowym terminalu: `pnpm dev`
+4. Uruchom testy w kolejnym terminalu: `pnpm e2e`
 
 ---
 
