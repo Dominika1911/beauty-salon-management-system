@@ -31,7 +31,7 @@ cp .env.example .env
 python manage.py migrate
 python manage.py seed_database
 
-# utworzenie konta administratora (opcjonalne - seed_database może stworzyć)
+# utworzenie konta administratora (opcjonalne - seed_database juz stworzy)
 python manage.py createsuperuser
 
 # uruchomienie serwera
@@ -60,7 +60,7 @@ Aplikacja frontendowa będzie dostępna pod adresem:
 ## Konfiguracja środowiska
 
 Pliki ze zmiennymi środowiskowymi nie są zawarte w repozytorium.  
-Przykładowe pliki konfiguracyjne znajdują się jako `.env.example`.  
+Przykładowy plik konfiguracyjny znajdują się jako `.env.example`.  
 Pliki należy skopiować do `.env` i skonfigurować.
 
 **Backend** (`beauty-salon-backend/.env.example`):
@@ -72,6 +72,8 @@ Pliki należy skopiować do `.env` i skonfigurować.
 
 - **Backend**: `pytest`
 - **Frontend**: `pnpm test:run`
+- przed testami e2e nalezy uruchomić 
+- python manage.py seed_e2e
 - **E2E**: `pnpm e2e`
 
 ---
