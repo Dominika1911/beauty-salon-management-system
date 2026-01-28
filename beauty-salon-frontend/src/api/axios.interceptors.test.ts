@@ -39,6 +39,7 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
 
   beforeEach(() => {
     document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+    document.cookie = 'sessionid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
 
     loc = new URL('http://localhost/');
     assignMock = vi.fn((next: string) => {
@@ -154,6 +155,7 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
 
   it('na 403 przekierowuje na /access-denied, jeśli nie jesteśmy na /access-denied', async () => {
     ustawSciezke('/dashboard');
+    document.cookie = 'sessionid=test123; path=/';
 
     server.use(http.get('*/api/forbidden', () => HttpResponse.json({}, { status: 403 })));
 
@@ -163,6 +165,7 @@ describe('api/axios.ts – interceptory (CSRF, nagłówki, przekierowania 401/40
 
   it('na 403 NIE przekierowuje na /access-denied, jeśli już jesteśmy na /access-denied', async () => {
     ustawSciezke('/access-denied');
+    document.cookie = 'sessionid=test123; path=/';
 
     server.use(http.get('*/api/forbidden-2', () => HttpResponse.json({}, { status: 403 })));
 
