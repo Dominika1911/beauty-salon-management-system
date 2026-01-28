@@ -1,4 +1,3 @@
-# --- Python / Django ---
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,28 +8,23 @@ __pycache__/
 *.log
 *.sqlite3
 
-# Lokalna wersja Pythona (pyenv / itp.)
 .python-version
 
-# --- Virtualenv ---
 .venv/
 venv/
 */.venv/
 */venv/
 
-# --- Pliki środowiskowe / sekrety ---
-beauty-salon-backend/.env
-*.env
-*.env.*
+#beauty-salon-backend/.env
+#*.env
+#*.env.*
 *.local
 !*.env.example
 !*.env.local.example
 
-# Backend runtime (Django) – generowane w trakcie działania
 beauty-salon-backend/media/
 beauty-salon-backend/staticfiles/
 
-# --- Node / Vite / React ---
 node_modules/
 */node_modules/
 dist/
@@ -38,13 +32,11 @@ build/
 .vite/
 *.tsbuildinfo
 
-# logi npm/yarn/pnpm
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# --- IDE / OS ---
 .vscode/
 .idea/
 *.iml
@@ -52,7 +44,6 @@ pnpm-debug.log*
 Thumbs.db
 desktop.ini
 
-# --- Type checkers / linters ---
 .mypy_cache/
 .pyright/
 .pytype/
@@ -61,7 +52,6 @@ ruff_cache/
 .dmypy.json
 .dmypy.json.*
 
-# --- Testy / cache / coverage ---
 .pytest_cache/
 .cache/
 .coverage
@@ -69,10 +59,8 @@ ruff_cache/
 coverage/
 htmlcov/
 
-# --- Database (Docker) ---
 database/
 
-# Frontend env (lokalne – nie commitujemy)
-beauty-salon-frontend/.env
-beauty-salon-frontend/.env.local
-!beauty-salon-frontend/.env.local.example
+#beauty-salon-frontend/.env
+#beauty-salon-frontend/.env.local
+#!beauty-salon-frontend/.env.local.example
