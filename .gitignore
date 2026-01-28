@@ -15,9 +15,9 @@ venv/
 */.venv/
 */venv/
 
-#beauty-salon-backend/.env
-#*.env
-#*.env.*
+beauty-salon-backend/.env
+*.env
+*.env.*
 *.local
 !*.env.example
 !*.env.local.example
