@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('E2E: ochrona tras (ProtectedRoute)', () => {
-  test('niezalogowany użytkownik jest przekierowany do /login przy wejściu na trasę chronioną', async ({ page }) => {
+  test('niezalogowany użytkownik jest przekierowany do /login przy wejściu na trasę chronioną', async ({ page, context }) => {
+    await context.clearCookies();
+    await page.addInitScript(() => {
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+
     await page.goto('/dashboard');
 
     await expect(page).toHaveURL(/\/login$/);

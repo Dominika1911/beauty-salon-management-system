@@ -18,7 +18,6 @@ function ensureAxiosHeaders(h: InternalAxiosRequestConfig['headers']): AxiosHead
     return new AxiosHeaders(h);
 }
 
-
 axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const headers = ensureAxiosHeaders(config.headers);
     config.headers = headers;
@@ -44,22 +43,30 @@ axiosInstance.interceptors.response.use(
     (error: unknown) => {
         const e = error as { response?: { status?: number }; config?: { url?: unknown } };
 
-        if (e.response?.status === 401) {
-            const reqUrl = String(e.config?.url ?? '');
-            const isAuthEndpoint =
-                reqUrl.includes('/auth/status/') ||
-                reqUrl.includes('/auth/login/') ||
-                reqUrl.includes('/auth/logout/') ||
-                reqUrl.includes('/auth/csrf/');
+        const reqUrl = String(e.config?.url ?? '');
+        const isAuthEndpoint =
+            reqUrl.includes('/auth/status/') ||
+            reqUrl.includes('/auth/login/') ||
+            reqUrl.includes('/auth/logout/') ||
+            reqUrl.includes('/auth/csrf/');
 
+        const hasSession = Boolean(getCookie('sessionid'));
+
+        if (e.response?.status === 401) {
             if (!isAuthEndpoint && window.location.pathname !== '/login') {
                 window.location.assign('/login');
             }
         }
 
         if (e.response?.status === 403) {
-            if (window.location.pathname !== '/access-denied') {
-                window.location.assign('/access-denied');
+            if (!hasSession || isAuthEndpoint) {
+                if (window.location.pathname !== '/login') {
+                    window.location.assign('/login');
+                }
+            } else {
+                if (window.location.pathname !== '/access-denied') {
+                    window.location.assign('/access-denied');
+                }
             }
         }
 
