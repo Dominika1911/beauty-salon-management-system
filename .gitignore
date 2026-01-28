@@ -58,9 +58,8 @@ ruff_cache/
 .coverage.*
 coverage/
 htmlcov/
+beauty-salon-backend/test-results/
+beauty-salon-frontend/junit.xml
 
 database/
 
-#beauty-salon-frontend/.env
-#beauty-salon-frontend/.env.local
-#!beauty-salon-frontend/.env.local.example

@@ -28,13 +28,12 @@ pip install -r requirements.txt
 # skopiowanie pliku konfiguracyjnego
 cp .env.example .env       # Linux / macOS
 copy .env.example .env     # Windows
-# Edytuj .env i ustaw dane dostępowe do bazy danych
 
 # migracje bazy danych i dane początkowe
 python manage.py migrate
 python manage.py seed_database
 
-# utworzenie konta administratora (opcjonalne - seed_database tworzy konto)
+# utworzenie konta administratora (opcjonalne - seed_database tworzy już konto)
 python manage.py createsuperuser
 
 # uruchomienie serwera
@@ -53,25 +52,11 @@ cd beauty-salon-frontend
 pnpm install
 
 
-# uruchomienie serwera deweloperskiego
+# uruchomienie serwera 
 pnpm dev
 ```
 
 Aplikacja frontendowa będzie dostępna pod adresem: `http://localhost:5173`
-
----
-
-## Konfiguracja środowiska
-
-Pliki ze zmiennymi środowiskowymi nie są zawarte w repozytorium.  
-Przykładowy plik konfiguracyjny znajdują się jako `.env.example`.  
-Pliki należy skopiować do `.env` i skonfigurować.
-
-**Backend** (`beauty-salon-backend/.env.example`):
-- Dane dostępowe do bazy danych
-- Klucz tajny Django
-
----
 
 ## Testowanie
 
@@ -79,7 +64,7 @@ Pliki należy skopiować do `.env` i skonfigurować.
 ```bash
 cd beauty-salon-backend
 
-# instalacja zależności testowych
+# instalacja zależności do testów
 pip install -r requirements-test.txt
 
 # uruchomienie testów
@@ -98,16 +83,16 @@ pnpm test:run
 
 ### E2E
 ```bash
-# 1. Uruchom backend z danymi testowymi
+# 1. W pierwszym terminalu uruchomienie backendu 
 cd beauty-salon-backend
 python manage.py seed_e2e
 python manage.py runserver
 
-# 2. W nowym terminalu uruchom frontend
+# 2. W drugim terminalu uruchomienie frontendu
 cd beauty-salon-frontend
 pnpm dev
 
-# 3. W kolejnym terminalu uruchom testy E2E
+# 3. W trzecim terminalu testy E2E
 cd beauty-salon-frontend
 pnpm e2e
 ```
