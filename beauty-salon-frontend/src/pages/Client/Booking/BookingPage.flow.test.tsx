@@ -7,7 +7,7 @@ import { MemoryRouter } from 'react-router-dom';
 import BookingPage from './BookingPage';
 import { servicesApi } from '@/api/services';
 import { employeesApi } from '@/api/employees';
-import type { DRFPaginated } from '@/types';
+import type { DRFPaginated, Service } from '@/types';
 
 vi.mock('@/api/services', () => ({
     servicesApi: {
@@ -55,7 +55,7 @@ describe('pages/Client/Booking/BookingPage – flow (minimalny dowód kroku 0→
     });
 
     it('po wybraniu usługi: woła employeesApi.list({service_id}) i po kliknięciu "Dalej" renderuje krok "Wybierz specjalistę"', async () => {
-        const servicesPayload: DRFPaginated<unknown> = {
+        const servicesPayload: DRFPaginated<Service> = {
             count: 0,
             next: null,
             previous: null,

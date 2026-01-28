@@ -27,6 +27,11 @@ function mockUseAuth(overrides: Partial<ReturnType<typeof useAuth>> = {}) {
       email: "test@test.pl",
       role: "CLIENT",
       role_display: "Klient",
+      is_active: true,
+      employee_profile: null,
+      client_profile: null,
+      created_at: "2025-01-01T00:00:00Z",
+      updated_at: "2025-01-01T00:00:00Z",
     },
     loading: false,
     login: vi.fn(),
@@ -138,8 +143,8 @@ describe("AccountPage – change password (UI integration)", () => {
   it("prevents double submit while saving (only one API call, button becomes disabled)", async () => {
     const user = userEvent.setup();
 
-    let resolve!: () => void;
-    const pending = new Promise<void>((r) => {
+    let resolve!: (v: { detail: string }) => void;
+    const pending = new Promise<{ detail: string }>((r) => {
       resolve = r;
     });
 
@@ -158,7 +163,7 @@ describe("AccountPage – change password (UI integration)", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(bottomBtn).toBeDisabled();
 
-    resolve();
+    resolve({ detail: "OK" });
     await Promise.resolve();
   });
 
@@ -168,7 +173,7 @@ describe("AccountPage – change password (UI integration)", () => {
 
     mockUseAuth({ refreshUser });
 
-    vi.mocked(authApi.changePassword).mockResolvedValue({});
+    vi.mocked(authApi.changePassword).mockResolvedValue({ detail: "OK" });
 
     renderPage();
 
